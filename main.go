@@ -6,6 +6,7 @@ import (
 	"log"
 
 	"github.com/openai/openai-go"
+	"github.com/openai/openai-go/option"
 	"github.com/openai/openai-go/responses"
 
 	"go.opentelemetry.io/otel"
@@ -28,6 +29,8 @@ func (r *Recommender) getFoodRec(ctx context.Context, food string, zipcode strin
 	ctx, span := tracer.Start(ctx, "getFoodRec")
 	defer span.End()
 
+	ctx = context.WithValue(ctx, "zipcode", zipcode)
+
 	prompt := fmt.Sprintf("Recommend a place to get %s in zipcode %s.", food, zipcode)
 
 	params := responses.ResponseNewParams{
@@ -45,13 +48,15 @@ func (r *Recommender) getFoodRec(ctx context.Context, food string, zipcode strin
 
 func main() {
 	ctx := context.Background()
-	tp, err := initTracer()
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer tp.Shutdown(ctx)
+	// tp, err := initTracer()
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
+	// defer tp.Shutdown(ctx)
 
-	client := openai.NewClient()
+	client := openai.NewClient(
+		option.WithMiddleware(LoggingMiddleware),
+	)
 
 	recommender := NewRecommender(client)
 
