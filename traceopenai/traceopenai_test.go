@@ -2,6 +2,7 @@ package traceopenai
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/openai/openai-go"
@@ -49,6 +50,8 @@ func TestOpenAIResponses(t *testing.T) {
 
 	spans := flushSpans(exporter)
 	assert.NotEmpty(spans)
+
+	fmt.Println("spans", spans[0])
 }
 
 func TestOTelSetup(t *testing.T) {
@@ -68,6 +71,7 @@ func TestOTelSetup(t *testing.T) {
 	assert.NotEmpty(spans)
 	spans = flushSpans(exporter)
 	assert.Empty(spans)
+	assert.False(true)
 }
 
 func flushSpans(exporter *tracetest.InMemoryExporter) []tracetest.SpanStub {

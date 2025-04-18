@@ -7,16 +7,10 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
-	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
 	"go.opentelemetry.io/otel/sdk/trace"
 )
 
 func initTracer() (*trace.TracerProvider, error) {
-	// Create stdout exporter for local debugging
-	stdoutExporter, err := stdouttrace.New(stdouttrace.WithPrettyPrint())
-	if err != nil {
-		return nil, err
-	}
 
 	// Create Braintrust OTLP exporter
 	braintrustExporter, err := otlptrace.New(
@@ -36,7 +30,6 @@ func initTracer() (*trace.TracerProvider, error) {
 
 	// Create a tracer provider with both exporters
 	tp := trace.NewTracerProvider(
-		trace.WithBatcher(stdoutExporter),
 		trace.WithBatcher(braintrustExporter),
 	)
 	otel.SetTracerProvider(tp)
