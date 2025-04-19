@@ -2,7 +2,6 @@ package traceopenai
 
 import (
 	"context"
-	"fmt"
 	"testing"
 
 	"github.com/openai/openai-go"
@@ -10,6 +9,7 @@ import (
 	"github.com/openai/openai-go/responses"
 	"github.com/stretchr/testify/assert"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
@@ -34,7 +34,7 @@ func setUpTracedClient() (openai.Client, *tracetest.InMemoryExporter, func()) {
 	return client, exporter, teardown
 }
 
-func TestOpenAIResponses(t *testing.T) {
+func TestOpenAIResponsesRequiredParamsOnly(t *testing.T) {
 	client, exporter, teardown := setUpTracedClient()
 	defer teardown()
 	assert := assert.New(t)
@@ -49,9 +49,28 @@ func TestOpenAIResponses(t *testing.T) {
 	assert.NotNil(resp)
 
 	spans := flushSpans(exporter)
-	assert.NotEmpty(spans)
+	assert.Len(spans, 1)
+	span := spans[0]
+	assert.Equal(span.Name, "openai.chat.completion")
 
-	fmt.Println("spans", spans[0])
+	valsByKey := toValuesByKey(span.Attributes)
+	assert.Equal(valsByKey["model"].AsString(), "gpt-4o-mini")
+	assert.Equal(valsByKey["provider"].AsString(), "openai")
+	assert.Equal(valsByKey["input"].AsString(), "Hello, world!")
+}
+
+func toValuesByKey(attrs []attribute.KeyValue) map[string]attribute.Value {
+	attrsByKey := make(map[string]attribute.Value)
+	for _, attr := range attrs {
+		attrsByKey[string(attr.Key)] = attr.Value
+	}
+	return attrsByKey
+}
+
+func flushSpans(exporter *tracetest.InMemoryExporter) []tracetest.SpanStub {
+	spans := exporter.GetSpans()
+	exporter.Reset()
+	return spans
 }
 
 func TestOTelSetup(t *testing.T) {
@@ -71,11 +90,4 @@ func TestOTelSetup(t *testing.T) {
 	assert.NotEmpty(spans)
 	spans = flushSpans(exporter)
 	assert.Empty(spans)
-	assert.False(true)
-}
-
-func flushSpans(exporter *tracetest.InMemoryExporter) []tracetest.SpanStub {
-	spans := exporter.GetSpans()
-	exporter.Reset()
-	return spans
 }

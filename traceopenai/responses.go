@@ -1,5 +1,7 @@
 package traceopenai
 
+//  this file parses the responses API.
+
 import (
 	"context"
 	"encoding/json"
@@ -9,23 +11,43 @@ import (
 )
 
 type v1ResponseRequest struct {
-	Model       string  `json:"model"`
-	Input       string  `json:"input"`
-	Temperature float64 `json:"temperature"`
+	Model              string            `json:"model,omitempty"`
+	Input              string            `json:"input,omitempty"`
+	Include            []string          `json:"include,omitempty"`
+	Instructions       *string           `json:"instructions,omitempty"`
+	MaxOutputTokens    *int              `json:"max_output_tokens,omitempty"`
+	Metadata           map[string]string `json:"metadata,omitempty"`
+	ParallelToolCalls  *bool             `json:"parallel_tool_calls,omitempty"`
+	PreviousResponseID *string           `json:"previous_response_id,omitempty"`
+	ServiceTier        *string           `json:"service_tier,omitempty"`
+	Store              *bool             `json:"store,omitempty"`
+	Stream             *bool             `json:"stream,omitempty"`
+	Temperature        *float64          `json:"temperature,omitempty"`
+	ToolChoice         string            `json:"tool_choice,omitempty"`
+	TopP               *float64          `json:"top_p,omitempty"`
+	Truncation         *string           `json:"truncation,omitempty"`
+	User               *string           `json:"user,omitempty"`
+	// FIXME[matt]
+	// Tools              []tool            `json:"tools,omitempty"`
+	// Text               *textConfig       `json:"text,omitempty"`
+	// Reasoning          *reasoningConfig  `json:"reasoning,omitempty"`
 }
 
 func startSpanFromV1ResponseRequest(ctx context.Context, req requestData) (trace.Span, error) {
 	_, span := tracer.Start(ctx, "openai.chat.completion")
 
-	var v1Req v1ResponseRequest
-	err := json.Unmarshal(req.body, &v1Req)
+	var responseRequest v1ResponseRequest
+	err := json.Unmarshal(req.body, &responseRequest)
 	if err != nil {
-		return span, err
+		return nil, err
 	}
 
-	span.SetAttributes(attribute.String("model", v1Req.Model))
-	span.SetAttributes(attribute.String("input", v1Req.Input))
-	span.SetAttributes(attribute.Float64("temperature", v1Req.Temperature))
+	attrs := []attribute.KeyValue{
+		attribute.String("provider", "openai"),
+		attribute.String("model", responseRequest.Model),
+		attribute.String("input", responseRequest.Input),
+	}
+	span.SetAttributes(attrs...)
 
 	return span, nil
 }
