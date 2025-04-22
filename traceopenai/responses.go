@@ -10,7 +10,70 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-type v1ResponseRequest struct {
+// v1ResponsesTracer is a tracer for the openai v1/responses POST endpoint.
+// See docs here: https://platform.openai.com/docs/api-reference/responses/create
+type v1ResponsesTracer struct{}
+
+func NewV1ResponsesTracer() *v1ResponsesTracer {
+	return &v1ResponsesTracer{}
+}
+
+func (*v1ResponsesTracer) startSpanFromRequest(ctx context.Context, req requestData) (trace.Span, error) {
+	_, span := tracer.Start(ctx, "openai.chat.completion")
+
+	var responseRequest v1ResponsesPostRequest
+	err := json.Unmarshal(req.body, &responseRequest)
+	if err != nil {
+		return nil, err
+	}
+
+	attrs := []attribute.KeyValue{
+		attribute.String("provider", "openai"),
+		attribute.String("model", responseRequest.Model),
+		attribute.String("input", responseRequest.Input),
+	}
+	span.SetAttributes(attrs...)
+
+	return span, nil
+}
+
+func (*v1ResponsesTracer) tagSpanWithResponse(span trace.Span, body []byte) error {
+	var response v1ResponsesPostResponse
+	err := json.Unmarshal(body, &response)
+	if err != nil {
+		return err
+	}
+
+	attrs := []attribute.KeyValue{
+		attribute.String("id", response.ID),
+		attribute.String("model", response.Model),
+		attribute.String("object", response.Object),
+	}
+
+	// Handle Output field which can be string or array
+	if outputStr, ok := response.Output.(string); ok {
+		attrs = append(attrs, attribute.String("output", outputStr))
+	} else if outputArr, ok := response.Output.([]interface{}); ok {
+		// Convert array to string representation
+		outputBytes, err := json.Marshal(outputArr)
+		if err != nil {
+			return err
+		}
+		attrs = append(attrs, attribute.String("output", string(outputBytes)))
+	}
+
+	if response.Metadata != nil {
+		for key, value := range response.Metadata {
+			attrs = append(attrs, attribute.String("metadata."+key, value))
+		}
+	}
+
+	span.SetAttributes(attrs...)
+	return nil
+}
+
+// v1ResponsesPostRequest is the request body for the openai v1/responses POST endpoint.
+type v1ResponsesPostRequest struct {
 	Model              string            `json:"model,omitempty"`
 	Input              string            `json:"input,omitempty"`
 	Include            []string          `json:"include,omitempty"`
@@ -33,41 +96,21 @@ type v1ResponseRequest struct {
 	// Reasoning          *reasoningConfig  `json:"reasoning,omitempty"`
 }
 
-type v1ResponsesTracer struct{}
-
-func NewV1ResponsesTracer() *v1ResponsesTracer {
-	return &v1ResponsesTracer{}
+// v1ResponsesPostResponse is the response body for the openai v1/responses POST endpoint.
+type v1ResponsesPostResponse struct {
+	ID                 string            `json:"id"`
+	Model              string            `json:"model"`
+	Created            int               `json:"created"`
+	Object             string            `json:"object"`
+	Output             interface{}       `json:"output"`
+	Usage              *Usage            `json:"usage,omitempty"`
+	ServiceTier        *string           `json:"service_tier,omitempty"`
+	PreviousResponseID *string           `json:"previous_response_id,omitempty"`
+	Metadata           map[string]string `json:"metadata,omitempty"`
 }
 
-func (*v1ResponsesTracer) startSpanFromRequest(ctx context.Context, req requestData) (trace.Span, error) {
-	// post https://api.openai.com/v1/responses
-	// handles https://platform.openai.com/docs/api-reference/responses/create
-	_, span := tracer.Start(ctx, "openai.chat.completion")
-
-	var responseRequest v1ResponseRequest
-	err := json.Unmarshal(req.body, &responseRequest)
-	if err != nil {
-		return nil, err
-	}
-
-	attrs := []attribute.KeyValue{
-		attribute.String("provider", "openai"),
-		attribute.String("model", responseRequest.Model),
-		attribute.String("input", responseRequest.Input),
-	}
-	span.SetAttributes(attrs...)
-
-	return span, nil
-}
-
-func (*v1ResponsesTracer) tagSpanWithResponse(span trace.Span, body []byte) error {
-	// var responseResponse v1ResponseResponse
-	// err := json.Unmarshal(body, &responseResponse)
-	// if err != nil {
-	// 	return err
-	// }
-
-	// span.SetAttributes(attribute.String("response", string(body)))
-
-	return nil
+type Usage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
 }

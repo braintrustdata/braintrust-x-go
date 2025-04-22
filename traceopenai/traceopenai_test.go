@@ -54,9 +54,47 @@ func TestOpenAIResponsesRequiredParamsOnly(t *testing.T) {
 	assert.Equal(span.Name, "openai.chat.completion")
 
 	valsByKey := toValuesByKey(span.Attributes)
-	assert.Equal(valsByKey["model"].AsString(), "gpt-4o-mini")
-	assert.Equal(valsByKey["provider"].AsString(), "openai")
-	assert.Equal(valsByKey["input"].AsString(), "Hello, world!")
+	assert.Contains(valsByKey["model"].AsString(), TEST_MODEL)
+	assert.Equal("openai", valsByKey["provider"].AsString())
+	assert.Equal("Hello, world!", valsByKey["input"].AsString())
+}
+
+func TestOpenAIResponsesAllFields(t *testing.T) {
+	client, exporter, teardown := setUpTracedClient()
+	defer teardown()
+	assert := assert.New(t)
+
+	input := responses.ResponseNewParamsInputUnion{OfString: openai.String("what is 13+4?")}
+
+	// Test with string output
+	params := responses.ResponseNewParams{
+		Input: input,
+		Model: TEST_MODEL,
+	}
+
+	resp, err := client.Responses.New(context.Background(), params)
+	assert.NoError(err)
+	assert.NotNil(resp)
+
+	// Wait for spans to be exported
+	spans := flushSpans(exporter)
+	if len(spans) == 0 {
+		t.Fatal("No spans were generated")
+	}
+	span := spans[0]
+	assert.Equal(span.Name, "openai.chat.completion")
+
+	valsByKey := toValuesByKey(span.Attributes)
+
+	// Required fields
+	assert.Equal("openai", valsByKey["provider"].AsString())
+	assert.Equal(resp.ID, valsByKey["id"].AsString())
+	assert.Contains(valsByKey["model"].AsString(), TEST_MODEL)
+
+	// Output field
+	outputText := resp.OutputText()
+	assert.Contains(outputText, "17")
+
 }
 
 func toValuesByKey(attrs []attribute.KeyValue) map[string]attribute.Value {
