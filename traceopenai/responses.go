@@ -33,7 +33,15 @@ type v1ResponseRequest struct {
 	// Reasoning          *reasoningConfig  `json:"reasoning,omitempty"`
 }
 
-func startSpanFromV1ResponseRequest(ctx context.Context, req requestData) (trace.Span, error) {
+type v1ResponsesTracer struct{}
+
+func NewV1ResponsesTracer() *v1ResponsesTracer {
+	return &v1ResponsesTracer{}
+}
+
+func (*v1ResponsesTracer) startSpanFromRequest(ctx context.Context, req requestData) (trace.Span, error) {
+	// post https://api.openai.com/v1/responses
+	// handles https://platform.openai.com/docs/api-reference/responses/create
 	_, span := tracer.Start(ctx, "openai.chat.completion")
 
 	var responseRequest v1ResponseRequest
@@ -50,4 +58,16 @@ func startSpanFromV1ResponseRequest(ctx context.Context, req requestData) (trace
 	span.SetAttributes(attrs...)
 
 	return span, nil
+}
+
+func (*v1ResponsesTracer) tagSpanWithResponse(span trace.Span, body []byte) error {
+	// var responseResponse v1ResponseResponse
+	// err := json.Unmarshal(body, &responseResponse)
+	// if err != nil {
+	// 	return err
+	// }
+
+	// span.SetAttributes(attribute.String("response", string(body)))
+
+	return nil
 }
