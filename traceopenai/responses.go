@@ -99,6 +99,34 @@ func (*v1ResponsesTracer) tagSpanWithResponse(span trace.Span, body []byte) erro
 			attrs = append(attrs, attribute.String("metadata."+key, value))
 		}
 	}
+	
+	// Add token usage metrics if present
+	if response.JSON.Usage.IsPresent() {
+		if response.Usage.JSON.InputTokens.IsPresent() {
+			attrs = append(attrs, attribute.Int64("usage.input_tokens", response.Usage.InputTokens))
+		}
+		if response.Usage.JSON.OutputTokens.IsPresent() {
+			attrs = append(attrs, attribute.Int64("usage.output_tokens", response.Usage.OutputTokens))
+		}
+		if response.Usage.JSON.TotalTokens.IsPresent() {
+			attrs = append(attrs, attribute.Int64("usage.total_tokens", response.Usage.TotalTokens))
+		}
+		
+		// Add detailed token metrics if present
+		if response.Usage.JSON.InputTokensDetails.IsPresent() {
+			// Extract any input token details fields that are present
+			if response.Usage.InputTokensDetails.JSON.CachedTokens.IsPresent() {
+				attrs = append(attrs, attribute.Int64("usage.input_tokens_details.cached_tokens", response.Usage.InputTokensDetails.CachedTokens))
+			}
+		}
+		
+		if response.Usage.JSON.OutputTokensDetails.IsPresent() {
+			// Extract any output token details fields that are present
+			if response.Usage.OutputTokensDetails.JSON.ReasoningTokens.IsPresent() {
+				attrs = append(attrs, attribute.Int64("usage.output_tokens_details.reasoning_tokens", response.Usage.OutputTokensDetails.ReasoningTokens))
+			}
+		}
+	}
 
 	span.SetAttributes(attrs...)
 	return nil

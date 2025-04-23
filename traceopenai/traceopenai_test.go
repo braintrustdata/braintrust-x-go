@@ -128,6 +128,15 @@ func TestOpenAIResponsesRequiredParams(t *testing.T) {
 	assert.Equal("openai", valsByKey["provider"].AsString())
 	assert.Equal("What is 13+4?", valsByKey["input"].AsString())
 	assert.Contains(valsByKey["output"].AsString(), "17")
+	
+	// Verify token usage metrics - they must always be present
+	assert.Greater(valsByKey["usage.input_tokens"].AsInt64(), int64(0))
+	assert.Greater(valsByKey["usage.output_tokens"].AsInt64(), int64(0))
+	assert.Greater(valsByKey["usage.total_tokens"].AsInt64(), int64(0))
+	
+	// Verify token detail metrics - they must always be present
+	assert.GreaterOrEqual(valsByKey["usage.input_tokens_details.cached_tokens"].AsInt64(), int64(0))
+	assert.GreaterOrEqual(valsByKey["usage.output_tokens_details.reasoning_tokens"].AsInt64(), int64(0))
 }
 
 func TestOpenAIResponsesKitchenSink(t *testing.T) {
