@@ -9,6 +9,7 @@ import (
 	"net/url"
 
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -50,14 +51,18 @@ func Middleware(req *http.Request, next NextMiddleware) (*http.Response, error) 
 
 	_, span, err = etracer.startSpanFromRequest(req.Context(), reqData)
 	if err != nil {
-		// Proceed without tracing.
+		// Proceed if there's an error in tracing code
 		log.Printf("Error starting span: %v", err)
 	}
 
 	// Continue processing the request.
 	resp, err := next(req)
-	if err != nil && span != nil {
-		span.RecordError(err)
+	if err != nil {
+		if span != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		}
+		return resp, err
 	}
 
 	// Intercept the response body so we can extract data from it.
@@ -70,7 +75,7 @@ func Middleware(req *http.Request, next NextMiddleware) (*http.Response, error) 
 
 	err = etracer.tagSpanWithResponse(span, body)
 	if err != nil {
-		// Still return the response
+		// Proceed if there's an error in tracing code
 		log.Printf("Error tagging span: %v", err)
 	}
 

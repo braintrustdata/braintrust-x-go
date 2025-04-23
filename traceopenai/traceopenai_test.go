@@ -2,6 +2,8 @@ package traceopenai
 
 import (
 	"context"
+	"errors"
+	"net/http"
 	"testing"
 
 	"github.com/openai/openai-go"
@@ -10,14 +12,17 @@ import (
 	"github.com/stretchr/testify/assert"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
 const TEST_MODEL = openai.ChatModelGPT4oMini
 
-func setUpTracedClient(t *testing.T) (openai.Client, *tracetest.InMemoryExporter, func()) {
-	// setup otel - create a new exporter for each test
+// setUpTest is a helper function that sets up a new tracer provider for each test.
+// It returns an openai client, an exporter, and a teardown function.
+func setUpTest(t *testing.T) (openai.Client, *tracetest.InMemoryExporter, func()) {
+	// setup otel to be fully synchronous
 	exporter := tracetest.NewInMemoryExporter()
 	processor := trace.NewSimpleSpanProcessor(exporter)
 
@@ -27,7 +32,7 @@ func setUpTracedClient(t *testing.T) (openai.Client, *tracetest.InMemoryExporter
 	)
 
 	// Get the current global provider before overwriting it
-	originalProvider := otel.GetTracerProvider()
+	original := otel.GetTracerProvider()
 
 	// Set the new provider
 	otel.SetTracerProvider(tp)
@@ -40,7 +45,7 @@ func setUpTracedClient(t *testing.T) (openai.Client, *tracetest.InMemoryExporter
 		}
 
 		// Restore the original provider
-		otel.SetTracerProvider(originalProvider)
+		otel.SetTracerProvider(original)
 	}
 
 	// set up traced openai client
@@ -51,8 +56,52 @@ func setUpTracedClient(t *testing.T) (openai.Client, *tracetest.InMemoryExporter
 	return client, exporter, teardown
 }
 
+func TestError(t *testing.T) {
+	_, exporter, teardown := setUpTest(t)
+	defer teardown()
+	assert := assert.New(t)
+
+	errorware := func(req *http.Request, next NextMiddleware) (*http.Response, error) {
+		return nil, errors.New("ye-olde-test-error")
+	}
+
+	client := openai.NewClient(
+		option.WithMaxRetries(0), // don't retry errors
+		option.WithMiddleware(Middleware),
+		option.WithMiddleware(errorware),
+	)
+
+	resp, err := client.Responses.New(context.Background(), responses.ResponseNewParams{
+		Input: responses.ResponseNewParamsInputUnion{OfString: openai.String("hai")},
+		Model: TEST_MODEL,
+	})
+	assert.Error(err)
+	assert.Nil(resp)
+
+	spans := flushSpans(exporter)
+	assert.Len(spans, 1)
+	span := spans[0]
+
+	assert.Equal("openai.responses.create", span.Name)
+	assert.Equal(codes.Error, span.Status.Code)
+	assert.Contains(span.Status.Description, "ye-olde-test-error")
+
+	events := span.Events
+	assert.Len(events, 1)
+
+	// Find the exception.message attribute that contains our error message
+	var errMessage string
+	for _, attr := range events[0].Attributes {
+		if attr.Key == "exception.message" {
+			errMessage = attr.Value.AsString()
+			break
+		}
+	}
+	assert.Contains(errMessage, "ye-olde-test-error")
+}
+
 func TestOpenAIResponsesRequiredParamsOnly(t *testing.T) {
-	client, exporter, teardown := setUpTracedClient(t)
+	client, exporter, teardown := setUpTest(t)
 	defer teardown()
 	assert := assert.New(t)
 
@@ -69,6 +118,8 @@ func TestOpenAIResponsesRequiredParamsOnly(t *testing.T) {
 	assert.Len(spans, 1)
 	span := spans[0]
 	assert.Equal(span.Name, "openai.responses.create")
+	assert.Equal(codes.Unset, span.Status.Code)
+	assert.Equal("", span.Status.Description)
 
 	valsByKey := toValuesByKey(span.Attributes)
 	assert.Contains(valsByKey["model"].AsString(), TEST_MODEL)
@@ -77,7 +128,7 @@ func TestOpenAIResponsesRequiredParamsOnly(t *testing.T) {
 }
 
 func TestOpenAIResponsesAllFields(t *testing.T) {
-	client, exporter, teardown := setUpTracedClient(t)
+	client, exporter, teardown := setUpTest(t)
 	defer teardown()
 	assert := assert.New(t)
 
@@ -126,15 +177,12 @@ func flushSpans(exporter *tracetest.InMemoryExporter) []tracetest.SpanStub {
 	// Wait a moment for spans to be exported
 	// Get spans without resetting the exporter
 	spans := exporter.GetSpans()
-	// Only reset if spans were actually found
-	if len(spans) > 0 {
-		exporter.Reset()
-	}
+	exporter.Reset()
 	return spans
 }
 
 func TestOTelSetup(t *testing.T) {
-	_, exporter, teardown := setUpTracedClient(t)
+	_, exporter, teardown := setUpTest(t)
 	defer teardown()
 	assert := assert.New(t)
 
