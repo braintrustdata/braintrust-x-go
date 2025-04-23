@@ -22,48 +22,56 @@ func NewV1ResponsesTracer() *v1ResponsesTracer {
 func (*v1ResponsesTracer) startSpanFromRequest(ctx context.Context, req requestData) (context.Context, trace.Span, error) {
 	ctx, span := tracer().Start(ctx, "openai.responses.create")
 
-	var responseRequest v1ResponsesPostRequest
-	err := json.Unmarshal(req.body, &responseRequest)
-	if err != nil {
-		return ctx, nil, err
-	}
-
+	// Start with basic attributes
 	attrs := []attribute.KeyValue{
 		attribute.String("provider", "openai"),
-		attribute.String("model", responseRequest.Model),
-		attribute.String("input", responseRequest.Input),
 	}
 
-	if responseRequest.Instructions != nil {
-		attrs = append(attrs, attribute.String("instructions", *responseRequest.Instructions))
-	}
+	// Parse as a general map
+	var requestMap map[string]interface{}
+	if err := json.Unmarshal(req.body, &requestMap); err == nil {
+		// Extract basic fields from the map
+		if model, ok := requestMap["model"].(string); ok {
+			attrs = append(attrs, attribute.String("model", model))
+		}
 
-	if responseRequest.User != nil {
-		attrs = append(attrs, attribute.String("user", *responseRequest.User))
-	}
+		// Handle input which could be a string or complex type
+		if input, ok := requestMap["input"].(string); ok {
+			attrs = append(attrs, attribute.String("input", input))
+		}
 
-	if responseRequest.Temperature != nil {
-		attrs = append(attrs, attribute.Float64("temperature", *responseRequest.Temperature))
+		// Check for other common fields
+		if instructions, ok := requestMap["instructions"].(string); ok {
+			attrs = append(attrs, attribute.String("instructions", instructions))
+		}
+		
+		if user, ok := requestMap["user"].(string); ok {
+			attrs = append(attrs, attribute.String("user", user))
+		}
+		
+		if temperature, ok := requestMap["temperature"].(float64); ok {
+			attrs = append(attrs, attribute.Float64("temperature", temperature))
+		}
+		
+		if topP, ok := requestMap["top_p"].(float64); ok {
+			attrs = append(attrs, attribute.Float64("top_p", topP))
+		}
+		
+		if parallelToolCalls, ok := requestMap["parallel_tool_calls"].(bool); ok {
+			attrs = append(attrs, attribute.Bool("parallel_tool_calls", parallelToolCalls))
+		}
+		
+		if store, ok := requestMap["store"].(bool); ok {
+			attrs = append(attrs, attribute.Bool("store", store))
+		}
+		
+		if truncation, ok := requestMap["truncation"].(string); ok {
+			attrs = append(attrs, attribute.String("truncation", truncation))
+		}
 	}
-
-	if responseRequest.TopP != nil {
-		attrs = append(attrs, attribute.Float64("top_p", *responseRequest.TopP))
-	}
-
-	if responseRequest.ParallelToolCalls != nil {
-		attrs = append(attrs, attribute.Bool("parallel_tool_calls", *responseRequest.ParallelToolCalls))
-	}
-
-	if responseRequest.Store != nil {
-		attrs = append(attrs, attribute.Bool("store", *responseRequest.Store))
-	}
-
-	if responseRequest.Truncation != nil {
-		attrs = append(attrs, attribute.String("truncation", *responseRequest.Truncation))
-	}
+	// If parsing fails, we just continue with basic attributes
 
 	span.SetAttributes(attrs...)
-
 	return ctx, span, nil
 }
 
@@ -96,26 +104,4 @@ func (*v1ResponsesTracer) tagSpanWithResponse(span trace.Span, body []byte) erro
 	return nil
 }
 
-// v1ResponsesPostRequest is the request body for the openai v1/responses POST endpoint.
-type v1ResponsesPostRequest struct {
-	Model              string            `json:"model,omitempty"`
-	Input              string            `json:"input,omitempty"`
-	Include            []string          `json:"include,omitempty"`
-	Instructions       *string           `json:"instructions,omitempty"`
-	MaxOutputTokens    *int              `json:"max_output_tokens,omitempty"`
-	Metadata           map[string]string `json:"metadata,omitempty"`
-	ParallelToolCalls  *bool             `json:"parallel_tool_calls,omitempty"`
-	PreviousResponseID *string           `json:"previous_response_id,omitempty"`
-	ServiceTier        *string           `json:"service_tier,omitempty"`
-	Store              *bool             `json:"store,omitempty"`
-	Stream             *bool             `json:"stream,omitempty"`
-	Temperature        *float64          `json:"temperature,omitempty"`
-	ToolChoice         *string           `json:"tool_choice,omitempty"`
-	TopP               *float64          `json:"top_p,omitempty"`
-	Truncation         *string           `json:"truncation,omitempty"`
-	User               *string           `json:"user,omitempty"`
-	// FIXME[matt]
-	// Tools              []tool            `json:"tools,omitempty"`
-	// Text               *textConfig       `json:"text,omitempty"`
-	// Reasoning          *reasoningConfig  `json:"reasoning,omitempty"`
-}
+// We're using a generic map-based approach to parse OpenAI requests

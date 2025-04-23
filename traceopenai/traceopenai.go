@@ -44,15 +44,21 @@ func Middleware(req *http.Request, next NextMiddleware) (*http.Response, error) 
 	var etracer endpointTracer = NOOP_ENDPOINT_TRACER
 
 	// Start a span with data parsed from the request.
-	switch req.URL.Path {
-	case "/v1/responses":
-		etracer = NewV1ResponsesTracer()
+	if req.URL != nil {
+		switch req.URL.Path {
+		case "/v1/responses":
+			etracer = NewV1ResponsesTracer()
+		}
 	}
 
-	_, span, err = etracer.startSpanFromRequest(req.Context(), reqData)
+	ctx, newSpan, err := etracer.startSpanFromRequest(req.Context(), reqData)
 	if err != nil {
 		// Proceed if there's an error in tracing code
 		log.Printf("Error starting span: %v", err)
+	} else {
+		span = newSpan
+		// Use the context with the span
+		req = req.WithContext(ctx)
 	}
 
 	// Continue processing the request.
