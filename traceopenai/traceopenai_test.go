@@ -24,33 +24,26 @@ const TEST_MODEL = openai.ChatModelGPT4oMini
 // setUpTest is a helper function that sets up a new tracer provider for each test.
 // It returns an openai client, an exporter, and a teardown function.
 func setUpTest(t *testing.T) (openai.Client, *tracetest.InMemoryExporter, func()) {
+
 	// setup otel to be fully synchronous
 	exporter := tracetest.NewInMemoryExporter()
 	processor := trace.NewSimpleSpanProcessor(exporter)
-
 	tp := trace.NewTracerProvider(
 		trace.WithSampler(trace.AlwaysSample()),
 		trace.WithSpanProcessor(processor), // flushes immediately
 	)
 
-	// Get the current global provider before overwriting it
 	original := otel.GetTracerProvider()
-
-	// Set the new provider
 	otel.SetTracerProvider(tp)
 
 	teardown := func() {
-		// Ensure all spans are flushed
 		err := tp.Shutdown(context.Background())
 		if err != nil {
 			t.Fatalf("Error shutting down tracer provider: %v", err)
 		}
-
-		// Restore the original provider
 		otel.SetTracerProvider(original)
 	}
 
-	// set up traced openai client
 	client := openai.NewClient(
 		option.WithMiddleware(Middleware),
 	)
@@ -128,12 +121,12 @@ func TestOpenAIResponsesRequiredParams(t *testing.T) {
 	assert.Equal("openai", valsByKey["provider"].AsString())
 	assert.Equal("What is 13+4?", valsByKey["input"].AsString())
 	assert.Contains(valsByKey["output"].AsString(), "17")
-	
+
 	// Verify token usage metrics - they must always be present
 	assert.Greater(valsByKey["usage.input_tokens"].AsInt64(), int64(0))
 	assert.Greater(valsByKey["usage.output_tokens"].AsInt64(), int64(0))
 	assert.Greater(valsByKey["usage.total_tokens"].AsInt64(), int64(0))
-	
+
 	// Verify token detail metrics - they must always be present
 	assert.GreaterOrEqual(valsByKey["usage.input_tokens_details.cached_tokens"].AsInt64(), int64(0))
 	assert.GreaterOrEqual(valsByKey["usage.output_tokens_details.reasoning_tokens"].AsInt64(), int64(0))
@@ -207,6 +200,59 @@ func flushSpans(exporter *tracetest.InMemoryExporter) []tracetest.SpanStub {
 	spans := exporter.GetSpans()
 	exporter.Reset()
 	return spans
+}
+
+func TestOpenAIResponsesWithListInput(t *testing.T) {
+	client, exporter, teardown := setUpTest(t)
+	defer teardown()
+	assert := assert.New(t)
+	require := require.New(t)
+
+	// Create a list of message inputs
+	inputMessages := []responses.ResponseInputItemUnionParam{
+		responses.ResponseInputItemParamOfMessage("What is 2+2?", "user"),
+		responses.ResponseInputItemParamOfMessage("4", "assistant"),
+		responses.ResponseInputItemParamOfMessage("What is 3+5?", "user"),
+	}
+
+	// Create the params with list input
+	params := responses.ResponseNewParams{
+		Input: responses.ResponseNewParamsInputUnion{
+			OfInputItemList: inputMessages,
+		},
+		Model: TEST_MODEL,
+	}
+
+	// Call the API
+	resp, err := client.Responses.New(context.Background(), params)
+	require.NoError(err)
+	require.NotNil(resp)
+
+	// Wait for spans to be exported
+	spans := flushSpans(exporter)
+	require.Len(spans, 1)
+	span := spans[0]
+
+	// Check span attributes
+	assert.Equal("openai.responses.create", span.Name)
+	assert.Equal(codes.Unset, span.Status.Code)
+
+	valsByKey := toValuesByKey(span.Attributes)
+	assert.Contains(valsByKey["model"].AsString(), TEST_MODEL)
+	assert.Equal("openai", valsByKey["provider"].AsString())
+
+	// Check for valid input - the input field should contain the conversation
+	assert.Contains(valsByKey["input"].AsString(), "What is 2+2")
+	assert.Contains(valsByKey["input"].AsString(), "What is 3+5")
+
+	// Check for valid output - should contain the answer to the last question
+	assert.Contains(valsByKey["output"].AsString(), "8")
+
+	assert.Greater(valsByKey["usage.input_tokens"].AsInt64(), int64(0))
+	assert.Greater(valsByKey["usage.output_tokens"].AsInt64(), int64(0))
+	assert.Greater(valsByKey["usage.total_tokens"].AsInt64(), int64(0))
+	assert.GreaterOrEqual(valsByKey["usage.input_tokens_details.cached_tokens"].AsInt64(), int64(0))
+	assert.GreaterOrEqual(valsByKey["usage.output_tokens_details.reasoning_tokens"].AsInt64(), int64(0))
 }
 
 func TestOTelSetup(t *testing.T) {
