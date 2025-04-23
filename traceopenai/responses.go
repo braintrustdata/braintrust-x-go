@@ -32,6 +32,35 @@ func (*v1ResponsesTracer) startSpanFromRequest(ctx context.Context, req requestD
 		attribute.String("model", responseRequest.Model),
 		attribute.String("input", responseRequest.Input),
 	}
+
+	if responseRequest.Instructions != nil {
+		attrs = append(attrs, attribute.String("instructions", *responseRequest.Instructions))
+	}
+
+	if responseRequest.User != nil {
+		attrs = append(attrs, attribute.String("user", *responseRequest.User))
+	}
+
+	if responseRequest.Temperature != nil {
+		attrs = append(attrs, attribute.Float64("temperature", *responseRequest.Temperature))
+	}
+
+	if responseRequest.TopP != nil {
+		attrs = append(attrs, attribute.Float64("top_p", *responseRequest.TopP))
+	}
+
+	if responseRequest.ParallelToolCalls != nil {
+		attrs = append(attrs, attribute.Bool("parallel_tool_calls", *responseRequest.ParallelToolCalls))
+	}
+
+	if responseRequest.Store != nil {
+		attrs = append(attrs, attribute.Bool("store", *responseRequest.Store))
+	}
+
+	if responseRequest.Truncation != nil {
+		attrs = append(attrs, attribute.String("truncation", *responseRequest.Truncation))
+	}
+
 	span.SetAttributes(attrs...)
 
 	return ctx, span, nil
@@ -86,10 +115,11 @@ type v1ResponsesPostRequest struct {
 	Store              *bool             `json:"store,omitempty"`
 	Stream             *bool             `json:"stream,omitempty"`
 	Temperature        *float64          `json:"temperature,omitempty"`
-	ToolChoice         string            `json:"tool_choice,omitempty"`
+	ToolChoice         *string           `json:"tool_choice,omitempty"`
 	TopP               *float64          `json:"top_p,omitempty"`
 	Truncation         *string           `json:"truncation,omitempty"`
 	User               *string           `json:"user,omitempty"`
+	Usage              *Usage            `json:"usage,omitempty"`
 	// FIXME[matt]
 	// Tools              []tool            `json:"tools,omitempty"`
 	// Text               *textConfig       `json:"text,omitempty"`

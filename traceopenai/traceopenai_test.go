@@ -8,8 +8,10 @@ import (
 
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
+	"github.com/openai/openai-go/packages/param"
 	"github.com/openai/openai-go/responses"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -90,23 +92,23 @@ func TestError(t *testing.T) {
 	assert.Len(events, 1)
 
 	// Find the exception.message attribute that contains our error message
-	var errMessage string
+	var errMsg string
 	for _, attr := range events[0].Attributes {
 		if attr.Key == "exception.message" {
-			errMessage = attr.Value.AsString()
+			errMsg = attr.Value.AsString()
 			break
 		}
 	}
-	assert.Contains(errMessage, "ye-olde-test-error")
+	assert.Contains(errMsg, "ye-olde-test-error")
 }
 
-func TestOpenAIResponsesRequiredParamsOnly(t *testing.T) {
+func TestOpenAIResponsesRequiredParams(t *testing.T) {
 	client, exporter, teardown := setUpTest(t)
 	defer teardown()
 	assert := assert.New(t)
 
 	params := responses.ResponseNewParams{
-		Input: responses.ResponseNewParamsInputUnion{OfString: openai.String("Hello, world!")},
+		Input: responses.ResponseNewParamsInputUnion{OfString: openai.String("What is 13+4?")},
 		Model: TEST_MODEL,
 	}
 
@@ -124,31 +126,40 @@ func TestOpenAIResponsesRequiredParamsOnly(t *testing.T) {
 	valsByKey := toValuesByKey(span.Attributes)
 	assert.Contains(valsByKey["model"].AsString(), TEST_MODEL)
 	assert.Equal("openai", valsByKey["provider"].AsString())
-	assert.Equal("Hello, world!", valsByKey["input"].AsString())
+	assert.Equal("What is 13+4?", valsByKey["input"].AsString())
+	assert.Contains(valsByKey["output"].AsString(), "17")
 }
 
-func TestOpenAIResponsesAllFields(t *testing.T) {
+func TestOpenAIResponsesKitchenSink(t *testing.T) {
 	client, exporter, teardown := setUpTest(t)
 	defer teardown()
 	assert := assert.New(t)
+	require := require.New(t)
 
 	input := responses.ResponseNewParamsInputUnion{OfString: openai.String("what is 13+4?")}
 
 	// Test with string output
 	params := responses.ResponseNewParams{
-		Input: input,
-		Model: TEST_MODEL,
+		Input:             input,
+		Model:             TEST_MODEL,
+		Instructions:      openai.String("Answer the question in a concise manner."),
+		MaxOutputTokens:   openai.Int(100),
+		ParallelToolCalls: openai.Bool(true),
+		Store:             openai.Bool(false),
+		Truncation:        responses.ResponseNewParamsTruncationAuto,
+		Temperature:       param.Opt[float64]{Value: 0.5},
+		TopP:              param.Opt[float64]{Value: 1.0},
+		User:              openai.String("test user"),
 	}
 
 	resp, err := client.Responses.New(context.Background(), params)
-	assert.NoError(err)
-	assert.NotNil(resp)
+	require.Nil(err)
+	require.NotNil(resp)
 
 	// Wait for spans to be exported
 	spans := flushSpans(exporter)
-	if len(spans) == 0 {
-		t.Fatal("No spans were generated")
-	}
+	require.Len(spans, 1)
+
 	span := spans[0]
 	assert.Equal(span.Name, "openai.responses.create")
 
@@ -163,6 +174,14 @@ func TestOpenAIResponsesAllFields(t *testing.T) {
 	outputText := resp.OutputText()
 	assert.Contains(outputText, "17")
 
+	// Instructions field
+	assert.Equal("Answer the question in a concise manner.", valsByKey["instructions"].AsString())
+	assert.Equal("test user", valsByKey["user"].AsString())
+	assert.Equal(0.5, valsByKey["temperature"].AsFloat64())
+	assert.Equal(1.0, valsByKey["top_p"].AsFloat64())
+	assert.Equal(true, valsByKey["parallel_tool_calls"].AsBool())
+	assert.Equal(false, valsByKey["store"].AsBool())
+	assert.Equal("auto", valsByKey["truncation"].AsString())
 }
 
 func toValuesByKey(attrs []attribute.KeyValue) map[string]attribute.Value {
