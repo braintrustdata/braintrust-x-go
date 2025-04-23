@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 
@@ -11,7 +12,9 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-var tracer = otel.Tracer("braintrust")
+func tracer() trace.Tracer {
+	return otel.GetTracerProvider().Tracer("braintrust")
+}
 
 type NextMiddleware = func(req *http.Request) (*http.Response, error)
 
@@ -23,7 +26,6 @@ func Middleware(req *http.Request, next NextMiddleware) (*http.Response, error) 
 		}
 	}()
 
-	var err error
 	reqData := requestData{
 		url:    req.URL,
 		header: req.Header,
@@ -32,12 +34,13 @@ func Middleware(req *http.Request, next NextMiddleware) (*http.Response, error) 
 
 	// Intercept the request body so we can parse it and pass it along for real
 	// processing.
+	var err error
 	reqData.body, req.Body, err = cloneBody(req.Body)
 	if err != nil {
 		return nil, err
 	}
 
-	var etracer endpointTracer = &noopTracer{}
+	var etracer endpointTracer = NOOP_ENDPOINT_TRACER
 
 	// Start a span with data parsed from the request.
 	switch req.URL.Path {
@@ -45,7 +48,11 @@ func Middleware(req *http.Request, next NextMiddleware) (*http.Response, error) 
 		etracer = NewV1ResponsesTracer()
 	}
 
-	span, err = etracer.startSpanFromRequest(req.Context(), reqData)
+	_, span, err = etracer.startSpanFromRequest(req.Context(), reqData)
+	if err != nil {
+		// Proceed without tracing.
+		log.Printf("Error starting span: %v", err)
+	}
 
 	// Continue processing the request.
 	resp, err := next(req)
@@ -57,12 +64,14 @@ func Middleware(req *http.Request, next NextMiddleware) (*http.Response, error) 
 	var body []byte
 	body, resp.Body, err = cloneBody(resp.Body)
 	if err != nil {
+		// I think we have to return an error here
 		return resp, err
 	}
 
 	err = etracer.tagSpanWithResponse(span, body)
 	if err != nil {
-		return resp, err
+		// Still return the response
+		log.Printf("Error tagging span: %v", err)
 	}
 
 	return resp, nil
@@ -86,19 +95,20 @@ type requestData struct {
 }
 
 type endpointTracer interface {
-	startSpanFromRequest(ctx context.Context, req requestData) (trace.Span, error)
+	startSpanFromRequest(ctx context.Context, req requestData) (context.Context, trace.Span, error)
 	tagSpanWithResponse(span trace.Span, body []byte) error
 }
 
 // noopTracer is an endpoint tracer that does nothing.
 type noopTracer struct{}
 
-func (t *noopTracer) startSpanFromRequest(ctx context.Context, req requestData) (trace.Span, error) {
-	return nil, nil
+func (*noopTracer) startSpanFromRequest(ctx context.Context, req requestData) (context.Context, trace.Span, error) {
+	return ctx, nil, nil
 }
 
-func (t *noopTracer) tagSpanWithResponse(span trace.Span, body []byte) error {
+func (*noopTracer) tagSpanWithResponse(span trace.Span, body []byte) error {
 	return nil
 }
 
 var _ endpointTracer = &noopTracer{}
+var NOOP_ENDPOINT_TRACER = &noopTracer{}

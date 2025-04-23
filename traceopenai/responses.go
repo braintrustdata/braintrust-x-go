@@ -18,13 +18,13 @@ func NewV1ResponsesTracer() *v1ResponsesTracer {
 	return &v1ResponsesTracer{}
 }
 
-func (*v1ResponsesTracer) startSpanFromRequest(ctx context.Context, req requestData) (trace.Span, error) {
-	_, span := tracer.Start(ctx, "openai.chat.completion")
+func (*v1ResponsesTracer) startSpanFromRequest(ctx context.Context, req requestData) (context.Context, trace.Span, error) {
+	ctx, span := tracer().Start(ctx, "openai.responses.create")
 
 	var responseRequest v1ResponsesPostRequest
 	err := json.Unmarshal(req.body, &responseRequest)
 	if err != nil {
-		return nil, err
+		return ctx, nil, err
 	}
 
 	attrs := []attribute.KeyValue{
@@ -34,7 +34,7 @@ func (*v1ResponsesTracer) startSpanFromRequest(ctx context.Context, req requestD
 	}
 	span.SetAttributes(attrs...)
 
-	return span, nil
+	return ctx, span, nil
 }
 
 func (*v1ResponsesTracer) tagSpanWithResponse(span trace.Span, body []byte) error {
