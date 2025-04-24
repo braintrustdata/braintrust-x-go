@@ -5,6 +5,7 @@ package traceopenai
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	"github.com/openai/openai-go/responses"
 	"go.opentelemetry.io/otel/attribute"
@@ -19,8 +20,8 @@ func NewV1ResponsesTracer() *v1ResponsesTracer {
 	return &v1ResponsesTracer{}
 }
 
-func (*v1ResponsesTracer) startSpanFromRequest(ctx context.Context, req requestData) (context.Context, trace.Span, error) {
-	ctx, span := tracer().Start(ctx, "openai.responses.create")
+func (*v1ResponsesTracer) startSpanFromRequest(ctx context.Context, t time.Time, body []byte) (context.Context, trace.Span, error) {
+	ctx, span := tracer().Start(ctx, "openai.responses.create", trace.WithTimestamp(t))
 
 	// Start with basic attributes
 	attrs := []attribute.KeyValue{
@@ -28,44 +29,44 @@ func (*v1ResponsesTracer) startSpanFromRequest(ctx context.Context, req requestD
 	}
 
 	// Parse as a general map
-	var requestMap map[string]interface{}
-	if err := json.Unmarshal(req.body, &requestMap); err == nil {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(body, &raw); err == nil {
 		// Extract basic fields from the map
-		if model, ok := requestMap["model"].(string); ok {
-			attrs = append(attrs, attribute.String("model", model))
+		if model, ok := raw["model"].(string); ok {
+			span.SetAttributes(attribute.String("model", model))
 		}
 
 		// Handle input which could be a string or complex type
-		if input, ok := requestMap["input"].(string); ok {
+		if input, ok := raw["input"].(string); ok {
 			attrs = append(attrs, attribute.String("input", input))
 		}
 
 		// Check for other common fields
-		if instructions, ok := requestMap["instructions"].(string); ok {
+		if instructions, ok := raw["instructions"].(string); ok {
 			attrs = append(attrs, attribute.String("instructions", instructions))
 		}
-		
-		if user, ok := requestMap["user"].(string); ok {
+
+		if user, ok := raw["user"].(string); ok {
 			attrs = append(attrs, attribute.String("user", user))
 		}
-		
-		if temperature, ok := requestMap["temperature"].(float64); ok {
+
+		if temperature, ok := raw["temperature"].(float64); ok {
 			attrs = append(attrs, attribute.Float64("temperature", temperature))
 		}
-		
-		if topP, ok := requestMap["top_p"].(float64); ok {
+
+		if topP, ok := raw["top_p"].(float64); ok {
 			attrs = append(attrs, attribute.Float64("top_p", topP))
 		}
-		
-		if parallelToolCalls, ok := requestMap["parallel_tool_calls"].(bool); ok {
+
+		if parallelToolCalls, ok := raw["parallel_tool_calls"].(bool); ok {
 			attrs = append(attrs, attribute.Bool("parallel_tool_calls", parallelToolCalls))
 		}
-		
-		if store, ok := requestMap["store"].(bool); ok {
+
+		if store, ok := raw["store"].(bool); ok {
 			attrs = append(attrs, attribute.Bool("store", store))
 		}
-		
-		if truncation, ok := requestMap["truncation"].(string); ok {
+
+		if truncation, ok := raw["truncation"].(string); ok {
 			attrs = append(attrs, attribute.String("truncation", truncation))
 		}
 	}
@@ -99,37 +100,9 @@ func (*v1ResponsesTracer) tagSpanWithResponse(span trace.Span, body []byte) erro
 			attrs = append(attrs, attribute.String("metadata."+key, value))
 		}
 	}
-	
-	// Add token usage metrics if present
-	if response.JSON.Usage.IsPresent() {
-		if response.Usage.JSON.InputTokens.IsPresent() {
-			attrs = append(attrs, attribute.Int64("usage.input_tokens", response.Usage.InputTokens))
-		}
-		if response.Usage.JSON.OutputTokens.IsPresent() {
-			attrs = append(attrs, attribute.Int64("usage.output_tokens", response.Usage.OutputTokens))
-		}
-		if response.Usage.JSON.TotalTokens.IsPresent() {
-			attrs = append(attrs, attribute.Int64("usage.total_tokens", response.Usage.TotalTokens))
-		}
-		
-		// Add detailed token metrics if present
-		if response.Usage.JSON.InputTokensDetails.IsPresent() {
-			// Extract any input token details fields that are present
-			if response.Usage.InputTokensDetails.JSON.CachedTokens.IsPresent() {
-				attrs = append(attrs, attribute.Int64("usage.input_tokens_details.cached_tokens", response.Usage.InputTokensDetails.CachedTokens))
-			}
-		}
-		
-		if response.Usage.JSON.OutputTokensDetails.IsPresent() {
-			// Extract any output token details fields that are present
-			if response.Usage.OutputTokensDetails.JSON.ReasoningTokens.IsPresent() {
-				attrs = append(attrs, attribute.Int64("usage.output_tokens_details.reasoning_tokens", response.Usage.OutputTokensDetails.ReasoningTokens))
-			}
-		}
-	}
 
 	span.SetAttributes(attrs...)
 	return nil
 }
 
-// We're using a generic map-based approach to parse OpenAI requests
+var _ requestTracer = &v1ResponsesTracer{}

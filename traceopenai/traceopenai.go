@@ -6,7 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"net/url"
+	"time"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"
@@ -20,68 +20,54 @@ func tracer() trace.Tracer {
 type NextMiddleware = func(req *http.Request) (*http.Response, error)
 
 func Middleware(req *http.Request, next NextMiddleware) (*http.Response, error) {
-	var span trace.Span = nil
-	defer func() {
-		if span != nil {
-			span.End()
-		}
-	}()
+	start := time.Now()
 
-	reqData := requestData{
-		url:    req.URL,
-		header: req.Header,
-		body:   nil,
-	}
-
-	// Intercept the request body so we can parse it and pass it along for real
-	// processing.
+	// Intercept the request body so we can parse it and still pass it along.
 	var err error
-	reqData.body, req.Body, err = cloneBody(req.Body)
+	var body []byte
+	body, req.Body, err = cloneBody(req.Body)
 	if err != nil {
 		return nil, err
 	}
 
-	var etracer endpointTracer = NOOP_ENDPOINT_TRACER
-
 	// Start a span with data parsed from the request.
+	var reqTracer requestTracer
 	if req.URL != nil {
 		switch req.URL.Path {
 		case "/v1/responses":
-			etracer = NewV1ResponsesTracer()
+			reqTracer = NewV1ResponsesTracer()
+		default:
+			reqTracer = NewNoopRequestTracer()
 		}
 	}
 
-	ctx, newSpan, err := etracer.startSpanFromRequest(req.Context(), reqData)
+	ctx, span, err := reqTracer.startSpanFromRequest(req.Context(), start, body)
+	defer func() {
+		span.End()
+	}()
+	req = req.WithContext(ctx)
 	if err != nil {
 		// Proceed if there's an error in tracing code
 		log.Printf("Error starting span: %v", err)
-	} else {
-		span = newSpan
-		// Use the context with the span
-		req = req.WithContext(ctx)
 	}
 
 	// Continue processing the request.
 	resp, err := next(req)
 	if err != nil {
-		if span != nil {
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
-		}
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return resp, err
 	}
 
-	// Intercept the response body so we can extract data from it.
-	var body []byte
+	// Intercept the response body so we can parse and return it.
 	body, resp.Body, err = cloneBody(resp.Body)
 	if err != nil {
-		// I think we have to return an error here
 		return resp, err
 	}
 
-	err = etracer.tagSpanWithResponse(span, body)
+	err = reqTracer.tagSpanWithResponse(span, body)
 	if err != nil {
-		// Proceed if there's an error in tracing code
+		// Don't fail for tracing errors.
 		log.Printf("Error tagging span: %v", err)
 	}
 
@@ -99,27 +85,25 @@ func cloneBody(r io.ReadCloser) ([]byte, io.ReadCloser, error) {
 	return bodyBytes, io.NopCloser(bytes.NewReader(bodyBytes)), nil
 }
 
-type requestData struct {
-	url    *url.URL
-	body   []byte
-	header http.Header
-}
-
-type endpointTracer interface {
-	startSpanFromRequest(ctx context.Context, req requestData) (context.Context, trace.Span, error)
+type requestTracer interface {
+	startSpanFromRequest(ctx context.Context, start time.Time, body []byte) (context.Context, trace.Span, error)
 	tagSpanWithResponse(span trace.Span, body []byte) error
 }
 
-// noopTracer is an endpoint tracer that does nothing.
-type noopTracer struct{}
+// noopRequestTracer is an endpoint tracer that doesn't record any tracing data.
+type noopRequestTracer struct{}
 
-func (*noopTracer) startSpanFromRequest(ctx context.Context, req requestData) (context.Context, trace.Span, error) {
-	return ctx, nil, nil
+func NewNoopRequestTracer() *noopRequestTracer {
+	return &noopRequestTracer{}
 }
 
-func (*noopTracer) tagSpanWithResponse(span trace.Span, body []byte) error {
+func (*noopRequestTracer) startSpanFromRequest(ctx context.Context, start time.Time, body []byte) (context.Context, trace.Span, error) {
+	span := trace.SpanFromContext(context.Background()) // create a non-recording span
+	return ctx, span, nil
+}
+
+func (*noopRequestTracer) tagSpanWithResponse(span trace.Span, body []byte) error {
 	return nil
 }
 
-var _ endpointTracer = &noopTracer{}
-var NOOP_ENDPOINT_TRACER = &noopTracer{}
+var _ requestTracer = &noopRequestTracer{}
