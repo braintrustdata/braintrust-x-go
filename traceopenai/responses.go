@@ -21,58 +21,50 @@ func NewV1ResponsesTracer() *v1ResponsesTracer {
 }
 
 func (*v1ResponsesTracer) startSpanFromRequest(ctx context.Context, t time.Time, body []byte) (context.Context, trace.Span, error) {
-	ctx, span := tracer().Start(ctx, "openai.responses.create", trace.WithTimestamp(t))
+	ctx, span := tracer().Start(
+		ctx,
+		"openai.responses.create",
+		trace.WithTimestamp(t),
+		trace.WithAttributes(attribute.String("provider", "openai")),
+	)
 
-	// Start with basic attributes
-	attrs := []attribute.KeyValue{
-		attribute.String("provider", "openai"),
+	// handle simple fields here.
+	fields := []struct{ name, kind string }{
+		{"model", "string"},
+		{"instructions", "string"},
+		{"user", "string"},
+		{"truncation", "string"},
+		{"input", "string"},
+		{"temperature", "float64"},
+		{"top_p", "float64"},
+		{"parallel_tool_calls", "bool"},
+		{"store", "bool"},
 	}
 
-	// Parse as a general map
 	var raw map[string]interface{}
-	if err := json.Unmarshal(body, &raw); err == nil {
-		// Extract basic fields from the map
-		if model, ok := raw["model"].(string); ok {
-			span.SetAttributes(attribute.String("model", model))
-		}
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return ctx, span, err
+	}
 
-		// Handle input which could be a string or complex type
-		if input, ok := raw["input"].(string); ok {
-			attrs = append(attrs, attribute.String("input", input))
-		}
-
-		// Check for other common fields
-		if instructions, ok := raw["instructions"].(string); ok {
-			attrs = append(attrs, attribute.String("instructions", instructions))
-		}
-
-		if user, ok := raw["user"].(string); ok {
-			attrs = append(attrs, attribute.String("user", user))
-		}
-
-		if temperature, ok := raw["temperature"].(float64); ok {
-			attrs = append(attrs, attribute.Float64("temperature", temperature))
-		}
-
-		if topP, ok := raw["top_p"].(float64); ok {
-			attrs = append(attrs, attribute.Float64("top_p", topP))
-		}
-
-		if parallelToolCalls, ok := raw["parallel_tool_calls"].(bool); ok {
-			attrs = append(attrs, attribute.Bool("parallel_tool_calls", parallelToolCalls))
-		}
-
-		if store, ok := raw["store"].(bool); ok {
-			attrs = append(attrs, attribute.Bool("store", store))
-		}
-
-		if truncation, ok := raw["truncation"].(string); ok {
-			attrs = append(attrs, attribute.String("truncation", truncation))
+	for _, field := range fields {
+		if value, exists := raw[field.name]; exists {
+			switch field.kind {
+			case "string":
+				if v, ok := value.(string); ok {
+					span.SetAttributes(attribute.String(field.name, v))
+				}
+			case "float64":
+				if v, ok := value.(float64); ok {
+					span.SetAttributes(attribute.Float64(field.name, v))
+				}
+			case "bool":
+				if v, ok := value.(bool); ok {
+					span.SetAttributes(attribute.Bool(field.name, v))
+				}
+			}
 		}
 	}
-	// If parsing fails, we just continue with basic attributes
 
-	span.SetAttributes(attrs...)
 	return ctx, span, nil
 }
 
