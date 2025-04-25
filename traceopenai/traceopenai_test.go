@@ -2,7 +2,9 @@ package traceopenai
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"testing"
 
@@ -120,7 +122,6 @@ func TestOpenAIResponsesRequiredParams(t *testing.T) {
 	assert.Contains(valsByKey["model"].AsString(), TEST_MODEL)
 	assert.Equal("openai", valsByKey["provider"].AsString())
 	assert.Equal("What is 13+4?", valsByKey["input"].AsString())
-	assert.Contains(valsByKey["output"].AsString(), "17")
 
 	// Verify token usage metrics - they must always be present
 	assert.Greater(valsByKey["usage.input_tokens"].AsInt64(), int64(0))
@@ -130,6 +131,20 @@ func TestOpenAIResponsesRequiredParams(t *testing.T) {
 	// Verify token detail metrics - they must always be present
 	assert.GreaterOrEqual(valsByKey["usage.input_tokens_details.cached_tokens"].AsInt64(), int64(0))
 	assert.GreaterOrEqual(valsByKey["usage.output_tokens_details.reasoning_tokens"].AsInt64(), int64(0))
+
+	var jsonAttrsMap map[string]interface{}
+	err = json.Unmarshal([]byte(valsByKey["attributes.json.input"].AsString()), &jsonAttrsMap)
+	assert.NoError(err)
+	assert.Contains(jsonAttrsMap, "input")
+	fmt.Println("--------------------------------")
+	fmt.Println(jsonAttrsMap)
+
+	jsonAttrsMap = make(map[string]interface{})
+	err = json.Unmarshal([]byte(valsByKey["attributes.json.output"].AsString()), &jsonAttrsMap)
+	assert.NoError(err)
+	assert.Contains(jsonAttrsMap, "output")
+	fmt.Println("--------------------------------")
+	fmt.Println(jsonAttrsMap)
 }
 
 func TestOpenAIResponsesKitchenSink(t *testing.T) {

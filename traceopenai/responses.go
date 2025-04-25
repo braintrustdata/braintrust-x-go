@@ -5,7 +5,6 @@ package traceopenai
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -34,19 +33,23 @@ func (*v1ResponsesTracer) startSpanFromRequest(ctx context.Context, t time.Time,
 		{"instructions", "string"},
 		{"user", "string"},
 		{"truncation", "string"},
-		{"input", "string"},
+		{"input", "struct"},
+		{"output", "struct"},
 		{"service_tier", "string"},
 		{"temperature", "float64"},
 		{"top_p", "float64"},
 		{"parallel_tool_calls", "bool"},
 		{"store", "bool"},
-		{"tools", "json"},
+		{"tools", "struct"},
 	}
 
 	var raw map[string]interface{}
 	if err := json.Unmarshal(body, &raw); err != nil {
 		return ctx, span, err
 	}
+
+	// keep a list of structs that must JSON encoded (because otel doesn't support structs)
+	structs := make(map[string]interface{})
 
 	// handle simple fields here.
 	for _, field := range fields {
@@ -64,24 +67,27 @@ func (*v1ResponsesTracer) startSpanFromRequest(ctx context.Context, t time.Time,
 				if v, ok := value.(bool); ok {
 					span.SetAttributes(attribute.Bool(field.name, v))
 				}
-			case "json":
-				if v, ok := value.(map[string]interface{}); ok {
-					jsonBytes, err := json.Marshal(v)
-					if err != nil {
-						return ctx, span, err
-					}
-					// I don't see a way around this.
-					span.SetAttributes(attribute.String(field.name, string(jsonBytes)))
-				}
+			case "struct":
+				structs[field.name] = value
 			}
 		}
+	}
+
+	if 0 < len(structs) {
+		// otel doesn't support structs, so we need to marshal them to JSON and submit them
+		// as string attributes.
+		sb, err := json.Marshal(structs)
+		if err != nil {
+			return ctx, span, err
+		}
+		span.SetAttributes(attribute.String("attributes.json.input", string(sb)))
 	}
 
 	return ctx, span, nil
 }
 
 func (*v1ResponsesTracer) tagSpanWithResponse(span trace.Span, body []byte) error {
-	fmt.Println("body", string(body))
+	//fmt.Println("body", string(body))
 
 	var raw map[string]interface{}
 	err := json.Unmarshal(body, &raw)
@@ -116,13 +122,19 @@ func (*v1ResponsesTracer) tagSpanWithResponse(span trace.Span, body []byte) erro
 		}
 	}
 
-	// Handle output text - could be in different formats
-	if output, ok := raw["output"].(map[string]interface{}); ok {
-		if text, ok := output["text"].(string); ok {
-			attrs = append(attrs, attribute.String("output", text))
+	structs := make(map[string]interface{})
+	for _, k := range []string{"output"} {
+		if v, ok := raw[k]; ok {
+			structs[k] = v
 		}
-	} else if output, ok := raw["output"].(string); ok {
-		attrs = append(attrs, attribute.String("output", output))
+	}
+
+	if 0 < len(structs) {
+		sb, err := json.Marshal(structs)
+		if err != nil {
+			return err
+		}
+		attrs = append(attrs, attribute.String("attributes.json.output", string(sb)))
 	}
 
 	// Handle metadata if present
