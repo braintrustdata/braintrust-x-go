@@ -91,7 +91,17 @@ func main() {
 
 	recommender := NewRecommender(client)
 
-	rec, err := recommender.getDrinkRec(ctx, "beer", "chill", "11231")
+	ctx, span := tracer.Start(ctx, "recommendations")
+	defer span.End()
+
+	rec, err := recommender.getFoodRec(ctx, "pizza", "11231")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Println(rec)
+
+	rec, err = recommender.getDrinkRec(ctx, "beer", "chill", "11231")
 	if err != nil {
 		log.Fatal(err)
 	}

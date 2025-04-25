@@ -31,13 +31,13 @@ func Middleware(req *http.Request, next NextMiddleware) (*http.Response, error) 
 	}
 
 	// Start a span with data parsed from the request.
-	var reqTracer requestTracer
+	var reqTracer httpTracer
 	if req.URL != nil {
 		switch req.URL.Path {
 		case "/v1/responses":
 			reqTracer = NewV1ResponsesTracer()
 		default:
-			reqTracer = NewNoopRequestTracer()
+			reqTracer = NewNoopHTTPTracer()
 		}
 	}
 
@@ -85,25 +85,25 @@ func cloneBody(r io.ReadCloser) ([]byte, io.ReadCloser, error) {
 	return bodyBytes, io.NopCloser(bytes.NewReader(bodyBytes)), nil
 }
 
-type requestTracer interface {
+type httpTracer interface {
 	startSpanFromRequest(ctx context.Context, start time.Time, body []byte) (context.Context, trace.Span, error)
 	tagSpanWithResponse(span trace.Span, body []byte) error
 }
 
-// noopRequestTracer is an endpoint tracer that doesn't record any tracing data.
-type noopRequestTracer struct{}
+// noopHTTPTracer is an httpTracer that doesn't record any tracing data.
+type noopHTTPTracer struct{}
 
-func NewNoopRequestTracer() *noopRequestTracer {
-	return &noopRequestTracer{}
+func NewNoopHTTPTracer() *noopHTTPTracer {
+	return &noopHTTPTracer{}
 }
 
-func (*noopRequestTracer) startSpanFromRequest(ctx context.Context, start time.Time, body []byte) (context.Context, trace.Span, error) {
+func (*noopHTTPTracer) startSpanFromRequest(ctx context.Context, start time.Time, body []byte) (context.Context, trace.Span, error) {
 	span := trace.SpanFromContext(context.Background()) // create a non-recording span
 	return ctx, span, nil
 }
 
-func (*noopRequestTracer) tagSpanWithResponse(span trace.Span, body []byte) error {
+func (*noopHTTPTracer) tagSpanWithResponse(span trace.Span, body []byte) error {
 	return nil
 }
 
-var _ requestTracer = &noopRequestTracer{}
+var _ httpTracer = &noopHTTPTracer{}
