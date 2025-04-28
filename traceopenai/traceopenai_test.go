@@ -213,6 +213,49 @@ func flushSpans(exporter *tracetest.InMemoryExporter) []tracetest.SpanStub {
 	return spans
 }
 
+func TestOpenAIResponsesStreaming(t *testing.T) {
+	client, exporter, teardown := setUpTest(t)
+	defer teardown()
+	assert, require := assert.New(t), require.New(t)
+
+	ctx := context.Background()
+	question := "Can you return me a list of the first 15 fibonacci numbers?"
+
+	stream := client.Responses.NewStreaming(ctx, responses.ResponseNewParams{
+		Input: responses.ResponseNewParamsInputUnion{OfString: openai.String(question)},
+		Model: openai.ChatModelGPT4,
+	})
+
+	var completeText string
+
+	for stream.Next() {
+		data := stream.Current()
+		if data.JSON.Text.IsPresent() {
+			completeText = data.Text
+			break
+		}
+	}
+
+	spans := flushSpans(exporter)
+	require.Len(spans, 1)
+	span := spans[0]
+	assert.Equal(span.Name, "openai.responses.create")
+	assert.Equal(codes.Unset, span.Status.Code)
+	assert.Equal("", span.Status.Description)
+
+	valsByKey := toValuesByKey(span.Attributes)
+	for _, i := range []string{"1", "2", "3", "5", "8", "13"} {
+		assert.Contains(completeText, i)
+		assert.Contains(valsByKey["attributes.json.response"].AsString(), i)
+	}
+
+	assert.Greater(valsByKey["usage.input_tokens"].AsInt64(), int64(0))
+	assert.Greater(valsByKey["usage.output_tokens"].AsInt64(), int64(0))
+	assert.Greater(valsByKey["usage.total_tokens"].AsInt64(), int64(0))
+	assert.GreaterOrEqual(valsByKey["usage.input_tokens_details.cached_tokens"].AsInt64(), int64(0))
+	assert.GreaterOrEqual(valsByKey["usage.output_tokens_details.reasoning_tokens"].AsInt64(), int64(0))
+}
+
 func TestOpenAIResponsesWithListInput(t *testing.T) {
 	client, exporter, teardown := setUpTest(t)
 	defer teardown()

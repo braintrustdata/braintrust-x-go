@@ -3,8 +3,12 @@ package traceopenai
 //  this file parses the responses API.
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
+	"strings"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -42,6 +46,7 @@ func (rt *ResponsesTracer) startSpanFromRequest(ctx context.Context, t time.Time
 		{"top_p", "float64"},
 		{"parallel_tool_calls", "bool"},
 		{"store", "bool"},
+		{"stream", "bool"},
 		{"tools", "struct"},
 	}
 
@@ -68,7 +73,7 @@ func (rt *ResponsesTracer) startSpanFromRequest(ctx context.Context, t time.Time
 			case "bool":
 				if v, ok := value.(bool); ok {
 					span.SetAttributes(attribute.Bool(field.name, v))
-					if field.name == "streaming" {
+					if field.name == "stream" {
 						rt.streaming = v
 					}
 				}
@@ -93,57 +98,81 @@ func (rt *ResponsesTracer) startSpanFromRequest(ctx context.Context, t time.Time
 
 func (rt *ResponsesTracer) tagSpanWithResponse(span trace.Span, body []byte) error {
 	if rt.streaming {
-		return parseStreamingResponse(span, body)
+		return parseStreamingResponse(span, bytes.NewReader(body))
 	} else {
 		return parseResponse(span, body)
 	}
 }
 
-func parseStreamingResponse(span trace.Span, body []byte) error {
-	return nil
-}
-
-func parseResponse(span trace.Span, body []byte) error {
-	//fmt.Println("body", string(body))
-
-	var raw map[string]interface{}
-	err := json.Unmarshal(body, &raw)
-	if err != nil {
-		return err
-	}
-
-	attrs := []attribute.KeyValue{}
-
-	/// process usage tokens
-	if usage, ok := raw["usage"].(map[string]interface{}); ok {
-		for _, k := range []string{"input_tokens", "output_tokens", "total_tokens"} {
-			if v, ok := usage[k].(float64); ok {
-				attrs = append(attrs, attribute.Int64("usage."+k, int64(v)))
-			}
+func parseStreamingResponse(span trace.Span, body io.Reader) error {
+	scanner := bufio.NewScanner(body)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !strings.HasPrefix(line, "data: ") {
+			continue
 		}
-		for _, d := range []string{"input_tokens_details", "output_tokens_details"} {
-			if details, ok := usage[d].(map[string]interface{}); ok {
-				for k, v := range details {
-					if c, ok := v.(float64); ok {
-						attrs = append(attrs, attribute.Int64(d+"."+k, int64(c)))
+
+		line = strings.TrimPrefix(line, "data: ")
+		var envelope map[string]any
+		err := json.Unmarshal([]byte(line), &envelope)
+		if err != nil {
+			return err
+		}
+
+		if msgType, ok := envelope["type"].(string); ok {
+			if msgType == "response.completed" {
+				if msg, ok := envelope["response"].(map[string]any); ok {
+					if err := handleResponseCompletedMessage(span, msg); err != nil {
+						return err
 					}
 				}
 			}
 		}
 	}
 
+	return scanner.Err()
+}
+
+func parseResponse(span trace.Span, body []byte) error {
+	var raw map[string]interface{}
+	err := json.Unmarshal(body, &raw)
+	if err != nil {
+		return err
+	}
+
+	return handleResponseCompletedMessage(span, raw)
+}
+
+func handleResponseCompletedMessage(span trace.Span, rawMsg map[string]any) error {
+
+	attrs := []attribute.KeyValue{}
+
 	// Handle basic string fields
 	for _, k := range []string{"id", "model", "object"} {
-		if v, ok := raw[k].(string); ok {
+		if v, ok := rawMsg[k].(string); ok {
 			attrs = append(attrs, attribute.String(k, v))
 		}
 	}
 
+	// Handle metadata if present
+	if metadata, ok := rawMsg["metadata"].(map[string]interface{}); ok {
+		for key, value := range metadata {
+			if strValue, ok := value.(string); ok {
+				attrs = append(attrs, attribute.String("metadata."+key, strValue))
+			}
+		}
+	}
+
+	// handle object fields that otel can't handle.
 	structs := make(map[string]interface{})
 	for _, k := range []string{"output"} {
-		if v, ok := raw[k]; ok {
+		if v, ok := rawMsg[k]; ok {
 			structs[k] = v
 		}
+	}
+
+	if usage, ok := rawMsg["usage"].(map[string]interface{}); ok {
+		parseUsageTokens(usage, span)
 	}
 
 	if 0 < len(structs) {
@@ -154,17 +183,30 @@ func parseResponse(span trace.Span, body []byte) error {
 		attrs = append(attrs, attribute.String("attributes.json.response", string(sb)))
 	}
 
-	// Handle metadata if present
-	if metadata, ok := raw["metadata"].(map[string]interface{}); ok {
-		for key, value := range metadata {
-			if strValue, ok := value.(string); ok {
-				attrs = append(attrs, attribute.String("metadata."+key, strValue))
+	span.SetAttributes(attrs...)
+
+	return nil
+}
+
+// parseUsageTokens parses the usage tokens from the response and adds them to the span.
+func parseUsageTokens(usage map[string]interface{}, span trace.Span) {
+	attrs := []attribute.KeyValue{}
+	for _, k := range []string{"input_tokens", "output_tokens", "total_tokens"} {
+		if v, ok := usage[k].(float64); ok {
+			attrs = append(attrs, attribute.Int64("usage."+k, int64(v)))
+		}
+	}
+	for _, d := range []string{"input_tokens_details", "output_tokens_details"} {
+		if details, ok := usage[d].(map[string]interface{}); ok {
+			for k, v := range details {
+				if c, ok := v.(float64); ok {
+					attrs = append(attrs, attribute.Int64(d+"."+k, int64(c)))
+				}
 			}
 		}
 	}
 
 	span.SetAttributes(attrs...)
-	return nil
 }
 
 var _ httpTracer = &ResponsesTracer{}
