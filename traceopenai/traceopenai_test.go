@@ -203,6 +203,9 @@ func TestOpenAIResponsesKitchenSink(t *testing.T) {
 	assert.Contains(valsByKey, "id")
 	assert.Contains(valsByKey, "object")
 	// system_fingerprint may not be present in all responses
+	
+	// New fields that might not be present in all responses
+	// We don't assert on them, but we want to make sure they are handled if present
 
 	// Check JSON serialized fields
 	assert.Contains(valsByKey["attributes.json.request"].AsString(), "what is 13+4?")

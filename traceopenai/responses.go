@@ -130,6 +130,14 @@ func parseStreamingResponse(span trace.Span, body io.Reader) error {
 		if msgType, ok := envelope["type"].(string); ok {
 			if msgType == "response.completed" {
 				if msg, ok := envelope["response"].(map[string]any); ok {
+					// For streaming responses, copy extra fields from the envelope
+					// that might be present in the outer wrapper
+					for _, field := range []string{"created", "finished_reason", "stop_reason"} {
+						if val, exists := envelope[field]; exists && msg[field] == nil {
+							msg[field] = val
+						}
+					}
+					
 					if err := handleResponseCompletedMessage(span, msg); err != nil {
 						return err
 					}
@@ -161,11 +169,16 @@ func handleResponseCompletedMessage(span trace.Span, rawMsg map[string]any) erro
 		{"object", "string"},
 		{"system_fingerprint", "string"},
 		{"completion_tokens", "int"},
+		{"created", "int"},
+		{"finished_reason", "string"},
+		{"stop_reason", "string"},
 		{"output", "struct"},
 		{"tool_calls", "struct"},
 		{"prompt_filter_results", "struct"},
 		{"usage", "usage"},
 		{"metadata", "metadata"},
+		{"choices", "struct"},
+		{"content_filter_results", "struct"},
 	}
 
 	structs := make(map[string]interface{})
