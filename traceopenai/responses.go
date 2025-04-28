@@ -11,15 +11,17 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-// v1ResponsesTracer is a tracer for the openai v1/responses POST endpoint.
+// ResponsesTracer is a tracer for the openai v1/responses POST endpoint.
 // See docs here: https://platform.openai.com/docs/api-reference/responses/create
-type v1ResponsesTracer struct{}
-
-func NewV1ResponsesTracer() *v1ResponsesTracer {
-	return &v1ResponsesTracer{}
+type ResponsesTracer struct {
+	streaming bool
 }
 
-func (*v1ResponsesTracer) startSpanFromRequest(ctx context.Context, t time.Time, body []byte) (context.Context, trace.Span, error) {
+func NewResponsesTracer() *ResponsesTracer {
+	return &ResponsesTracer{streaming: false}
+}
+
+func (rt *ResponsesTracer) startSpanFromRequest(ctx context.Context, t time.Time, body []byte) (context.Context, trace.Span, error) {
 	ctx, span := tracer().Start(
 		ctx,
 		"openai.responses.create",
@@ -66,6 +68,9 @@ func (*v1ResponsesTracer) startSpanFromRequest(ctx context.Context, t time.Time,
 			case "bool":
 				if v, ok := value.(bool); ok {
 					span.SetAttributes(attribute.Bool(field.name, v))
+					if field.name == "streaming" {
+						rt.streaming = v
+					}
 				}
 			case "struct":
 				structs[field.name] = value
@@ -80,13 +85,25 @@ func (*v1ResponsesTracer) startSpanFromRequest(ctx context.Context, t time.Time,
 		if err != nil {
 			return ctx, span, err
 		}
-		span.SetAttributes(attribute.String("attributes.json.input", string(sb)))
+		span.SetAttributes(attribute.String("attributes.json.request", string(sb)))
 	}
 
 	return ctx, span, nil
 }
 
-func (*v1ResponsesTracer) tagSpanWithResponse(span trace.Span, body []byte) error {
+func (rt *ResponsesTracer) tagSpanWithResponse(span trace.Span, body []byte) error {
+	if rt.streaming {
+		return parseStreamingResponse(span, body)
+	} else {
+		return parseResponse(span, body)
+	}
+}
+
+func parseStreamingResponse(span trace.Span, body []byte) error {
+	return nil
+}
+
+func parseResponse(span trace.Span, body []byte) error {
 	//fmt.Println("body", string(body))
 
 	var raw map[string]interface{}
@@ -134,7 +151,7 @@ func (*v1ResponsesTracer) tagSpanWithResponse(span trace.Span, body []byte) erro
 		if err != nil {
 			return err
 		}
-		attrs = append(attrs, attribute.String("attributes.json.output", string(sb)))
+		attrs = append(attrs, attribute.String("attributes.json.response", string(sb)))
 	}
 
 	// Handle metadata if present
@@ -150,4 +167,4 @@ func (*v1ResponsesTracer) tagSpanWithResponse(span trace.Span, body []byte) erro
 	return nil
 }
 
-var _ httpTracer = &v1ResponsesTracer{}
+var _ httpTracer = &ResponsesTracer{}

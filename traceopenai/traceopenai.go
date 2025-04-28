@@ -35,7 +35,7 @@ func Middleware(req *http.Request, next NextMiddleware) (*http.Response, error) 
 	if req.URL != nil {
 		switch req.URL.Path {
 		case "/v1/responses":
-			reqTracer = NewV1ResponsesTracer()
+			reqTracer = NewResponsesTracer()
 		default:
 			reqTracer = NewNoopHTTPTracer()
 		}

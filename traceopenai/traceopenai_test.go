@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"testing"
 
@@ -121,7 +120,6 @@ func TestOpenAIResponsesRequiredParams(t *testing.T) {
 	valsByKey := toValuesByKey(span.Attributes)
 	assert.Contains(valsByKey["model"].AsString(), TEST_MODEL)
 	assert.Equal("openai", valsByKey["provider"].AsString())
-	assert.Equal("What is 13+4?", valsByKey["input"].AsString())
 
 	// Verify token usage metrics - they must always be present
 	assert.Greater(valsByKey["usage.input_tokens"].AsInt64(), int64(0))
@@ -133,18 +131,16 @@ func TestOpenAIResponsesRequiredParams(t *testing.T) {
 	assert.GreaterOrEqual(valsByKey["usage.output_tokens_details.reasoning_tokens"].AsInt64(), int64(0))
 
 	var jsonAttrsMap map[string]interface{}
-	err = json.Unmarshal([]byte(valsByKey["attributes.json.input"].AsString()), &jsonAttrsMap)
+	rawAttrs := valsByKey["attributes.json.request"].AsString()
+	err = json.Unmarshal([]byte(rawAttrs), &jsonAttrsMap)
 	assert.NoError(err)
-	assert.Contains(jsonAttrsMap, "input")
-	fmt.Println("--------------------------------")
-	fmt.Println(jsonAttrsMap)
+	assert.Contains(rawAttrs, "13+4")
 
 	jsonAttrsMap = make(map[string]interface{})
-	err = json.Unmarshal([]byte(valsByKey["attributes.json.output"].AsString()), &jsonAttrsMap)
+	rawAttrs = valsByKey["attributes.json.response"].AsString()
+	err = json.Unmarshal([]byte(rawAttrs), &jsonAttrsMap)
 	assert.NoError(err)
-	assert.Contains(jsonAttrsMap, "output")
-	fmt.Println("--------------------------------")
-	fmt.Println(jsonAttrsMap)
+	assert.Contains(rawAttrs, "17")
 }
 
 func TestOpenAIResponsesKitchenSink(t *testing.T) {
@@ -217,60 +213,63 @@ func flushSpans(exporter *tracetest.InMemoryExporter) []tracetest.SpanStub {
 	return spans
 }
 
-/*
-	func TestOpenAIResponsesWithListInput(t *testing.T) {
-		client, exporter, teardown := setUpTest(t)
-		defer teardown()
-		assert := assert.New(t)
-		require := require.New(t)
+func TestOpenAIResponsesWithListInput(t *testing.T) {
+	client, exporter, teardown := setUpTest(t)
+	defer teardown()
+	assert := assert.New(t)
+	require := require.New(t)
 
-		// Create a list of message inputs
-		inputMessages := []responses.ResponseInputItemUnionParam{
-			responses.ResponseInputItemParamOfMessage("What is 2+2?", "user"),
-			responses.ResponseInputItemParamOfMessage("4", "assistant"),
-			responses.ResponseInputItemParamOfMessage("What is 3+5?", "user"),
-		}
-
-		// Create the params with list input
-		params := responses.ResponseNewParams{
-			Input: responses.ResponseNewParamsInputUnion{
-				OfInputItemList: inputMessages,
-			},
-			Model: TEST_MODEL,
-		}
-
-		// Call the API
-		resp, err := client.Responses.New(context.Background(), params)
-		require.NoError(err)
-		require.NotNil(resp)
-
-		// Wait for spans to be exported
-		spans := flushSpans(exporter)
-		require.Len(spans, 1)
-		span := spans[0]
-
-		// Check span attributes
-		assert.Equal("openai.responses.create", span.Name)
-		assert.Equal(codes.Unset, span.Status.Code)
-
-		valsByKey := toValuesByKey(span.Attributes)
-		assert.Contains(valsByKey["model"].AsString(), TEST_MODEL)
-		assert.Equal("openai", valsByKey["provider"].AsString())
-
-		// Check for valid input - the input field should contain the conversation
-		assert.Contains(valsByKey["input"].AsString(), "What is 2+2")
-		assert.Contains(valsByKey["input"].AsString(), "What is 3+5")
-
-		// Check for valid output - should contain the answer to the last question
-		assert.Contains(valsByKey["output"].AsString(), "8")
-
-		assert.Greater(valsByKey["usage.input_tokens"].AsInt64(), int64(0))
-		assert.Greater(valsByKey["usage.output_tokens"].AsInt64(), int64(0))
-		assert.Greater(valsByKey["usage.total_tokens"].AsInt64(), int64(0))
-		assert.GreaterOrEqual(valsByKey["usage.input_tokens_details.cached_tokens"].AsInt64(), int64(0))
-		assert.GreaterOrEqual(valsByKey["usage.output_tokens_details.reasoning_tokens"].AsInt64(), int64(0))
+	// Create a list of message inputs
+	inputMessages := []responses.ResponseInputItemUnionParam{
+		responses.ResponseInputItemParamOfMessage("What is 2+2?", "user"),
+		responses.ResponseInputItemParamOfMessage("4", "assistant"),
+		responses.ResponseInputItemParamOfMessage("What is 3+125?", "user"),
 	}
-*/
+
+	// Create the params with list input
+	params := responses.ResponseNewParams{
+		Input: responses.ResponseNewParamsInputUnion{
+			OfInputItemList: inputMessages,
+		},
+		Model: TEST_MODEL,
+	}
+
+	// Call the API
+	resp, err := client.Responses.New(context.Background(), params)
+	require.NoError(err)
+	require.NotNil(resp)
+
+	// Wait for spans to be exported
+	spans := flushSpans(exporter)
+	require.Len(spans, 1)
+	span := spans[0]
+
+	// Check span attributes
+	assert.Equal("openai.responses.create", span.Name)
+	assert.Equal(codes.Unset, span.Status.Code)
+
+	valsByKey := toValuesByKey(span.Attributes)
+	assert.Contains(valsByKey["model"].AsString(), TEST_MODEL)
+	assert.Equal("openai", valsByKey["provider"].AsString())
+
+	assert.Greater(valsByKey["usage.input_tokens"].AsInt64(), int64(0))
+	assert.Greater(valsByKey["usage.output_tokens"].AsInt64(), int64(0))
+	assert.Greater(valsByKey["usage.total_tokens"].AsInt64(), int64(0))
+	assert.GreaterOrEqual(valsByKey["usage.input_tokens_details.cached_tokens"].AsInt64(), int64(0))
+	assert.GreaterOrEqual(valsByKey["usage.output_tokens_details.reasoning_tokens"].AsInt64(), int64(0))
+
+	var jsonAttrsMap map[string]interface{}
+	rawAttrs := valsByKey["attributes.json.request"].AsString()
+	err = json.Unmarshal([]byte(rawAttrs), &jsonAttrsMap)
+	assert.NoError(err)
+	assert.Contains(rawAttrs, "3+125")
+
+	jsonAttrsMap = make(map[string]interface{})
+	rawAttrs = valsByKey["attributes.json.response"].AsString()
+	err = json.Unmarshal([]byte(rawAttrs), &jsonAttrsMap)
+	assert.NoError(err)
+	assert.Contains(rawAttrs, "128")
+}
 
 func TestTestOTelTracer(t *testing.T) {
 	_, exporter, teardown := setUpTest(t)
