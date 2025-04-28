@@ -195,6 +195,18 @@ func TestOpenAIResponsesKitchenSink(t *testing.T) {
 	assert.Equal(true, valsByKey["parallel_tool_calls"].AsBool())
 	assert.Equal(false, valsByKey["store"].AsBool())
 	assert.Equal("auto", valsByKey["truncation"].AsString())
+
+	// Check new int and float fields
+	assert.Equal(int64(100), valsByKey["max_output_tokens"].AsInt64())
+
+	// Check response fields
+	assert.Contains(valsByKey, "id")
+	assert.Contains(valsByKey, "object")
+	// system_fingerprint may not be present in all responses
+
+	// Check JSON serialized fields
+	assert.Contains(valsByKey["attributes.json.request"].AsString(), "what is 13+4?")
+	assert.Contains(valsByKey["attributes.json.response"].AsString(), "output")
 }
 
 func toValuesByKey(attrs []attribute.KeyValue) map[string]attribute.Value {

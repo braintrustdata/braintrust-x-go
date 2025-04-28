@@ -44,10 +44,14 @@ func (rt *ResponsesTracer) startSpanFromRequest(ctx context.Context, t time.Time
 		{"service_tier", "string"},
 		{"temperature", "float64"},
 		{"top_p", "float64"},
+		{"max_output_tokens", "int"},
+		{"timeout", "float64"},
 		{"parallel_tool_calls", "bool"},
 		{"store", "bool"},
 		{"stream", "bool"},
 		{"tools", "struct"},
+		{"tool_choice", "struct"},
+		{"seed", "int"},
 	}
 
 	var raw map[string]interface{}
@@ -69,6 +73,10 @@ func (rt *ResponsesTracer) startSpanFromRequest(ctx context.Context, t time.Time
 			case "float64":
 				if v, ok := value.(float64); ok {
 					span.SetAttributes(attribute.Float64(field.name, v))
+				}
+			case "int":
+				if v, ok := value.(float64); ok {
+					span.SetAttributes(attribute.Int64(field.name, int64(v)))
 				}
 			case "bool":
 				if v, ok := value.(bool); ok {
@@ -147,32 +155,41 @@ func handleResponseCompletedMessage(span trace.Span, rawMsg map[string]any) erro
 
 	attrs := []attribute.KeyValue{}
 
-	// Handle basic string fields
-	for _, k := range []string{"id", "model", "object"} {
-		if v, ok := rawMsg[k].(string); ok {
-			attrs = append(attrs, attribute.String(k, v))
-		}
+	fields := []struct{ name, kind string }{
+		{"id", "string"},
+		{"model", "string"},
+		{"object", "string"},
+		{"system_fingerprint", "string"},
+		{"completion_tokens", "int"},
+		{"output", "struct"},
+		{"tool_calls", "struct"},
+		{"prompt_filter_results", "struct"},
+		{"usage", "usage"},
+		{"metadata", "metadata"},
 	}
 
-	// Handle metadata if present
-	if metadata, ok := rawMsg["metadata"].(map[string]interface{}); ok {
-		for key, value := range metadata {
-			if strValue, ok := value.(string); ok {
-				attrs = append(attrs, attribute.String("metadata."+key, strValue))
+	structs := make(map[string]interface{})
+	for _, field := range fields {
+		if v, ok := rawMsg[field.name]; ok {
+			switch field.kind {
+			case "string":
+				attrs = append(attrs, attribute.String(field.name, v.(string)))
+			case "int":
+				attrs = append(attrs, attribute.Int64(field.name, v.(int64)))
+			case "struct":
+				structs[field.name] = v
+			case "usage":
+				if usage, ok := v.(map[string]interface{}); ok {
+					parseUsageTokens(usage, span)
+				}
+			case "metadata":
+				if metadata, ok := v.(map[string]interface{}); ok {
+					for key, value := range metadata {
+						attrs = append(attrs, attribute.String("metadata."+key, value.(string)))
+					}
+				}
 			}
 		}
-	}
-
-	// handle object fields that otel can't handle.
-	structs := make(map[string]interface{})
-	for _, k := range []string{"output"} {
-		if v, ok := rawMsg[k]; ok {
-			structs[k] = v
-		}
-	}
-
-	if usage, ok := rawMsg["usage"].(map[string]interface{}); ok {
-		parseUsageTokens(usage, span)
 	}
 
 	if 0 < len(structs) {
