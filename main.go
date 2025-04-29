@@ -50,20 +50,19 @@ func (r *Recommender) getDrinkRec(ctx context.Context, drink, vibe, zipcode stri
 	defer span.End()
 
 	prompt := fmt.Sprintf("Recommend a place to get %s with vibe %sin zipcode %s.", drink, vibe, zipcode)
+	fmt.Println(prompt)
 
-	stream := r.client.Chat.Completions.NewStreaming(ctx, openai.ChatCompletionNewParams{
+	stream := r.client.Responses.NewStreaming(ctx, responses.ResponseNewParams{
 		Model: openai.ChatModelGPT4,
-		Messages: []openai.ChatCompletionMessageParamUnion{
-			openai.UserMessage(prompt),
-		},
-		Seed: openai.Int(0),
+		Input: responses.ResponseNewParamsInputUnion{OfString: openai.String(prompt)},
 	})
 
 	for stream.Next() {
-		stream.Current()
+		fmt.Println("got msg")
 	}
 
 	if err := stream.Err(); err != nil {
+		fmt.Println(err)
 		return "", err
 	}
 
