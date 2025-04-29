@@ -207,11 +207,16 @@ func setJSONAttr(span trace.Span, key string, value any) error {
 
 // parseUsageTokens parses the usage tokens from the raw json response
 func parseUsageTokens(usage map[string]interface{}) map[string]int64 {
+	if usage == nil {
+		return make(map[string]int64)
+	}
 
 	metrics := make(map[string]int64)
 	for _, k := range []string{"input_tokens", "output_tokens", "total_tokens"} {
-		if v, ok := usage[k].(float64); ok {
-			metrics[k] = int64(v)
+		if v, ok := usage[k]; ok {
+			if f, ok := v.(float64); ok {
+				metrics[k] = int64(f)
+			}
 		}
 	}
 	for _, d := range []string{"input_tokens_details", "output_tokens_details"} {

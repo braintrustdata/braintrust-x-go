@@ -25,6 +25,7 @@ func Middleware(req *http.Request, next NextMiddleware) (*http.Response, error) 
 	logger.Debugf("Middleware: %s %s", req.Method, req.URL.Path)
 
 	// Intercept the request body so we can parse it and still pass it along.
+
 	var buf bytes.Buffer
 	reqBody := req.Body
 	defer reqBody.Close()
@@ -44,9 +45,6 @@ func Middleware(req *http.Request, next NextMiddleware) (*http.Response, error) 
 
 	ctx, span, err := reqTracer.StartSpan(req.Context(), start, tee)
 	req = req.WithContext(ctx)
-	defer func() {
-		span.End()
-	}()
 	if err != nil {
 		logger.Warnf("Error starting span: %v", err)
 	}
@@ -56,19 +54,22 @@ func Middleware(req *http.Request, next NextMiddleware) (*http.Response, error) 
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
+		span.End()
 		return resp, err
 	}
-	// Intercept the response body so we can parse and return it.
-	buf.Reset()
-	respBody := resp.Body
-	defer respBody.Close()
-	tee = io.TeeReader(respBody, &buf)
-	resp.Body = io.NopCloser(&buf)
 
-	err = reqTracer.TagSpan(span, tee)
-	if err != nil {
-		logger.Warnf("Error tagging span: %v", err)
-	}
+	// Intercept the response body so we can parse and return it.
+	respBody := resp.Body
+	r1, r2 := Tee(respBody)
+	resp.Body = r1
+
+	go func() {
+		err = reqTracer.TagSpan(span, r2)
+		if err != nil {
+			logger.Warnf("Error tagging span: %v", err)
+		}
+		span.End()
+	}()
 
 	return resp, nil
 }
