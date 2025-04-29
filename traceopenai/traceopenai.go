@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"io"
-	"log"
 	"net/http"
 	"time"
 
@@ -22,33 +21,34 @@ type NextMiddleware = func(req *http.Request) (*http.Response, error)
 func Middleware(req *http.Request, next NextMiddleware) (*http.Response, error) {
 	start := time.Now()
 
+	logger := logger()
+	logger.Debugf("Middleware: %s %s", req.Method, req.URL.Path)
+
 	// Intercept the request body so we can parse it and still pass it along.
-	var err error
-	var body []byte
-	body, req.Body, err = cloneBody(req.Body)
-	if err != nil {
-		return nil, err
-	}
+	var buf bytes.Buffer
+	reqBody := req.Body
+	defer reqBody.Close()
+	tee := io.TeeReader(reqBody, &buf)
+	req.Body = io.NopCloser(&buf)
 
 	// Start a span with data parsed from the request.
 	var reqTracer httpTracer
 	if req.URL != nil {
 		switch req.URL.Path {
 		case "/v1/responses":
-			reqTracer = NewResponsesTracer()
+			reqTracer = newResponsesTracer()
 		default:
-			reqTracer = NewNoopHTTPTracer()
+			reqTracer = newNoopHTTPTracer()
 		}
 	}
 
-	ctx, span, err := reqTracer.startSpanFromRequest(req.Context(), start, body)
+	ctx, span, err := reqTracer.StartSpan(req.Context(), start, tee)
+	req = req.WithContext(ctx)
 	defer func() {
 		span.End()
 	}()
-	req = req.WithContext(ctx)
 	if err != nil {
-		// Proceed if there's an error in tracing code
-		log.Printf("Error starting span: %v", err)
+		logger.Warnf("Error starting span: %v", err)
 	}
 
 	// Continue processing the request.
@@ -58,51 +58,39 @@ func Middleware(req *http.Request, next NextMiddleware) (*http.Response, error) 
 		span.SetStatus(codes.Error, err.Error())
 		return resp, err
 	}
-
 	// Intercept the response body so we can parse and return it.
-	body, resp.Body, err = cloneBody(resp.Body)
-	if err != nil {
-		return resp, err
-	}
+	buf.Reset()
+	respBody := resp.Body
+	defer respBody.Close()
+	tee = io.TeeReader(respBody, &buf)
+	resp.Body = io.NopCloser(&buf)
 
-	err = reqTracer.tagSpanWithResponse(span, body)
+	err = reqTracer.TagSpan(span, tee)
 	if err != nil {
-		// Don't fail for tracing errors.
-		log.Printf("Error tagging span: %v", err)
+		logger.Warnf("Error tagging span: %v", err)
 	}
 
 	return resp, nil
 }
 
-func cloneBody(r io.ReadCloser) ([]byte, io.ReadCloser, error) {
-	if r == nil {
-		return nil, nil, nil
-	}
-	bodyBytes, err := io.ReadAll(r)
-	if err != nil {
-		return nil, nil, err
-	}
-	return bodyBytes, io.NopCloser(bytes.NewReader(bodyBytes)), nil
-}
-
 type httpTracer interface {
-	startSpanFromRequest(ctx context.Context, start time.Time, body []byte) (context.Context, trace.Span, error)
-	tagSpanWithResponse(span trace.Span, body []byte) error
+	StartSpan(ctx context.Context, start time.Time, request io.Reader) (context.Context, trace.Span, error)
+	TagSpan(span trace.Span, response io.Reader) error
 }
 
 // noopHTTPTracer is an httpTracer that doesn't record any tracing data.
 type noopHTTPTracer struct{}
 
-func NewNoopHTTPTracer() *noopHTTPTracer {
+func newNoopHTTPTracer() *noopHTTPTracer {
 	return &noopHTTPTracer{}
 }
 
-func (*noopHTTPTracer) startSpanFromRequest(ctx context.Context, start time.Time, body []byte) (context.Context, trace.Span, error) {
+func (*noopHTTPTracer) StartSpan(ctx context.Context, start time.Time, request io.Reader) (context.Context, trace.Span, error) {
 	span := trace.SpanFromContext(context.Background()) // create a non-recording span
 	return ctx, span, nil
 }
 
-func (*noopHTTPTracer) tagSpanWithResponse(span trace.Span, body []byte) error {
+func (*noopHTTPTracer) TagSpan(span trace.Span, response io.Reader) error {
 	return nil
 }
 

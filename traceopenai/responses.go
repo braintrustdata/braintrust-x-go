@@ -4,9 +4,9 @@ package traceopenai
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"strings"
 	"time"
@@ -15,31 +15,34 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-// ResponsesTracer is a tracer for the openai v1/responses POST endpoint.
+// responsesTracer is a tracer for the openai v1/responses POST endpoint.
 // See docs here: https://platform.openai.com/docs/api-reference/responses/create
-type ResponsesTracer struct {
+type responsesTracer struct {
 	streaming bool
 	metadata  map[string]any
 }
 
-func NewResponsesTracer() *ResponsesTracer {
-	return &ResponsesTracer{streaming: false, metadata: make(map[string]any)}
+func newResponsesTracer() *responsesTracer {
+	return &responsesTracer{
+		streaming: false,
+		metadata: map[string]any{
+			"provider": "openai",
+			"endpoint": "/v1/responses",
+		},
+	}
 }
 
-func (rt *ResponsesTracer) startSpanFromRequest(ctx context.Context, t time.Time, body []byte) (context.Context, trace.Span, error) {
+func (rt *responsesTracer) StartSpan(ctx context.Context, t time.Time, request io.Reader) (context.Context, trace.Span, error) {
 	ctx, span := tracer().Start(
 		ctx,
 		"openai.responses.create",
 		trace.WithTimestamp(t),
 	)
-	rt.metadata["provider"] = "openai"
 
 	var raw map[string]interface{}
-	if err := json.Unmarshal(body, &raw); err != nil {
+	if err := json.NewDecoder(request).Decode(&raw); err != nil {
 		return ctx, span, err
 	}
-
-	span.SetAttributes(attribute.String("openai.endpoint", "/v1/responses"))
 
 	metadataFields := []string{
 		"model",
@@ -89,15 +92,15 @@ func (rt *ResponsesTracer) startSpanFromRequest(ctx context.Context, t time.Time
 	return ctx, span, nil
 }
 
-func (rt *ResponsesTracer) tagSpanWithResponse(span trace.Span, body []byte) error {
+func (rt *responsesTracer) TagSpan(span trace.Span, body io.Reader) error {
 	if rt.streaming {
-		return rt.parseStreamingResponse(span, bytes.NewReader(body))
+		return rt.parseStreamingResponse(span, body)
 	} else {
 		return rt.parseResponse(span, body)
 	}
 }
 
-func (rt *ResponsesTracer) parseStreamingResponse(span trace.Span, body io.Reader) error {
+func (rt *responsesTracer) parseStreamingResponse(span trace.Span, body io.Reader) error {
 	scanner := bufio.NewScanner(body)
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -113,6 +116,8 @@ func (rt *ResponsesTracer) parseStreamingResponse(span trace.Span, body io.Reade
 		}
 
 		if msgType, ok := envelope["type"].(string); ok {
+			// the response.completed message has everything, so just parse that. Should we
+			// parse the other messages too?
 			if msgType == "response.completed" {
 				if msg, ok := envelope["response"].(map[string]any); ok {
 					// For streaming responses, copy extra fields from the envelope
@@ -134,9 +139,9 @@ func (rt *ResponsesTracer) parseStreamingResponse(span trace.Span, body io.Reade
 	return scanner.Err()
 }
 
-func (rt *ResponsesTracer) parseResponse(span trace.Span, body []byte) error {
+func (rt *responsesTracer) parseResponse(span trace.Span, body io.Reader) error {
 	var raw map[string]interface{}
-	err := json.Unmarshal(body, &raw)
+	err := json.NewDecoder(body).Decode(&raw)
 	if err != nil {
 		return err
 	}
@@ -144,7 +149,7 @@ func (rt *ResponsesTracer) parseResponse(span trace.Span, body []byte) error {
 	return rt.handleResponseCompletedMessage(span, raw)
 }
 
-func (rt *ResponsesTracer) handleResponseCompletedMessage(span trace.Span, rawMsg map[string]any) error {
+func (rt *responsesTracer) handleResponseCompletedMessage(span trace.Span, rawMsg map[string]any) error {
 
 	attrs := []attribute.KeyValue{}
 
@@ -193,10 +198,11 @@ func (rt *ResponsesTracer) handleResponseCompletedMessage(span trace.Span, rawMs
 
 func setJSONAttr(span trace.Span, key string, value any) error {
 	jsonStr, err := json.Marshal(value)
-	if err == nil {
-		span.SetAttributes(attribute.String(key, string(jsonStr)))
+	if err != nil {
+		return fmt.Errorf("failed to marshal attribute %s: %w", key, err)
 	}
-	return err
+	span.SetAttributes(attribute.String(key, string(jsonStr)))
+	return nil
 }
 
 // parseUsageTokens parses the usage tokens from the raw json response
@@ -221,4 +227,4 @@ func parseUsageTokens(usage map[string]interface{}) map[string]int64 {
 	return metrics
 }
 
-var _ httpTracer = &ResponsesTracer{}
+var _ httpTracer = &responsesTracer{}

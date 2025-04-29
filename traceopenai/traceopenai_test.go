@@ -27,6 +27,8 @@ const TEST_MODEL = openai.ChatModelGPT4oMini
 // It returns an openai client, an exporter, and a teardown function.
 func setUpTest(t *testing.T) (openai.Client, *tracetest.InMemoryExporter, func()) {
 
+	SetStdLogger()
+
 	// setup otel to be fully synchronous
 	exporter := tracetest.NewInMemoryExporter()
 	processor := trace.NewSimpleSpanProcessor(exporter)
@@ -129,6 +131,7 @@ func TestOpenAIResponsesRequiredParams(t *testing.T) {
 
 	// Check metrics fields
 	var metrics map[string]any
+	fmt.Println("metrics", valsByKey["braintrust.metrics"].AsString())
 	err = json.Unmarshal([]byte(valsByKey["braintrust.metrics"].AsString()), &metrics)
 	assert.NoError(err)
 	assert.Greater(metrics["input_tokens"].(float64), float64(0))
