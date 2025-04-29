@@ -1,4 +1,4 @@
-package traceopenai
+package logger
 
 import (
 	"bytes"
@@ -19,19 +19,27 @@ var (
 	globalLogger Logger = noopLogger{}
 )
 
-// SetLogger will use the given logger for logging messages.
-func SetLogger(logger Logger) {
+// Set will use the given logger for logging messages.
+func Set(logger Logger) {
+	if logger == nil {
+		logger = &noopLogger{} // just in case
+	}
 	mu.Lock()
 	defer mu.Unlock()
 	globalLogger = logger
 }
 
-// SetStdLogger uses go's built in `log` package for logging.
-func SetStdLogger() {
-	SetLogger(&stdLogger{})
+func Clear() {
+	Set(noopLogger{})
 }
 
-func logger() Logger {
+// SetStdLogger uses go's built in `log` package for logging.
+func SetStdLogger() {
+	Set(&stdLogger{})
+}
+
+// Logger returns the current logger.
+func Get() Logger {
 	mu.RLock()
 	defer mu.RUnlock()
 	return globalLogger

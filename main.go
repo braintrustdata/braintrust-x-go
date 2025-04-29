@@ -5,7 +5,8 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/braintrust/braintrust-x-go/traceopenai"
+	"github.com/braintrust/braintrust-x-go/braintrust/trace"
+	"github.com/braintrust/braintrust-x-go/braintrust/trace/traceopenai"
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
 	"github.com/openai/openai-go/responses"
@@ -73,23 +74,20 @@ func (r *Recommender) getDrinkRec(ctx context.Context, drink, vibe, zipcode stri
 func main() {
 	ctx := context.Background()
 
-	tp, err := initTracer()
+	// initialize braintrust tracing
+	teardown, err := trace.Quickstart()
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer func() {
-		err := tp.Shutdown(ctx)
-		if err != nil {
-			log.Fatal(err)
-		}
-	}()
+	defer teardown()
 
+	// initialize openai client with tracing middleware
 	client := openai.NewClient(
 		option.WithMiddleware(traceopenai.Middleware),
 	)
 
+	// Make some open ai requests that will be traced.
 	recommender := NewRecommender(client)
-
 	ctx, span := tracer.Start(ctx, "recommendations")
 	defer span.End()
 

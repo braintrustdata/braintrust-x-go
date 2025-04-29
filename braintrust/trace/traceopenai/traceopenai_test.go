@@ -9,6 +9,7 @@ import (
 	"runtime/debug"
 	"testing"
 
+	"github.com/braintrust/braintrust-x-go/braintrust/logger"
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
 	"github.com/openai/openai-go/packages/param"
@@ -28,7 +29,7 @@ const TEST_MODEL = openai.ChatModelGPT4oMini
 // It returns an openai client, an exporter, and a teardown function.
 func setUpTest(t *testing.T) (openai.Client, *tracetest.InMemoryExporter, func()) {
 
-	SetLogger(&failTestLogger{t: t})
+	logger.Set(&failTestLogger{t: t})
 
 	// setup otel to be fully synchronous
 	exporter := tracetest.NewInMemoryExporter()
@@ -42,7 +43,7 @@ func setUpTest(t *testing.T) (openai.Client, *tracetest.InMemoryExporter, func()
 	otel.SetTracerProvider(tp)
 
 	teardown := func() {
-		SetLogger(noopLogger{})
+		logger.Clear()
 		err := tp.Shutdown(context.Background())
 		if err != nil {
 			t.Fatalf("Error shutting down tracer provider: %v", err)
@@ -408,7 +409,7 @@ func TestTestOTelTracer(t *testing.T) {
 	assert.Empty(spans)
 }
 
-// failTestLogger catches errors that we don't expose to users, but want to fail tests.
+// failTestLogger will catch errors that we don't expose to users but still want to know about.
 type failTestLogger struct {
 	t *testing.T
 }
