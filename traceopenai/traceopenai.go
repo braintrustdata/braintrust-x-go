@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"runtime/debug"
 	"time"
 
 	"go.opentelemetry.io/otel"
@@ -25,7 +26,6 @@ func Middleware(req *http.Request, next NextMiddleware) (*http.Response, error) 
 	logger.Debugf("Middleware: %s %s", req.Method, req.URL.Path)
 
 	// Intercept the request body so we can parse it and still pass it along.
-
 	var buf bytes.Buffer
 	reqBody := req.Body
 	defer reqBody.Close()
@@ -63,15 +63,48 @@ func Middleware(req *http.Request, next NextMiddleware) (*http.Response, error) 
 	r1, r2 := Tee(respBody)
 	resp.Body = r1
 
+	// Create a done channel to signal when the span is complete
+	spanDone := make(chan struct{})
+
 	go func() {
+		defer close(spanDone)
 		err = reqTracer.TagSpan(span, r2)
 		if err != nil {
-			logger.Warnf("Error tagging span: %v", err)
+			if err != io.ErrClosedPipe {
+				logger.Warnf("Error tagging span: %v\n%s", err, string(debug.Stack()))
+			}
 		}
 		span.End()
 	}()
 
+	// Wrap the response body to ensure span completion on close
+	resp.Body = &responseBody{
+		ReadCloser: r1,
+		onClose: func() {
+			// Wait for span to complete or context to be done
+			select {
+			case <-spanDone:
+				// Span is already complete
+			case <-ctx.Done():
+				// Context was cancelled, ensure span is ended
+				span.End()
+			}
+		},
+	}
+
 	return resp, nil
+}
+
+// responseBody wraps an io.ReadCloser to add a callback on Close
+type responseBody struct {
+	io.ReadCloser
+	onClose func()
+}
+
+func (rb *responseBody) Close() error {
+	err := rb.ReadCloser.Close()
+	rb.onClose()
+	return err
 }
 
 type httpTracer interface {

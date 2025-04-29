@@ -12,15 +12,45 @@ func Tee(r io.ReadCloser) (io.ReadCloser, io.ReadCloser) {
 	r1, w1 := io.Pipe()
 	r2, w2 := io.Pipe()
 
-	// Create a MultiWriter that writes to both pipes
-	w := io.MultiWriter(w1, w2)
+	// Use sync.Once to ensure we only close the input reader once
+	var closeOnce sync.Once
+	cleanup := func(err error) {
+		closeOnce.Do(func() {
+			r.Close()
+			w1.CloseWithError(err)
+			w2.CloseWithError(err)
+		})
+	}
 
 	// Start a goroutine to copy data from input to both pipes
 	go func() {
-		_, err := io.Copy(w, r)
-		r.Close()
-		w1.CloseWithError(err)
-		w2.CloseWithError(err)
+		defer cleanup(nil) // ensure cleanup happens even if there's a panic
+
+		// Create a buffer to minimize blocking between readers
+		buf := make([]byte, 32*1024)
+		for {
+			// Read from source
+			n, err := r.Read(buf)
+			if n > 0 {
+				// Write to both pipes, but handle errors separately
+				if _, err1 := w1.Write(buf[:n]); err1 != nil {
+					cleanup(err1)
+					return
+				}
+				if _, err2 := w2.Write(buf[:n]); err2 != nil {
+					cleanup(err2)
+					return
+				}
+			}
+			if err != nil {
+				if err != io.EOF {
+					cleanup(err)
+				} else {
+					cleanup(nil)
+				}
+				return
+			}
+		}
 	}()
 
 	return r1, r2

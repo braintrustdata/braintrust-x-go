@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"runtime/debug"
 	"testing"
 
 	"github.com/openai/openai-go"
@@ -26,7 +28,7 @@ const TEST_MODEL = openai.ChatModelGPT4oMini
 // It returns an openai client, an exporter, and a teardown function.
 func setUpTest(t *testing.T) (openai.Client, *tracetest.InMemoryExporter, func()) {
 
-	SetStdLogger()
+	SetLogger(&failTestLogger{t: t})
 
 	// setup otel to be fully synchronous
 	exporter := tracetest.NewInMemoryExporter()
@@ -40,6 +42,7 @@ func setUpTest(t *testing.T) (openai.Client, *tracetest.InMemoryExporter, func()
 	otel.SetTracerProvider(tp)
 
 	teardown := func() {
+		SetLogger(noopLogger{})
 		err := tp.Shutdown(context.Background())
 		if err != nil {
 			t.Fatalf("Error shutting down tracer provider: %v", err)
@@ -236,6 +239,30 @@ func flushSpans(exporter *tracetest.InMemoryExporter) []tracetest.SpanStub {
 	return spans
 }
 
+func TestOpenAIResponsesStreamingClose(t *testing.T) {
+	client, exporter, teardown := setUpTest(t)
+	defer teardown()
+	assert, require := assert.New(t), require.New(t)
+
+	ctx := context.Background()
+	question := "Can you return me a list of the first 15 fibonacci numbers?"
+
+	stream := client.Responses.NewStreaming(ctx, responses.ResponseNewParams{
+		Input: responses.ResponseNewParamsInputUnion{OfString: openai.String(question)},
+		Model: openai.ChatModelGPT4,
+	})
+
+	err := stream.Close()
+	require.NoError(err)
+
+	spans := flushSpans(exporter)
+	require.Len(spans, 1)
+	span := spans[0]
+	assert.Equal(span.Name, "openai.responses.create")
+	assert.Equal(codes.Unset, span.Status.Code)
+	assert.Equal("", span.Status.Description)
+}
+
 func TestOpenAIResponsesStreaming(t *testing.T) {
 	client, exporter, teardown := setUpTest(t)
 	defer teardown()
@@ -377,4 +404,14 @@ func TestTestOTelTracer(t *testing.T) {
 	assert.NotEmpty(spans)
 	spans = flushSpans(exporter)
 	assert.Empty(spans)
+}
+
+type failTestLogger struct {
+	t *testing.T
+}
+
+func (l *failTestLogger) Debugf(format string, args ...any) {}
+
+func (l *failTestLogger) Warnf(format string, args ...any) {
+	l.t.Fatalf("%s\n%s", fmt.Sprintf(format, args...), string(debug.Stack()))
 }
