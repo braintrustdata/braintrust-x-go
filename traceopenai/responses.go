@@ -116,7 +116,6 @@ func (rt *responsesTracer) parseStreamingResponse(span trace.Span, body io.Reade
 		}
 
 		if msgType, ok := envelope["type"].(string); ok {
-			fmt.Println("msgType", msgType)
 			// the response.completed message has everything, so just parse that. Should we
 			// parse the other messages too?
 			if msgType == "response.completed" {
@@ -233,4 +232,4 @@ func parseUsageTokens(usage map[string]interface{}) map[string]int64 {
 	return metrics
 }
 
-var _ httpTracer = &responsesTracer{}
+var _ middlewareTracer = &responsesTracer{}

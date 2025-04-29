@@ -115,6 +115,8 @@ func TestOpenAIResponsesRequiredParams(t *testing.T) {
 	assert.NoError(err)
 	assert.NotNil(resp)
 
+	assert.Contains(resp.OutputText(), "17")
+
 	spans := flushSpans(exporter)
 	assert.Len(spans, 1)
 	span := spans[0]
@@ -406,12 +408,13 @@ func TestTestOTelTracer(t *testing.T) {
 	assert.Empty(spans)
 }
 
+// failTestLogger catches errors that we don't expose to users, but want to fail tests.
 type failTestLogger struct {
 	t *testing.T
 }
 
-func (l *failTestLogger) Debugf(format string, args ...any) {}
+func (*failTestLogger) Debugf(format string, args ...any) {}
 
-func (l *failTestLogger) Warnf(format string, args ...any) {
-	l.t.Fatalf("%s\n%s", fmt.Sprintf(format, args...), string(debug.Stack()))
+func (f *failTestLogger) Warnf(format string, args ...any) {
+	f.t.Fatalf("%s\n%s", fmt.Sprintf(format, args...), string(debug.Stack()))
 }

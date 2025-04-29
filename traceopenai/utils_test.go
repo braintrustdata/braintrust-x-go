@@ -3,54 +3,48 @@ package traceopenai
 import (
 	"bytes"
 	"io"
-	"sync"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 )
 
-func TestTeeAsynchronousRead(t *testing.T) {
+func TestBufferedReaderBasic(t *testing.T) {
 	assert := assert.New(t)
 
-	input := []byte("hello world")
+	input := "hello world"
 	var in bytes.Buffer
-	in.Write(input)
+	in.WriteString(input)
 
-	out1, out2 := Tee(io.NopCloser(&in))
+	var captured *bytes.Buffer
+	onDone := func(r io.Reader) {
+		data, _ := io.ReadAll(r)
+		captured = bytes.NewBuffer(data)
+	}
 
-	var wg sync.WaitGroup
+	reader := newBufferedReader(io.NopCloser(&in), onDone)
 
-	var data1, data2 []byte
-	var err1, err2 error
+	// Read the data
+	output, err := io.ReadAll(reader)
+	assert.NoError(err)
+	assert.Equal(input, string(output))
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		data1, err1 = io.ReadAll(out1)
-	}()
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		// Add a small delay to ensure reads are not synchronized
-		time.Sleep(10 * time.Millisecond)
-		data2, err2 = io.ReadAll(out2)
-	}()
-
-	wg.Wait()
-
-	assert.NoError(err1)
-	assert.NoError(err2)
-	assert.Equal(input, data1)
-	assert.Equal(input, data2)
+	// Verify onDone was called with the correct buffer
+	assert.NotNil(captured)
+	assert.Equal(input, captured.String())
 }
 
-func TestTeeMultipleWritesAndReads(t *testing.T) {
+func TestBufferedReaderChunkedReads(t *testing.T) {
 	assert := assert.New(t)
 
 	pr, pw := io.Pipe()
-	out1, out2 := Tee(pr)
+
+	var captured *bytes.Buffer
+	onDone := func(r io.Reader) {
+		data, _ := io.ReadAll(r)
+		captured = bytes.NewBuffer(data)
+	}
+
+	reader := newBufferedReader(pr, onDone)
 
 	// Write and read in chunks
 	chunks := []string{
@@ -59,42 +53,93 @@ func TestTeeMultipleWritesAndReads(t *testing.T) {
 		"third chunk",
 	}
 
-	var expected bytes.Buffer
-
 	for _, chunk := range chunks {
 		// Write chunk
-		_, err := pw.Write([]byte(chunk))
+		go func(data string) {
+			_, err := pw.Write([]byte(data))
+			assert.NoError(err)
+		}(chunk)
+
+		// Read chunk
+		buf := make([]byte, 1024)
+		n, err := reader.Read(buf)
 		assert.NoError(err)
-		expected.WriteString(chunk)
-
-		// Read chunk from both outputs
-		buf1 := make([]byte, 1024)
-		buf2 := make([]byte, 1024)
-
-		n1, err1 := out1.Read(buf1)
-		assert.NoError(err1)
-		assert.Equal(chunk, string(buf1[:n1]))
-
-		n2, err2 := out2.Read(buf2)
-		assert.NoError(err2)
-		assert.Equal(chunk, string(buf2[:n2]))
+		assert.Equal(chunk, string(buf[:n]))
 	}
 
 	// Close the writer to signal EOF
 	pw.Close()
 
-	// Try to read from both outputs - should get EOF
-	buf1 := make([]byte, 1024)
-	buf2 := make([]byte, 1024)
+	// Try to read again - should get EOF
+	buf := make([]byte, 1024)
+	n, err := reader.Read(buf)
+	assert.Equal(0, n)
+	assert.Equal(io.EOF, err)
 
-	n1, err1 := out1.Read(buf1)
-	assert.Equal(0, n1)
-	assert.Equal(io.EOF, err1)
+	// Verify onDone was called with the correct full buffer
+	assert.NotNil(captured)
+	assert.Equal("first chunk second chunk third chunk", captured.String())
+}
 
-	n2, err2 := out2.Read(buf2)
-	assert.Equal(0, n2)
-	assert.Equal(io.EOF, err2)
+func TestBufferedReaderClose(t *testing.T) {
+	assert := assert.New(t)
 
-	// Verify total content matches expected
-	assert.Equal("first chunk second chunk third chunk", expected.String())
+	pr, pw := io.Pipe()
+
+	var callbackCalled bool
+	onDone := func(r io.Reader) {
+		callbackCalled = true
+		data, _ := io.ReadAll(r)
+		assert.Equal("partial data", string(data))
+	}
+
+	reader := newBufferedReader(pr, onDone)
+
+	// Write partial data
+	go func() {
+		_, err := pw.Write([]byte("partial data"))
+		assert.NoError(err)
+		// Don't close the pipe yet
+	}()
+
+	// Read the partial data
+	buf := make([]byte, 1024)
+	n, err := reader.Read(buf)
+	assert.NoError(err)
+	assert.Equal("partial data", string(buf[:n]))
+
+	// Now close the reader before reaching EOF
+	err = reader.Close()
+	assert.NoError(err)
+
+	// Verify the callback was triggered on close
+	assert.True(callbackCalled)
+
+	// Verify reader marks itself as closed
+	assert.True(reader.closed)
+}
+
+func TestBufferedReaderCallbackOnlyOnce(t *testing.T) {
+	assert := assert.New(t)
+
+	input := "test data"
+	var in bytes.Buffer
+	in.WriteString(input)
+
+	var callCount int
+	onDone := func(r io.Reader) {
+		callCount++
+	}
+
+	reader := newBufferedReader(io.NopCloser(&in), onDone)
+
+	// Read to EOF to trigger callback
+	_, err := io.ReadAll(reader)
+	assert.NoError(err)
+	assert.Equal(1, callCount)
+
+	// Close after EOF - should not trigger callback again
+	err = reader.Close()
+	assert.NoError(err)
+	assert.Equal(1, callCount)
 }
