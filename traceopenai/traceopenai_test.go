@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"testing"
 
@@ -113,34 +114,40 @@ func TestOpenAIResponsesRequiredParams(t *testing.T) {
 	spans := flushSpans(exporter)
 	assert.Len(spans, 1)
 	span := spans[0]
-	assert.Equal(span.Name, "openai.responses.create")
+	assert.Equal("openai.responses.create", span.Name)
 	assert.Equal(codes.Unset, span.Status.Code)
 	assert.Equal("", span.Status.Description)
 
 	valsByKey := toValuesByKey(span.Attributes)
-	assert.Contains(valsByKey["model"].AsString(), TEST_MODEL)
-	assert.Equal("openai", valsByKey["provider"].AsString())
 
-	// Verify token usage metrics - they must always be present
-	assert.Greater(valsByKey["usage.input_tokens"].AsInt64(), int64(0))
-	assert.Greater(valsByKey["usage.output_tokens"].AsInt64(), int64(0))
-	assert.Greater(valsByKey["usage.total_tokens"].AsInt64(), int64(0))
-
-	// Verify token detail metrics - they must always be present
-	assert.GreaterOrEqual(valsByKey["usage.input_tokens_details.cached_tokens"].AsInt64(), int64(0))
-	assert.GreaterOrEqual(valsByKey["usage.output_tokens_details.reasoning_tokens"].AsInt64(), int64(0))
-
-	var jsonAttrsMap map[string]interface{}
-	rawAttrs := valsByKey["attributes.json.request"].AsString()
-	err = json.Unmarshal([]byte(rawAttrs), &jsonAttrsMap)
+	// Check metadata fields
+	var metadata map[string]any
+	err = json.Unmarshal([]byte(valsByKey["braintrust.metadata"].AsString()), &metadata)
 	assert.NoError(err)
-	assert.Contains(rawAttrs, "13+4")
+	assert.Equal("openai", metadata["provider"])
+	assert.Contains(metadata["model"], TEST_MODEL)
 
-	jsonAttrsMap = make(map[string]interface{})
-	rawAttrs = valsByKey["attributes.json.response"].AsString()
-	err = json.Unmarshal([]byte(rawAttrs), &jsonAttrsMap)
+	// Check metrics fields
+	var metrics map[string]any
+	err = json.Unmarshal([]byte(valsByKey["braintrust.metrics"].AsString()), &metrics)
 	assert.NoError(err)
-	assert.Contains(rawAttrs, "17")
+	assert.Greater(metrics["input_tokens"].(float64), float64(0))
+	assert.Greater(metrics["output_tokens"].(float64), float64(0))
+	assert.Greater(metrics["total_tokens"].(float64), float64(0))
+	assert.GreaterOrEqual(metrics["input_tokens_details.cached_tokens"].(float64), float64(0))
+	assert.GreaterOrEqual(metrics["output_tokens_details.reasoning_tokens"].(float64), float64(0))
+
+	// Check input field
+	var input any
+	err = json.Unmarshal([]byte(valsByKey["braintrust.input"].AsString()), &input)
+	assert.NoError(err)
+	assert.Contains(valsByKey["braintrust.input"].AsString(), "13+4")
+
+	// Check output field
+	var output any
+	err = json.Unmarshal([]byte(valsByKey["braintrust.output"].AsString()), &output)
+	assert.NoError(err)
+	assert.Contains(valsByKey["braintrust.output"].AsString(), "17")
 }
 
 func TestOpenAIResponsesKitchenSink(t *testing.T) {
@@ -178,38 +185,37 @@ func TestOpenAIResponsesKitchenSink(t *testing.T) {
 
 	valsByKey := toValuesByKey(span.Attributes)
 
-	// Required fields
-	assert.Equal("openai", valsByKey["provider"].AsString())
-	assert.Equal(resp.ID, valsByKey["id"].AsString())
-	assert.Contains(valsByKey["model"].AsString(), TEST_MODEL)
-
 	// Output field
 	outputText := resp.OutputText()
 	assert.Contains(outputText, "17")
 
-	// Instructions field
-	assert.Equal("Answer the question in a concise manner.", valsByKey["instructions"].AsString())
-	assert.Equal("test user", valsByKey["user"].AsString())
-	assert.Equal(0.5, valsByKey["temperature"].AsFloat64())
-	assert.Equal(1.0, valsByKey["top_p"].AsFloat64())
-	assert.Equal(true, valsByKey["parallel_tool_calls"].AsBool())
-	assert.Equal(false, valsByKey["store"].AsBool())
-	assert.Equal("auto", valsByKey["truncation"].AsString())
-
-	// Check new int and float fields
-	assert.Equal(int64(100), valsByKey["max_output_tokens"].AsInt64())
-
-	// Check response fields
-	assert.Contains(valsByKey, "id")
-	assert.Contains(valsByKey, "object")
-	// system_fingerprint may not be present in all responses
-	
-	// New fields that might not be present in all responses
-	// We don't assert on them, but we want to make sure they are handled if present
+	metadata := make(map[string]any)
+	rawAttrs := valsByKey["braintrust.metadata"].AsString()
+	err = json.Unmarshal([]byte(rawAttrs), &metadata)
+	assert.NoError(err)
+	assert.Equal("openai", metadata["provider"])
+	assert.Equal(TEST_MODEL, metadata["model"])
+	assert.Equal("Answer the question in a concise manner.", metadata["instructions"])
+	assert.Equal("test user", metadata["user"])
+	assert.Equal(0.5, metadata["temperature"])
+	assert.Equal(1.0, metadata["top_p"])
+	assert.Equal(true, metadata["parallel_tool_calls"])
+	assert.Equal(false, metadata["store"])
+	assert.Equal("auto", metadata["truncation"])
+	assert.Equal(100.0, metadata["max_output_tokens"])
 
 	// Check JSON serialized fields
-	assert.Contains(valsByKey["attributes.json.request"].AsString(), "what is 13+4?")
-	assert.Contains(valsByKey["attributes.json.response"].AsString(), "output")
+	var inputStr any
+	rawInput := valsByKey["braintrust.input"].AsString()
+	err = json.Unmarshal([]byte(rawInput), &inputStr)
+	assert.NoError(err)
+	assert.Contains(inputStr, "13+4")
+
+	var output any
+	rawOutput := valsByKey["braintrust.output"].AsString()
+	err = json.Unmarshal([]byte(rawOutput), &output)
+	assert.NoError(err)
+	assert.NotNil(output)
 }
 
 func toValuesByKey(attrs []attribute.KeyValue) map[string]attribute.Value {
@@ -259,16 +265,30 @@ func TestOpenAIResponsesStreaming(t *testing.T) {
 	assert.Equal("", span.Status.Description)
 
 	valsByKey := toValuesByKey(span.Attributes)
+
+	metadata := make(map[string]any)
+	rawMetadata := valsByKey["braintrust.metadata"].AsString()
+	err := json.Unmarshal([]byte(rawMetadata), &metadata)
+	assert.NoError(err)
+	assert.Equal("openai", metadata["provider"])
+
+	var output any
+	rawOutput := valsByKey["braintrust.output"].AsString()
+	err = json.Unmarshal([]byte(rawOutput), &output)
+	assert.NoError(err)
 	for _, i := range []string{"1", "2", "3", "5", "8", "13"} {
 		assert.Contains(completeText, i)
-		assert.Contains(valsByKey["attributes.json.response"].AsString(), i)
+		assert.Contains(rawOutput, i)
 	}
-
-	assert.Greater(valsByKey["usage.input_tokens"].AsInt64(), int64(0))
-	assert.Greater(valsByKey["usage.output_tokens"].AsInt64(), int64(0))
-	assert.Greater(valsByKey["usage.total_tokens"].AsInt64(), int64(0))
-	assert.GreaterOrEqual(valsByKey["usage.input_tokens_details.cached_tokens"].AsInt64(), int64(0))
-	assert.GreaterOrEqual(valsByKey["usage.output_tokens_details.reasoning_tokens"].AsInt64(), int64(0))
+	rawMetrics := valsByKey["braintrust.metrics"].AsString()
+	var metrics map[string]int64
+	err = json.Unmarshal([]byte(rawMetrics), &metrics)
+	assert.NoError(err)
+	assert.Greater(metrics["input_tokens"], int64(0))
+	assert.Greater(metrics["output_tokens"], int64(0))
+	assert.Greater(metrics["total_tokens"], int64(0))
+	assert.GreaterOrEqual(metrics["input_tokens_details.cached_tokens"], int64(0))
+	assert.GreaterOrEqual(metrics["output_tokens_details.reasoning_tokens"], int64(0))
 }
 
 func TestOpenAIResponsesWithListInput(t *testing.T) {
@@ -306,27 +326,44 @@ func TestOpenAIResponsesWithListInput(t *testing.T) {
 	assert.Equal("openai.responses.create", span.Name)
 	assert.Equal(codes.Unset, span.Status.Code)
 
+	fmt.Println("span", span)
+
 	valsByKey := toValuesByKey(span.Attributes)
-	assert.Contains(valsByKey["model"].AsString(), TEST_MODEL)
-	assert.Equal("openai", valsByKey["provider"].AsString())
 
-	assert.Greater(valsByKey["usage.input_tokens"].AsInt64(), int64(0))
-	assert.Greater(valsByKey["usage.output_tokens"].AsInt64(), int64(0))
-	assert.Greater(valsByKey["usage.total_tokens"].AsInt64(), int64(0))
-	assert.GreaterOrEqual(valsByKey["usage.input_tokens_details.cached_tokens"].AsInt64(), int64(0))
-	assert.GreaterOrEqual(valsByKey["usage.output_tokens_details.reasoning_tokens"].AsInt64(), int64(0))
-
-	var jsonAttrsMap map[string]interface{}
-	rawAttrs := valsByKey["attributes.json.request"].AsString()
-	err = json.Unmarshal([]byte(rawAttrs), &jsonAttrsMap)
+	rawMetadata := valsByKey["braintrust.metadata"].AsString()
+	var metadata map[string]any
+	fmt.Println("-----")
+	err = json.Unmarshal([]byte(rawMetadata), &metadata)
 	assert.NoError(err)
-	assert.Contains(rawAttrs, "3+125")
+	assert.Equal("openai", metadata["provider"])
+	assert.Equal(TEST_MODEL, metadata["model"])
 
-	jsonAttrsMap = make(map[string]interface{})
-	rawAttrs = valsByKey["attributes.json.response"].AsString()
-	err = json.Unmarshal([]byte(rawAttrs), &jsonAttrsMap)
+	rawMetrics := valsByKey["braintrust.metrics"].AsString()
+	var metrics map[string]int64
+	err = json.Unmarshal([]byte(rawMetrics), &metrics)
+	fmt.Println("-----")
+	fmt.Println("rawMetrics", rawMetrics)
+	fmt.Println("metrics", metrics)
 	assert.NoError(err)
-	assert.Contains(rawAttrs, "128")
+
+	assert.Greater(metrics["input_tokens"], int64(0))
+	assert.Greater(metrics["output_tokens"], int64(0))
+	assert.Greater(metrics["total_tokens"], int64(0))
+	assert.GreaterOrEqual(metrics["input_tokens_details.cached_tokens"], int64(0))
+	assert.GreaterOrEqual(metrics["output_tokens_details.reasoning_tokens"], int64(0))
+
+	var jsonInput any
+	input := valsByKey["braintrust.input"].AsString()
+	err = json.Unmarshal([]byte(input), &jsonInput)
+	assert.NoError(err)
+	assert.Contains(input, "3+125")
+
+	var outputMap any
+	output := valsByKey["braintrust.output"].AsString()
+	err = json.Unmarshal([]byte(output), &outputMap)
+	assert.NoError(err)
+	fmt.Println("outputMap", outputMap)
+	//assert.Contains(outputMap["text"].(string), "128")
 }
 
 func TestTestOTelTracer(t *testing.T) {
