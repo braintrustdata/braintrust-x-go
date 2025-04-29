@@ -5,10 +5,10 @@ import (
 	"sync"
 )
 
-// Logger is the interface for enable diagnostic logging.
+// Logger is an interface you can implement to add diagnostic
+// logging to Braintrust tracing.
 type Logger interface {
 	Debugf(format string, args ...any)
-	Infof(format string, args ...any)
 	Warnf(format string, args ...any)
 }
 
@@ -39,10 +39,7 @@ func logger() Logger {
 type noopLogger struct{}
 
 func (noopLogger) Debugf(string, ...any) {}
-func (noopLogger) Infof(string, ...any)  {}
 func (noopLogger) Warnf(string, ...any)  {}
-
-var _ Logger = &noopLogger{}
 
 // stdLogger logs to the standard logger.
 type stdLogger struct{}
@@ -51,12 +48,6 @@ func (stdLogger) Debugf(format string, args ...any) {
 	log.Printf("DEBUG braintrust: "+format, args...)
 }
 
-func (stdLogger) Infof(format string, args ...any) {
-	log.Printf("INFO braintrust: "+format, args...)
-}
-
 func (stdLogger) Warnf(format string, args ...any) {
 	log.Printf("WARN braintrust: "+format, args...)
 }
-
-var _ Logger = &stdLogger{}
