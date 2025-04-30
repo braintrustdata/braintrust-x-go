@@ -77,7 +77,7 @@ func TestError(t *testing.T) {
 		Input: responses.ResponseNewParamsInputUnion{OfString: openai.String("hai")},
 		Model: TEST_MODEL,
 	})
-	assert.Error(err)
+	require.Error(t, err)
 	assert.Nil(resp)
 
 	spans := flushSpans(exporter)
@@ -106,6 +106,7 @@ func TestOpenAIResponsesRequiredParams(t *testing.T) {
 	client, exporter, teardown := setUpTest(t)
 	defer teardown()
 	assert := assert.New(t)
+	require := require.New(t)
 
 	params := responses.ResponseNewParams{
 		Input: responses.ResponseNewParamsInputUnion{OfString: openai.String("What is 13+4?")},
@@ -113,8 +114,8 @@ func TestOpenAIResponsesRequiredParams(t *testing.T) {
 	}
 
 	resp, err := client.Responses.New(context.Background(), params)
-	assert.NoError(err)
-	assert.NotNil(resp)
+	require.NoError(err)
+	require.NotNil(resp)
 
 	assert.Contains(resp.OutputText(), "17")
 
@@ -129,7 +130,7 @@ func TestOpenAIResponsesRequiredParams(t *testing.T) {
 
 	// Check metadata fields
 	var metadata map[string]any
-	require.NotNil(t, valsByKey["braintrust.metadata"])
+	require.NotNil(valsByKey["braintrust.metadata"])
 	err = json.Unmarshal([]byte(valsByKey["braintrust.metadata"].AsString()), &metadata)
 	assert.NoError(err)
 	assert.Equal("openai", metadata["provider"])
@@ -181,7 +182,7 @@ func TestOpenAIResponsesKitchenSink(t *testing.T) {
 	}
 
 	resp, err := client.Responses.New(context.Background(), params)
-	require.Nil(err)
+	require.NoError(err)
 	require.NotNil(resp)
 
 	// Wait for spans to be exported
@@ -245,7 +246,8 @@ func flushSpans(exporter *tracetest.InMemoryExporter) []tracetest.SpanStub {
 func TestOpenAIResponsesStreamingClose(t *testing.T) {
 	client, exporter, teardown := setUpTest(t)
 	defer teardown()
-	assert, require := assert.New(t), require.New(t)
+	assert := assert.New(t)
+	require := require.New(t)
 
 	ctx := context.Background()
 	question := "Can you return me a list of the first 15 fibonacci numbers?"
@@ -269,7 +271,8 @@ func TestOpenAIResponsesStreamingClose(t *testing.T) {
 func TestOpenAIResponsesStreaming(t *testing.T) {
 	client, exporter, teardown := setUpTest(t)
 	defer teardown()
-	assert, require := assert.New(t), require.New(t)
+	assert := assert.New(t)
+	require := require.New(t)
 
 	ctx := context.Background()
 	question := "Can you return me a list of the first 15 fibonacci numbers?"
@@ -287,6 +290,7 @@ func TestOpenAIResponsesStreaming(t *testing.T) {
 			completeText = data.Text
 		}
 	}
+	require.NoError(stream.Err())
 
 	spans := flushSpans(exporter)
 	require.Len(spans, 1)
