@@ -20,9 +20,8 @@ func tracer() trace.Tracer {
 type NextMiddleware = func(req *http.Request) (*http.Response, error)
 
 func Middleware(req *http.Request, next NextMiddleware) (*http.Response, error) {
-	start := time.Now()
-
 	diag.Debugf("Middleware: %s %s", req.Method, req.URL.Path)
+	start := time.Now()
 
 	// Intercept the request body so we can parse it and still pass it along.
 	var buf bytes.Buffer
@@ -55,7 +54,13 @@ func Middleware(req *http.Request, next NextMiddleware) (*http.Response, error) 
 		return resp, err
 	}
 
+	// Intercept the response body, so we can gather tracing data.
+	//
+	// It's critical that we don't try to parse the whole response body here because
+	// we don't want to block clients waiting for streaming responses.
 	onResponseDone := func(r io.Reader) {
+		// NOTE: this could be done in a goroutine so we don't add any extra
+		// latency to the response.
 		now := time.Now()
 		if err := reqTracer.TagSpan(span, r); err != nil {
 			diag.Warnf("Error tagging span: %v\n%s", err)
