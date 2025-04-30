@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/braintrust/braintrust-x-go/braintrust/trace"
+	"github.com/braintrust/braintrust-x-go/braintrust/trace/traceopenai"
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
 	"github.com/openai/openai-go/responses"
@@ -29,8 +31,6 @@ func (r *Recommender) getFoodRec(ctx context.Context, food string, zipcode strin
 	ctx, span := tracer.Start(ctx, "getFoodRec")
 	defer span.End()
 
-	ctx = context.WithValue(ctx, "zipcode", zipcode)
-
 	prompt := fmt.Sprintf("Recommend a place to get %s in zipcode %s.", food, zipcode)
 
 	params := responses.ResponseNewParams{
@@ -46,24 +46,63 @@ func (r *Recommender) getFoodRec(ctx context.Context, food string, zipcode strin
 	return resp.OutputText(), nil
 }
 
+func (r *Recommender) getDrinkRec(ctx context.Context, drink, vibe, zipcode string) (string, error) {
+	ctx, span := tracer.Start(ctx, "getDrinkRec")
+	defer span.End()
+
+	prompt := fmt.Sprintf("Recommend a place to get %s with vibe %sin zipcode %s.", drink, vibe, zipcode)
+	fmt.Println(prompt)
+
+	stream := r.client.Responses.NewStreaming(ctx, responses.ResponseNewParams{
+		Model: openai.ChatModelGPT4,
+		Input: responses.ResponseNewParamsInputUnion{OfString: openai.String(prompt)},
+	})
+
+	for stream.Next() {
+		fmt.Println("got msg")
+	}
+
+	if err := stream.Err(); err != nil {
+		fmt.Println(err)
+		return "", err
+	}
+
+	return "", nil
+
+}
+
 func main() {
 	ctx := context.Background()
-	// tp, err := initTracer()
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-	// defer tp.Shutdown(ctx)
 
+	// initialize braintrust tracing
+	teardown, err := trace.Quickstart()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer teardown()
+
+	// initialize openai client with tracing middleware
 	client := openai.NewClient(
-		option.WithMiddleware(LoggingMiddleware),
+		option.WithMiddleware(traceopenai.Middleware),
 	)
 
+	// Make some open ai requests that will be traced.
 	recommender := NewRecommender(client)
+	ctx, span := tracer.Start(ctx, "recommendations")
+	defer span.End()
 
-	rec, err := recommender.getFoodRec(ctx, "coffee", "11231")
+	rec, err := recommender.getFoodRec(ctx, "pizza", "11231")
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	fmt.Println(rec)
+
+	rec, err = recommender.getDrinkRec(ctx, "beer", "chill", "11231")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Println(rec)
+
 }
