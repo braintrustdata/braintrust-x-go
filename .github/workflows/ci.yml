@@ -25,7 +25,7 @@ jobs:
           args: --timeout=5m
           install-mode: binary
 
-      - name: Run lint, tests, etc.
+      - name: Lint, vet, tests, etc.
         run: make all
 
       - name: Generate coverage report
