@@ -9,7 +9,7 @@ import (
 	"runtime/debug"
 	"testing"
 
-	"github.com/braintrust/braintrust-x-go/braintrust/logger"
+	"github.com/braintrust/braintrust-x-go/braintrust/diag"
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
 	"github.com/openai/openai-go/packages/param"
@@ -29,7 +29,7 @@ const TEST_MODEL = openai.ChatModelGPT4oMini
 // It returns an openai client, an exporter, and a teardown function.
 func setUpTest(t *testing.T) (openai.Client, *tracetest.InMemoryExporter, func()) {
 
-	logger.Set(&failTestLogger{t: t})
+	diag.SetLogger(&failTestLogger{t: t})
 
 	// setup otel to be fully synchronous
 	exporter := tracetest.NewInMemoryExporter()
@@ -43,7 +43,7 @@ func setUpTest(t *testing.T) (openai.Client, *tracetest.InMemoryExporter, func()
 	otel.SetTracerProvider(tp)
 
 	teardown := func() {
-		logger.Clear()
+		diag.ClearLogger()
 		err := tp.Shutdown(context.Background())
 		if err != nil {
 			t.Fatalf("Error shutting down tracer provider: %v", err)

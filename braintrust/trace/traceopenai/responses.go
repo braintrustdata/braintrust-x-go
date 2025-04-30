@@ -231,5 +231,3 @@ func parseUsageTokens(usage map[string]interface{}) map[string]int64 {
 
 	return metrics
 }
-
-var _ middlewareTracer = &responsesTracer{}

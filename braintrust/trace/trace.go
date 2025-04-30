@@ -9,15 +9,15 @@ import (
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/sdk/trace"
 
-	"github.com/braintrust/braintrust-x-go/braintrust/logger"
+	"github.com/braintrust/braintrust-x-go/braintrust/diag"
 )
 
 // Quickstart will configure the OpenTelemetry tracer to
 // an easy way of getting up and running if you are new to OpenTelemetry. It
-// returns a teardown function that should be called when your program exits.
+// returns a teardown function that should be called before your program exits.
 func Quickstart() (teardown func(), err error) {
 
-	logger.Get().Debugf("Initializing OpenTelemetry tracer")
+	diag.Debugf("Initializing OpenTelemetry tracer")
 
 	// Create Braintrust OTLP exporter
 	braintrustExporter, err := otlptrace.New(
@@ -44,7 +44,7 @@ func Quickstart() (teardown func(), err error) {
 	teardown = func() {
 		err := tp.Shutdown(context.Background())
 		if err != nil {
-			logger.Get().Warnf("Error shutting down tracer provider: %v", err)
+			diag.Warnf("Error shutting down tracer provider: %v", err)
 		}
 	}
 

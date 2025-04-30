@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/braintrust/braintrust-x-go/braintrust/logger"
+	"github.com/braintrust/braintrust-x-go/braintrust/diag"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -22,8 +22,7 @@ type NextMiddleware = func(req *http.Request) (*http.Response, error)
 func Middleware(req *http.Request, next NextMiddleware) (*http.Response, error) {
 	start := time.Now()
 
-	l := logger.Get()
-	l.Debugf("Middleware: %s %s", req.Method, req.URL.Path)
+	diag.Debugf("Middleware: %s %s", req.Method, req.URL.Path)
 
 	// Intercept the request body so we can parse it and still pass it along.
 	var buf bytes.Buffer
@@ -44,7 +43,7 @@ func Middleware(req *http.Request, next NextMiddleware) (*http.Response, error) 
 	ctx, span, err := reqTracer.StartSpan(req.Context(), start, tee)
 	req = req.WithContext(ctx)
 	if err != nil {
-		l.Warnf("Error starting span: %v", err)
+		diag.Warnf("Error starting span: %v", err)
 	}
 
 	// Continue processing the request.
@@ -59,7 +58,7 @@ func Middleware(req *http.Request, next NextMiddleware) (*http.Response, error) 
 	onResponseDone := func(r io.Reader) {
 		now := time.Now()
 		if err := reqTracer.TagSpan(span, r); err != nil {
-			l.Warnf("Error tagging span: %v\n%s", err)
+			diag.Warnf("Error tagging span: %v\n%s", err)
 		}
 		span.End(trace.WithTimestamp(now))
 	}
