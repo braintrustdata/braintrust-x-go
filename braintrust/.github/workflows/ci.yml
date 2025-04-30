@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]  # This runs on pushes/merges to main
+  pull_request:  # This runs on all pull requests
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+          cache: true
+
+      - name: Install golangci-lint
+        uses: golangci/golangci-lint-action@v3
+        with:
+          version: latest
+          skip-cache: true
+          args: --timeout=5m
+          install-mode: binary
+
+      - name: Run lint, tests, etc.
+        run: make all
+
+      - name: Generate coverage report
+        if: success()
+        run: |
+          go test ./... -coverprofile=coverage.out
+          go tool cover -func=coverage.out
+          go tool cover -html=coverage.out -o coverage.html
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v3
+        if: success()
+        with:
+          name: coverage-report
+          path: coverage.html
+          retention-days: 7
