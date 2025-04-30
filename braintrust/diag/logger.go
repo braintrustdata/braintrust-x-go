@@ -34,12 +34,12 @@ func ClearLogger() {
 
 // SetDebugLogger will log debug messages and warnings to Go's standard logger.
 func SetDebugLogger() {
-	SetLogger(&DebugLogger{})
+	SetLogger(&debugLogger{})
 }
 
 // SetWarnLogger will log warnings to Go's standard logger.
 func SetWarnLogger() {
-	SetLogger(&WarnLogger{})
+	SetLogger(&warnLogger{})
 }
 
 func Debugf(format string, args ...any) {
@@ -72,25 +72,25 @@ func (noopLogger) Warnf(string, ...any)  {}
 
 var _ Logger = noopLogger{}
 
-// DebugLogger logs everything to the standard logger.
-type DebugLogger struct{}
+// debugLogger logs everything to the standard logger.
+type debugLogger struct{}
 
-func (DebugLogger) Debugf(format string, args ...any) {
+func (debugLogger) Debugf(format string, args ...any) {
 	log.Printf("DEBUG braintrust: "+format, args...)
 }
 
-func (DebugLogger) Warnf(format string, args ...any) {
+func (debugLogger) Warnf(format string, args ...any) {
 	log.Printf("WARN braintrust: "+format, args...)
 }
 
-var _ Logger = DebugLogger{}
+var _ Logger = debugLogger{}
 
-// WarnLogger logs only warnings to the standard logger.
-type WarnLogger struct{}
+// warnLogger logs only warnings to the standard logger.
+type warnLogger struct{}
 
-func (WarnLogger) Debugf(string, ...any) {}
-func (WarnLogger) Warnf(format string, args ...any) {
+func (warnLogger) Debugf(string, ...any) {}
+func (warnLogger) Warnf(format string, args ...any) {
 	log.Printf("WARN braintrust: "+format, args...)
 }
 
-var _ Logger = WarnLogger{}
+var _ Logger = warnLogger{}
