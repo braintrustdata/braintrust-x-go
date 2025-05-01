@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"testing"
 
@@ -374,15 +375,29 @@ func TestOpenAIResponsesWithListInput(t *testing.T) {
 func assertValidMetrics(t *testing.T, metricsJson string) {
 	assert := assert.New(t)
 	require := require.New(t)
-
 	var metrics map[string]int64
 	err := json.Unmarshal([]byte(metricsJson), &metrics)
 	require.NoError(err)
-	assert.Greater(metrics["input_tokens"], int64(0))
-	assert.Greater(metrics["output_tokens"], int64(0))
-	assert.Greater(metrics["total_tokens"], int64(0))
-	assert.GreaterOrEqual(metrics["input_tokens_details.cached_tokens"], int64(0))
-	assert.GreaterOrEqual(metrics["output_tokens_details.reasoning_tokens"], int64(0))
+	fmt.Println(metrics)
+
+	gtz := func(v int64) bool { return v > 0 }
+	gtez := func(v int64) bool { return v >= 0 }
+
+	metricToValidator := map[string]func(int64) bool{
+		"prompt_tokens":               gtz,
+		"completion_tokens":           gtz,
+		"tokens":                      gtz,
+		"prompt_cached_tokens":        gtez,
+		"completion_cached_tokens":    gtez,
+		"completion_reasoning_tokens": gtez,
+	}
+
+	// this will fail if there are new metrics, but that's ok.
+	for n, v := range metrics {
+		validator, ok := metricToValidator[n]
+		assert.True(ok, "metric %s not found", n)
+		assert.True(validator(v), "metric %s is not valid", n)
+	}
 }
 
 func TestTestOTelTracer(t *testing.T) {

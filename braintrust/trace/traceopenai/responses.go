@@ -207,27 +207,73 @@ func setJSONAttr(span trace.Span, key string, value any) error {
 
 // parseUsageTokens parses the usage tokens from the raw json response
 func parseUsageTokens(usage map[string]interface{}) map[string]int64 {
+	metrics := make(map[string]int64)
+
 	if usage == nil {
-		return make(map[string]int64)
+		return metrics
 	}
 
-	metrics := make(map[string]int64)
-	for _, k := range []string{"input_tokens", "output_tokens", "total_tokens"} {
-		if v, ok := usage[k]; ok {
-			if f, ok := v.(float64); ok {
-				metrics[k] = int64(f)
-			}
-		}
-	}
-	for _, d := range []string{"input_tokens_details", "output_tokens_details"} {
-		if details, ok := usage[d].(map[string]interface{}); ok {
-			for k, v := range details {
-				if c, ok := v.(float64); ok {
-					metrics[d+"."+k] = int64(c)
+	// we translate metrics names to be consistent with the chat completion api.
+	for k, v := range usage {
+		if strings.HasSuffix(k, "_tokens_details") {
+			prefix := translateMetricPrefix(strings.TrimSuffix(k, "_tokens_details"))
+			if details, ok := v.(map[string]interface{}); ok {
+				for kd, vd := range details {
+					if ok, i := toInt64(vd); ok {
+						metrics[prefix+"_"+kd] = i
+					}
 				}
+			}
+		} else {
+			if ok, i := toInt64(v); ok {
+				k = translateMetricKey(k)
+				metrics[k] = i
 			}
 		}
 	}
 
 	return metrics
+}
+
+func translateMetricPrefix(prefix string) string {
+	switch prefix {
+	case "input":
+		return "prompt"
+	case "output":
+		return "completion"
+	default:
+		return prefix
+	}
+}
+func translateMetricKey(key string) string {
+	switch key {
+	case "input_tokens":
+		return "prompt_tokens"
+	case "output_tokens":
+		return "completion_tokens"
+	case "total_tokens":
+		return "tokens"
+	}
+	return key
+}
+
+func toInt64(v any) (bool, int64) {
+	switch v := v.(type) {
+	case float64:
+		return true, int64(v)
+	case int64:
+		return true, v
+	case int:
+		return true, int64(v)
+	case float32:
+		return true, int64(v)
+	case uint64:
+		return true, int64(v)
+	case uint:
+		return true, int64(v)
+	case uint32:
+		return true, int64(v)
+	default:
+		return false, 0
+	}
 }
