@@ -119,9 +119,8 @@ func TestOpenAIResponsesRequiredParams(t *testing.T) {
 
 	assert.Contains(resp.OutputText(), "17")
 
-	spans := flushSpans(exporter)
-	assert.Len(spans, 1)
-	span := spans[0]
+	span := flushOnlySpanMust(t, exporter)
+
 	assert.Equal("openai.responses.create", span.Name)
 	assert.Equal(codes.Unset, span.Status.Code)
 	assert.Equal("", span.Status.Description)
@@ -137,14 +136,7 @@ func TestOpenAIResponsesRequiredParams(t *testing.T) {
 	assert.Contains(metadata["model"], TEST_MODEL)
 
 	// Check metrics fields
-	var metrics map[string]int64
-	err = json.Unmarshal([]byte(valsByKey["braintrust.metrics"].AsString()), &metrics)
-	assert.NoError(err)
-	assert.Greater(metrics["input_tokens"], int64(0))
-	assert.Greater(metrics["output_tokens"], int64(0))
-	assert.Greater(metrics["total_tokens"], int64(0))
-	assert.GreaterOrEqual(metrics["input_tokens_details.cached_tokens"], int64(0))
-	assert.GreaterOrEqual(metrics["output_tokens_details.reasoning_tokens"], int64(0))
+	assertValidMetrics(t, valsByKey["braintrust.metrics"].AsString())
 
 	// Check input field
 	var input any
@@ -186,10 +178,8 @@ func TestOpenAIResponsesKitchenSink(t *testing.T) {
 	require.NotNil(resp)
 
 	// Wait for spans to be exported
-	spans := flushSpans(exporter)
-	require.Len(spans, 1)
+	span := flushOnlySpanMust(t, exporter)
 
-	span := spans[0]
 	assert.Equal(span.Name, "openai.responses.create")
 
 	valsByKey := toValuesByKey(span.Attributes)
@@ -243,6 +233,12 @@ func flushSpans(exporter *tracetest.InMemoryExporter) []tracetest.SpanStub {
 	return spans
 }
 
+func flushOnlySpanMust(t *testing.T, exporter *tracetest.InMemoryExporter) tracetest.SpanStub {
+	spans := flushSpans(exporter)
+	require.Len(t, spans, 1)
+	return spans[0]
+}
+
 func TestOpenAIResponsesStreamingClose(t *testing.T) {
 	client, exporter, teardown := setUpTest(t)
 	defer teardown()
@@ -260,9 +256,8 @@ func TestOpenAIResponsesStreamingClose(t *testing.T) {
 	err := stream.Close()
 	require.NoError(err)
 
-	spans := flushSpans(exporter)
-	require.Len(spans, 1)
-	span := spans[0]
+	span := flushOnlySpanMust(t, exporter)
+
 	assert.Equal(span.Name, "openai.responses.create")
 	assert.Equal(codes.Unset, span.Status.Code)
 	assert.Equal("", span.Status.Description)
@@ -292,9 +287,8 @@ func TestOpenAIResponsesStreaming(t *testing.T) {
 	}
 	require.NoError(stream.Err())
 
-	spans := flushSpans(exporter)
-	require.Len(spans, 1)
-	span := spans[0]
+	span := flushOnlySpanMust(t, exporter)
+
 	assert.Equal(span.Name, "openai.responses.create")
 	assert.Equal(codes.Unset, span.Status.Code)
 	assert.Equal("", span.Status.Description)
@@ -316,14 +310,7 @@ func TestOpenAIResponsesStreaming(t *testing.T) {
 		assert.Contains(rawOutput, i)
 	}
 	rawMetrics := valsByKey["braintrust.metrics"].AsString()
-	var metrics map[string]int64
-	err = json.Unmarshal([]byte(rawMetrics), &metrics)
-	assert.NoError(err)
-	assert.Greater(metrics["input_tokens"], int64(0))
-	assert.Greater(metrics["output_tokens"], int64(0))
-	assert.Greater(metrics["total_tokens"], int64(0))
-	assert.GreaterOrEqual(metrics["input_tokens_details.cached_tokens"], int64(0))
-	assert.GreaterOrEqual(metrics["output_tokens_details.reasoning_tokens"], int64(0))
+	assertValidMetrics(t, rawMetrics)
 }
 
 func TestOpenAIResponsesWithListInput(t *testing.T) {
@@ -352,10 +339,7 @@ func TestOpenAIResponsesWithListInput(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(resp)
 
-	// Wait for spans to be exported
-	spans := flushSpans(exporter)
-	require.Len(spans, 1)
-	span := spans[0]
+	span := flushOnlySpanMust(t, exporter)
 
 	// Check span attributes
 	assert.Equal("openai.responses.create", span.Name)
@@ -371,15 +355,8 @@ func TestOpenAIResponsesWithListInput(t *testing.T) {
 	assert.Equal(TEST_MODEL, metadata["model"])
 
 	rawMetrics := valsByKey["braintrust.metrics"].AsString()
-	var metrics map[string]int64
-	err = json.Unmarshal([]byte(rawMetrics), &metrics)
-	assert.NoError(err)
 
-	assert.Greater(metrics["input_tokens"], int64(0))
-	assert.Greater(metrics["output_tokens"], int64(0))
-	assert.Greater(metrics["total_tokens"], int64(0))
-	assert.GreaterOrEqual(metrics["input_tokens_details.cached_tokens"], int64(0))
-	assert.GreaterOrEqual(metrics["output_tokens_details.reasoning_tokens"], int64(0))
+	assertValidMetrics(t, rawMetrics)
 
 	var jsonInput any
 	input := valsByKey["braintrust.input"].AsString()
@@ -392,6 +369,20 @@ func TestOpenAIResponsesWithListInput(t *testing.T) {
 	err = json.Unmarshal([]byte(output), &outputMap)
 	assert.NoError(err)
 	//assert.Contains(outputMap["text"].(string), "128")
+}
+
+func assertValidMetrics(t *testing.T, metricsJson string) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	var metrics map[string]int64
+	err := json.Unmarshal([]byte(metricsJson), &metrics)
+	require.NoError(err)
+	assert.Greater(metrics["input_tokens"], int64(0))
+	assert.Greater(metrics["output_tokens"], int64(0))
+	assert.Greater(metrics["total_tokens"], int64(0))
+	assert.GreaterOrEqual(metrics["input_tokens_details.cached_tokens"], int64(0))
+	assert.GreaterOrEqual(metrics["output_tokens_details.reasoning_tokens"], int64(0))
 }
 
 func TestTestOTelTracer(t *testing.T) {
