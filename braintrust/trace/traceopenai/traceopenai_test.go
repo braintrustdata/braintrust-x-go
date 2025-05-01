@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"testing"
 
@@ -378,7 +377,6 @@ func assertValidMetrics(t *testing.T, metricsJson string) {
 	var metrics map[string]int64
 	err := json.Unmarshal([]byte(metricsJson), &metrics)
 	require.NoError(err)
-	fmt.Println(metrics)
 
 	gtz := func(v int64) bool { return v > 0 }
 	gtez := func(v int64) bool { return v >= 0 }
