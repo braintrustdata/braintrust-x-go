@@ -10,7 +10,6 @@ import (
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
 	"github.com/openai/openai-go/responses"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -20,7 +19,6 @@ func TestEval(t *testing.T) {
 	defer teardown()
 
 	require := require.New(t)
-	assert := assert.New(t)
 
 	client := openai.NewClient(
 		option.WithMiddleware(traceopenai.Middleware),
@@ -54,5 +52,4 @@ func TestEval(t *testing.T) {
 	err = eval.Run()
 
 	require.NoError(err)
-	assert.Equal(0, 1)
 }
