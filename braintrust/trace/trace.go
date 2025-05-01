@@ -37,8 +37,12 @@ func Quickstart() (teardown func(), err error) {
 		return nil, err
 	}
 
+	// FIXME[matt] this should be a parameter
+	defaultParent := Experiment{id: "MATT_FAKE_EXPERIMENT_ID"}
+
 	// Create a tracer provider with both exporters
 	tp := trace.NewTracerProvider(
+		trace.WithSpanProcessor(NewSpanProcessor(defaultParent)),
 		trace.WithBatcher(exporter),
 	)
 	otel.SetTracerProvider(tp)
@@ -63,6 +67,10 @@ var parentContextKey contextKey = PARENT_ATTR
 // SetParent will set the parent to the given Parent for any span created from the returned context.
 func SetParent(ctx context.Context, parent Parent) context.Context {
 	return context.WithValue(ctx, parentContextKey, parent)
+}
+
+func SetParentOnSpan(span trace.ReadWriteSpan, parent Parent) {
+	span.SetAttributes(attribute.String(PARENT_ATTR, parent.String()))
 }
 
 func getParent(ctx context.Context) (bool, Parent) {
@@ -97,8 +105,9 @@ func (e Experiment) String() string {
 
 var _ Parent = Experiment{}
 
-// SpanProcessor is a span processor that labels spans with their parent key. It must be included in the OTel
-// pipeline to send data to Braintrust.
+// SpanProcessor is an OTel span processor that labels spans with their parent key....
+//
+//	It must be included in the OTel pipeline to send data to Braintrust.
 type SpanProcessor struct {
 	defaultParent Parent
 	defaultAttr   attribute.KeyValue
@@ -106,6 +115,7 @@ type SpanProcessor struct {
 
 // NewSpanProcessor creates a new span processor that will assign any unlabelled spans to the default parent.
 func NewSpanProcessor(defaultParent Parent) *SpanProcessor {
+	// FIXME[matt]: option to drop unlabelled spans?
 	return &SpanProcessor{
 		defaultParent: defaultParent,
 		defaultAttr:   attribute.String(PARENT_ATTR, defaultParent.String()),
@@ -116,19 +126,22 @@ func (p *SpanProcessor) OnStart(ctx context.Context, span trace.ReadWriteSpan) {
 	// If that span already has a parent, don't override
 	for _, attr := range span.Attributes() {
 		if attr.Key == PARENT_ATTR && attr.Value.AsString() != "" {
-			diag.Debugf("OnStart: span has parent %s", attr.Value.AsString())
+			diag.Debugf("SpanProcessor.OnStart: noop. Span has parent %s", attr.Value.AsString())
 			return
 		}
 	}
 
 	ok, parent := getParent(ctx)
 	if ok {
-		span.SetAttributes(attribute.String(PARENT_ATTR, parent.String()))
-		diag.Debugf("OnStart: setting parent from context: %s", parent.String())
-	} else {
-		span.SetAttributes(p.defaultAttr)
-		diag.Debugf("OnStart: using default parent: %s", p.defaultParent.String())
+		SetParentOnSpan(span, parent)
+		// if the context has a parent, use it.
+		diag.Debugf("SpanProcessor.OnStart: setting parent from context: %s", parent)
+		return
 	}
+
+	// otherwise use the default parent
+	span.SetAttributes(p.defaultAttr)
+	diag.Debugf("SpanProcessor.OnStart: setting default parent: %s", p.defaultParent)
 }
 
 func (*SpanProcessor) OnEnd(span trace.ReadOnlySpan)        {}

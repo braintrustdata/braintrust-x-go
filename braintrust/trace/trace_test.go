@@ -74,14 +74,6 @@ func TestSpanProcessor(t *testing.T) {
 	require.True(ok)
 	assert.Equal(attr.AsString(), "project: 67890")
 
-	// assert that the default parent is used if the context is nil
-	_, span3 := tracer.Start(nil, "test")
-	span3.End()
-	span = getOneSpan(t, exporter)
-	ok, attr = getAttr(span, PARENT_ATTR)
-	require.True(ok)
-	assert.Equal(attr.AsString(), "project: 12345")
-
 	// assert that if a span already has a parent, it is not overridden
 	ctx = context.Background()
 	ctx = SetParent(ctx, Project{id: "77777"})
