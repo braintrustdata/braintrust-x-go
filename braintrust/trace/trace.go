@@ -17,17 +17,17 @@ import (
 // returns a teardown function that should be called before your program exits.
 func Quickstart() (teardown func(), err error) {
 
-	diag.Debugf("Initializing OpenTelemetry tracer")
+	diag.Debugf("Initializing OpenTelemetry tracer with experiment_id: %s", os.Getenv("BRAINTRUST_EXPERIMENT_ID"))
 
 	// Create Braintrust OTLP exporter
-	braintrustExporter, err := otlptrace.New(
+	exporter, err := otlptrace.New(
 		context.Background(),
 		otlptracehttp.NewClient(
 			otlptracehttp.WithEndpoint("api.braintrust.dev"),
 			otlptracehttp.WithURLPath("/otel/v1/traces"),
 			otlptracehttp.WithHeaders(map[string]string{
 				"Authorization": "Bearer " + os.Getenv("BRAINTRUST_API_KEY"),
-				"x-bt-parent":   "project_id:" + os.Getenv("BRAINTRUST_PROJECT_ID"),
+				"x-bt-parent":   "experiment_id:" + os.Getenv("BRAINTRUST_EXPERIMENT_ID"),
 			}),
 		),
 	)
@@ -37,7 +37,7 @@ func Quickstart() (teardown func(), err error) {
 
 	// Create a tracer provider with both exporters
 	tp := trace.NewTracerProvider(
-		trace.WithBatcher(braintrustExporter),
+		trace.WithBatcher(exporter),
 	)
 	otel.SetTracerProvider(tp)
 
@@ -50,3 +50,7 @@ func Quickstart() (teardown func(), err error) {
 
 	return teardown, nil
 }
+
+// ParentContextKey is the used to store information about a span's parent object (e.g.
+// project, experiment) in a context.Context object.
+type ParentContextKey string
