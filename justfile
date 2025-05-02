@@ -36,3 +36,12 @@ tidy:
 
 # Format, test and run the application
 dev: fmt test run
+
+# Run tests in the current directory when files change.
+[no-cd]
+watch-test-cwd:
+    watchexec -c -r -w . -e go -- go test ./... -v
+
+# Run all tests when files change.
+watch-test:
+    watchexec -c -r -w . -e go -- go test ./... -v
