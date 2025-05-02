@@ -1,6 +1,6 @@
 
 # Verify the build for ci.
-ci: fmt lint vet test build
+ci: clean fmt lint vet test build
 
 build:
     go build .
@@ -10,6 +10,7 @@ run:
 
 clean:
     go clean
+    rm -f coverage.out coverage.html
 
 test:
     go test ./... -v
