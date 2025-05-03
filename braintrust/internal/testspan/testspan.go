@@ -1,6 +1,7 @@
 package testspan
 
 import (
+	"bytes"
 	"encoding/json"
 	"testing"
 	"time"
@@ -27,6 +28,34 @@ func New(t *testing.T, stub tracetest.SpanStub) *TestSpan {
 	}
 }
 
+// String returns a pretty print of the span.
+func (s *TestSpan) String() string {
+	// Create a nicely formatted string representation of the span
+	var result string
+	result += "TestSpan:\n"
+	result += "  Name: " + s.Stub.Name + "\n"
+	result += "  Start Time: " + s.Stub.StartTime.String() + "\n"
+	result += "  End Time: " + s.Stub.EndTime.String() + "\n"
+
+	result += "  Attributes:\n"
+	for _, attr := range s.Stub.Attributes {
+		key := string(attr.Key)
+		val := attr.Value.AsString()
+
+		// Try to pretty print JSON attributes
+		if isJSON(val) {
+			var prettyJSON bytes.Buffer
+			if err := json.Indent(&prettyJSON, []byte(val), "    ", "  "); err == nil {
+				val = "\n" + prettyJSON.String()
+			}
+		}
+
+		result += "    " + key + ": " + val + "\n"
+	}
+
+	return result
+}
+
 func (s *TestSpan) AssertNameIs(n string) {
 	require.Equal(s.t, n, s.Stub.Name)
 }
@@ -46,7 +75,13 @@ func (s *TestSpan) Attr(key string) (bool, attr.Value) {
 		}
 	}
 	return false, attr.Value{}
+}
 
+func (s *TestSpan) AttrString(key string) string {
+	found, val := s.Attr(key)
+	require.True(s.t, found, "attribute %s not found", key)
+	require.True(s.t, val.Type() == attr.STRING)
+	return val.AsString()
 }
 
 // AttrMust returns the value of the attribute with the given key and fails the test
@@ -86,4 +121,9 @@ func (s *TestSpan) unmarshal(key string, into any) {
 	require.True(s.t, raw.Type() == attr.STRING)
 	err := json.Unmarshal([]byte(raw.AsString()), into)
 	require.NoError(s.t, err)
+}
+
+func isJSON(s string) bool {
+	var js any
+	return json.Unmarshal([]byte(s), &js) == nil
 }
