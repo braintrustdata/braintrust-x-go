@@ -25,3 +25,5 @@ go.work.sum
 .env
 .vscode
 braintrust-x-go
+
+**/.claude/settings.local.json

@@ -38,7 +38,7 @@ func Quickstart() (teardown func(), err error) {
 	}
 
 	// FIXME[matt] this should be a parameter
-	defaultParent := Experiment{id: "MATT_FAKE_EXPERIMENT_ID"}
+	defaultParent := NewExperiment("MATT_FAKE_EXPERIMENT_ID")
 
 	// Create a tracer provider with both exporters
 	tp := trace.NewTracerProvider(
@@ -96,11 +96,15 @@ var _ Parent = Project{}
 
 // Experiment is a parent that represents an experiment.
 type Experiment struct {
-	id string
+	ID string
+}
+
+func NewExperiment(id string) Experiment {
+	return Experiment{ID: id}
 }
 
 func (e Experiment) String() string {
-	return fmt.Sprintf("experiment: %s", e.id)
+	return fmt.Sprintf("experiment: %s", e.ID)
 }
 
 var _ Parent = Experiment{}

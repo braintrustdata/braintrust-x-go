@@ -8,19 +8,23 @@ import (
 	"github.com/braintrust/braintrust-x-go/braintrust/diag"
 )
 
-// FailTestLogger is a diag.Logger that will fail tests if a warning is logged.
-type FailTestLogger struct {
+// FailTestsOnWarnings will fail tests if warnings are produced during tests.
+func FailTestsOnWarnings(t *testing.T) {
+	diag.SetLogger(newFailTestLogger(t))
+}
+
+type failTestLogger struct {
 	t *testing.T
 }
 
-func NewFailTestLogger(t *testing.T) *FailTestLogger {
-	return &FailTestLogger{t: t}
+func newFailTestLogger(t *testing.T) *failTestLogger {
+	return &failTestLogger{t: t}
 }
 
-func (f *FailTestLogger) Debugf(format string, args ...any) {}
+func (f *failTestLogger) Debugf(format string, args ...any) {}
 
-func (f *FailTestLogger) Warnf(format string, args ...any) {
+func (f *failTestLogger) Warnf(format string, args ...any) {
 	f.t.Fatalf("failTestLogger caught a warning: %s\n%s", fmt.Sprintf(format, args...), string(debug.Stack()))
 }
 
-var _ diag.Logger = &FailTestLogger{}
+var _ diag.Logger = &failTestLogger{}

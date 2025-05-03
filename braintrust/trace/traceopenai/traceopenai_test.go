@@ -2,7 +2,6 @@ package traceopenai
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"testing"
@@ -10,6 +9,7 @@ import (
 
 	"github.com/braintrust/braintrust-x-go/braintrust/diag"
 	"github.com/braintrust/braintrust-x-go/braintrust/internal"
+	"github.com/braintrust/braintrust-x-go/braintrust/internal/testspan"
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
 	"github.com/openai/openai-go/packages/param"
@@ -17,7 +17,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
@@ -30,7 +29,7 @@ const TEST_MODEL = "gpt-4o-mini"
 func setUpTest(t *testing.T) (openai.Client, *tracetest.InMemoryExporter, func()) {
 
 	// fail tests if we log warnings.
-	diag.SetLogger(internal.NewFailTestLogger(t))
+	internal.FailTestsOnWarnings(t)
 
 	// setup otel to be fully synchronous
 	exporter := tracetest.NewInMemoryExporter()
@@ -122,21 +121,15 @@ func TestOpenAIResponsesRequiredParams(t *testing.T) {
 
 	assert.Contains(resp.OutputText(), "17")
 
-	span := flushOnlySpanMust(t, exporter)
+	span := flushOne(t, exporter)
 	assertSpanValid(t, span, start, end)
 
-	// Check input field
-	valsByKey := toValuesByKey(span.Attributes)
-	var input any
-	err = json.Unmarshal([]byte(valsByKey["braintrust.input"].AsString()), &input)
-	assert.NoError(err)
-	assert.Contains(valsByKey["braintrust.input"].AsString(), "13+4")
+	ts := testspan.New(t, span)
 
-	// Check output field
-	var output any
-	err = json.Unmarshal([]byte(valsByKey["braintrust.output"].AsString()), &output)
-	assert.NoError(err)
-	assert.Contains(valsByKey["braintrust.output"].AsString(), "17")
+	_ = ts.Input()
+	assert.Contains(ts.AttrString("braintrust.output"), "17")
+	_ = ts.Output()
+
 }
 
 func TestOpenAIResponsesKitchenSink(t *testing.T) {
@@ -145,11 +138,11 @@ func TestOpenAIResponsesKitchenSink(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
-	input := responses.ResponseNewParamsInputUnion{OfString: openai.String("what is 13+4?")}
+	prompt := responses.ResponseNewParamsInputUnion{OfString: openai.String("what is 13+4?")}
 
 	// Test with string output
 	params := responses.ResponseNewParams{
-		Input:             input,
+		Input:             prompt,
 		Model:             TEST_MODEL,
 		Instructions:      openai.String("Answer the question in a concise manner."),
 		MaxOutputTokens:   openai.Int(100),
@@ -168,20 +161,22 @@ func TestOpenAIResponsesKitchenSink(t *testing.T) {
 	require.NotNil(resp)
 
 	// Wait for spans to be exported
-	span := flushOnlySpanMust(t, exporter)
+	span := flushOne(t, exporter)
 
 	assertSpanValid(t, span, start, end)
 
-	valsByKey := toValuesByKey(span.Attributes)
+	ts := testspan.New(t, span)
 
-	// Output field
-	outputText := resp.OutputText()
-	assert.Contains(outputText, "17")
+	// Check input field
+	input := ts.Input()
+	assert.Contains(input, "13+4")
 
-	metadata := make(map[string]any)
-	rawAttrs := valsByKey["braintrust.metadata"].AsString()
-	err = json.Unmarshal([]byte(rawAttrs), &metadata)
-	assert.NoError(err)
+	// Check output field
+	output := ts.Output()
+	text := getResponseText(t, output)
+	assert.Contains(text, "17")
+
+	metadata := ts.Metadata()
 	assert.Equal("openai", metadata["provider"])
 	assert.Equal(TEST_MODEL, metadata["model"])
 	assert.Equal("Answer the question in a concise manner.", metadata["instructions"])
@@ -192,27 +187,6 @@ func TestOpenAIResponsesKitchenSink(t *testing.T) {
 	assert.Equal(false, metadata["store"])
 	assert.Equal("auto", metadata["truncation"])
 	assert.Equal(100.0, metadata["max_output_tokens"])
-
-	// Check JSON serialized fields
-	var inputStr any
-	rawInput := valsByKey["braintrust.input"].AsString()
-	err = json.Unmarshal([]byte(rawInput), &inputStr)
-	assert.NoError(err)
-	assert.Contains(inputStr, "13+4")
-
-	var output any
-	rawOutput := valsByKey["braintrust.output"].AsString()
-	err = json.Unmarshal([]byte(rawOutput), &output)
-	assert.NoError(err)
-	assert.NotNil(output)
-}
-
-func toValuesByKey(attrs []attribute.KeyValue) map[string]attribute.Value {
-	attrsByKey := make(map[string]attribute.Value)
-	for _, attr := range attrs {
-		attrsByKey[string(attr.Key)] = attr.Value
-	}
-	return attrsByKey
 }
 
 func flushSpans(exporter *tracetest.InMemoryExporter) []tracetest.SpanStub {
@@ -223,7 +197,7 @@ func flushSpans(exporter *tracetest.InMemoryExporter) []tracetest.SpanStub {
 	return spans
 }
 
-func flushOnlySpanMust(t *testing.T, exporter *tracetest.InMemoryExporter) tracetest.SpanStub {
+func flushOne(t *testing.T, exporter *tracetest.InMemoryExporter) tracetest.SpanStub {
 	spans := flushSpans(exporter)
 	require.Len(t, spans, 1)
 	return spans[0]
@@ -246,12 +220,12 @@ func TestOpenAIResponsesStreamingClose(t *testing.T) {
 	err := stream.Close()
 
 	require.NoError(err)
-	span := flushOnlySpanMust(t, exporter)
+	span := flushOne(t, exporter)
 
 	assert.Equal("openai.responses.create", span.Name)
 	assert.Equal(codes.Unset, span.Status.Code)
 	assert.Equal("", span.Status.Description)
-	// FIXME we haven't iteraaetd the body yet, so not much we can assert
+	// FIXME we haven't iterated the body yet, so not much we can assert
 }
 
 func TestOpenAIResponsesStreaming(t *testing.T) {
@@ -280,22 +254,17 @@ func TestOpenAIResponsesStreaming(t *testing.T) {
 	require.NoError(stream.Err())
 	end := time.Now()
 
-	span := flushOnlySpanMust(t, exporter)
+	span := flushOne(t, exporter)
 
 	assertSpanValid(t, span, start, end)
 
-	valsByKey := toValuesByKey(span.Attributes)
+	ts := testspan.New(t, span)
 
-	var output any
-	rawOutput := valsByKey["braintrust.output"].AsString()
-	err := json.Unmarshal([]byte(rawOutput), &output)
-	assert.NoError(err)
+	output := ts.AttrString("braintrust.output")
 	for _, i := range []string{"1", "2", "3", "5", "8", "13"} {
 		assert.Contains(completeText, i)
-		assert.Contains(rawOutput, i)
+		assert.Contains(output, i)
 	}
-	rawMetrics := valsByKey["braintrust.metrics"].AsString()
-	assertValidMetrics(t, rawMetrics)
 }
 
 func TestOpenAIResponsesWithListInput(t *testing.T) {
@@ -326,57 +295,63 @@ func TestOpenAIResponsesWithListInput(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(resp)
 
-	span := flushOnlySpanMust(t, exporter)
+	span := flushOne(t, exporter)
 
 	assertSpanValid(t, span, start, end)
 
-	valsByKey := toValuesByKey(span.Attributes)
+	ts := testspan.New(t, span)
 
-	var jsonInput any
-	input := valsByKey["braintrust.input"].AsString()
-	err = json.Unmarshal([]byte(input), &jsonInput)
-	assert.NoError(err)
+	input := ts.AttrString("braintrust.input")
 	assert.Contains(input, "3+125")
+	assert.Contains(input, "2+2")
 
-	var outputMap any
-	output := valsByKey["braintrust.output"].AsString()
-	err = json.Unmarshal([]byte(output), &outputMap)
-	assert.NoError(err)
+	output := ts.Output()
+	text := getResponseText(t, output)
+	assert.Contains(text, "128")
+}
+
+func getResponseText(t *testing.T, resp any) string {
+	// 	[]interface {}{map[string]interface {}{"content":[]interface {}{map[string]interface {}{"annotations":[]interface {}{}, "text":"Sure, here is the list of the first 15 Fibonacci numbers:\n\n[0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 377]", "type":"output_text"}}, "id":"msg_6815653f1238819281f85b0bd4f95c8e05b761f031bf9c10", "role":"assistant", "status":"completed", "type":"message"}}
+	require := require.New(t)
+
+	// Type assert the outer slice
+	respSlice, ok := resp.([]interface{})
+	require.True(ok, "response should be a slice")
+	require.NotEmpty(respSlice, "response slice should not be empty")
+	// Get first element and assert it's a map
+	firstElem, ok := respSlice[0].(map[string]interface{})
+	require.True(ok, "first element should be a map")
+	// Get content and assert it's a map
+	content, ok := firstElem["content"].([]interface{})
+	require.True(ok, "content should be a slice")
+	require.NotEmpty(content, "content should not be empty")
+	// Get first content element and assert annotations and text
+	firstContent, ok := content[0].(map[string]interface{})
+	require.True(ok, "first content element should be a map")
+	text, ok := firstContent["text"].(string)
+	require.True(ok, "text should be a string")
+	return text
 }
 
 // assertSpanValid asserts all the common properties of a span are valid.
-func assertSpanValid(t *testing.T, span tracetest.SpanStub, start, end time.Time) {
+func assertSpanValid(t *testing.T, stub tracetest.SpanStub, start, end time.Time) {
 	assert := assert.New(t)
-	assert.Equal(span.Name, "openai.responses.create")
-	assert.Equal(codes.Unset, span.Status.Code)
-	assert.True(start.Before(span.StartTime))
-	assert.True(span.StartTime.Before(span.EndTime))
-	assert.True(span.EndTime.Before(end))
 
-	valsByKey := toValuesByKey(span.Attributes)
+	span := testspan.New(t, stub)
+	span.AssertTimingIsValid(start, end)
+	span.AssertNameIs("openai.responses.create")
+	assert.Equal(codes.Unset, span.Stub.Status.Code)
 
-	rawMetadata := valsByKey["braintrust.metadata"].AsString()
-	var metadata map[string]any
-	err := json.Unmarshal([]byte(rawMetadata), &metadata)
-	assert.NoError(err)
+	metadata := span.Metadata()
 	assert.Equal("openai", metadata["provider"])
 	assert.Contains(TEST_MODEL, metadata["model"])
 
-	rawMetrics := valsByKey["braintrust.metrics"].AsString()
-	assertValidMetrics(t, rawMetrics)
-}
+	// validate metrics
+	metrics := span.Metrics()
+	gtz := func(v float64) bool { return v > 0 }
+	gtez := func(v float64) bool { return v >= 0 }
 
-func assertValidMetrics(t *testing.T, metricsJson string) {
-	assert := assert.New(t)
-	require := require.New(t)
-	var metrics map[string]int64
-	err := json.Unmarshal([]byte(metricsJson), &metrics)
-	require.NoError(err)
-
-	gtz := func(v int64) bool { return v > 0 }
-	gtez := func(v int64) bool { return v >= 0 }
-
-	metricToValidator := map[string]func(int64) bool{
+	metricToValidator := map[string]func(float64) bool{
 		"prompt_tokens":               gtz,
 		"completion_tokens":           gtz,
 		"tokens":                      gtz,
@@ -391,6 +366,11 @@ func assertValidMetrics(t *testing.T, metricsJson string) {
 		assert.True(ok, "metric %s not found", n)
 		assert.True(validator(v), "metric %s is not valid", n)
 	}
+
+	// a crude check to make sure all json is parsed
+	assert.NotNil(span.Metadata())
+	assert.NotNil(span.Input())
+	assert.NotNil(span.Output())
 }
 
 func TestTestOTelTracer(t *testing.T) {
