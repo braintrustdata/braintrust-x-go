@@ -2,54 +2,86 @@ package eval
 
 import (
 	"context"
-	"fmt"
 	"testing"
 
-	"github.com/braintrust/braintrust-x-go/braintrust/trace"
-	"github.com/braintrust/braintrust-x-go/braintrust/trace/traceopenai"
-	"github.com/openai/openai-go"
-	"github.com/openai/openai-go/option"
-	"github.com/openai/openai-go/responses"
+	"github.com/braintrust/braintrust-x-go/braintrust/diag"
+	"github.com/braintrust/braintrust-x-go/braintrust/internal"
+	"github.com/braintrust/braintrust-x-go/braintrust/internal/testspan"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
-func TestEval(t *testing.T) {
-	teardown, err := trace.Quickstart()
-	require.NoError(t, err)
-	defer teardown()
+func setUpTest(t *testing.T) (*tracetest.InMemoryExporter, func()) {
+	internal.FailTestsOnWarnings(t)
 
-	require := require.New(t)
-
-	client := openai.NewClient(
-		option.WithMiddleware(traceopenai.Middleware),
+	// setup otel to be fully synchronous
+	exporter := tracetest.NewInMemoryExporter()
+	processor := trace.NewSimpleSpanProcessor(exporter)
+	tp := trace.NewTracerProvider(
+		trace.WithSampler(trace.AlwaysSample()),
+		trace.WithSpanProcessor(processor), // flushes immediately
 	)
 
-	getFoodType := func(ctx context.Context, food string) (string, error) {
-		fmt.Println("getFoodType", food)
-		input := fmt.Sprintf("What kind of food is %s?", food)
+	original := otel.GetTracerProvider()
+	otel.SetTracerProvider(tp)
 
-		params := responses.ResponseNewParams{
-			Input:        responses.ResponseNewParamsInputUnion{OfString: openai.String(input)},
-			Model:        openai.ChatModelGPT4oMini,
-			Instructions: openai.String("Return a one word answer."),
-		}
-		resp, err := client.Responses.New(ctx, params)
+	teardown := func() {
+		diag.ClearLogger()
+		err := tp.Shutdown(context.Background())
 		if err != nil {
-			return "", err
+			t.Fatalf("Error shutting down tracer provider: %v", err)
 		}
-		return resp.OutputText(), nil
+		otel.SetTracerProvider(original)
 	}
 
-	eval := Eval[string, string]{
-		Cases: []Case[string, string]{
-			{Input: "strawberry", Expected: "fruit"},
-			{Input: "asparagus", Expected: "vegetable"},
-			{Input: "apple", Expected: "fruit"},
-			{Input: "banana", Expected: "fruit"},
-		},
-		Task: getFoodType,
-	}
-	err = eval.Run()
+	return exporter, teardown
+}
 
+func TestHardcodedEval(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	assert.True(true)
+	require.True(true)
+
+	exporter, teardown := setUpTest(t)
+	defer teardown()
+
+	// here's a fake task
+	task := func(ctx context.Context, x int) (int, error) {
+		square := x * x
+		if x > 3 {
+			square += 1 // oh no it's wrong
+		}
+		return square, nil
+	}
+
+	// here's a fake scorer
+	equals := func(ctx context.Context, actual, expected int) (float64, error) {
+		if actual == expected {
+			return 1.0, nil
+		}
+		return 0.0, nil
+	}
+
+	cases := []Case[int, int]{
+		{Input: 1, Expected: 1},
+		{Input: 2, Expected: 4},
+		{Input: 3, Expected: 9},
+		{Input: 4, Expected: 16},
+	}
+
+	eval := NewEval("test", cases, task, []Scorer[int, int]{equals})
+
+	err := eval.Run()
 	require.NoError(err)
+
+	spans := testspan.Flush(t, exporter)
+	assert.NotEmpty(spans)
+
+	// for _, span := range spans {
+	// 	//fmt.Println(span)
+	// }
 }

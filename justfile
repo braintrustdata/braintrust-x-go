@@ -13,7 +13,7 @@ clean:
     rm -f coverage.out coverage.html
 
 test:
-    go test ./... -v
+    go test ./...
 
 # Run tests with coverage
 cover:

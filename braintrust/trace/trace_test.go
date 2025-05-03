@@ -16,7 +16,7 @@ import (
 )
 
 func setUp(t *testing.T, opts ...sdktrace.TracerProviderOption) (exporter *tracetest.InMemoryExporter, teardown func()) {
-	diag.SetLogger(internal.NewFailTestLogger(t))
+	internal.FailTestsOnWarnings(t)
 
 	// setup otel to be fully synchronous
 	exporter = tracetest.NewInMemoryExporter()

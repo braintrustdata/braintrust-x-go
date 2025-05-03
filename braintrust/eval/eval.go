@@ -4,43 +4,83 @@ import (
 	"context"
 	"encoding/json"
 
+	bttrace "github.com/braintrust/braintrust-x-go/braintrust/trace"
 	"go.opentelemetry.io/otel"
 	attr "go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
 
-type contextKey string
-
-const experimentIDKey = contextKey("braintrust-experiment-id")
-
 type Eval[I, R any] struct {
-	Cases   []Case[I, R]
-	Task    Task[I, R]
-	Scorers []Scorer[I, R]
+	id      string
+	cases   []Case[I, R]
+	task    Task[I, R]
+	scorers []Scorer[I, R]
+	tracer  trace.Tracer
 }
 
-func NewEval[I, R any](cases []Case[I, R], task Task[I, R], scorers []Scorer[I, R]) *Eval[I, R] {
+func NewEval[I, R any](id string, cases []Case[I, R], task Task[I, R], scorers []Scorer[I, R]) *Eval[I, R] {
 	return &Eval[I, R]{
-		Cases:   cases,
-		Task:    task,
-		Scorers: scorers,
+		id:      id,
+		cases:   cases,
+		task:    task,
+		scorers: scorers,
+		tracer:  otel.GetTracerProvider().Tracer("braintrust.evals"),
 	}
 }
 
 func (e *Eval[I, R]) Run() error {
-	ctx := context.Background()
+	parent := bttrace.NewExperiment(e.id)
 
-	ctx = context.WithValue(ctx, experimentIDKey, "ef909c25-8978-46ef-88f3-c42c4d1f3150")
+	for _, c := range e.cases {
+		ctx := bttrace.SetParent(context.Background(), parent)
+		ctx, span := e.tracer.Start(ctx, "eval")
 
-	results := make([]R, len(e.Cases))
-
-	for i, c := range e.Cases {
-		result, err := runTask(ctx, e.Task, c.Input)
+		result, err := runTask(ctx, e.task, c.Input)
 		if err != nil {
+			span.End()
 			return err
 		}
 
-		results[i] = result
+		for _, scorer := range e.scorers {
+			err := e.score(ctx, scorer, c, result)
+			if err != nil {
+				span.End()
+				return err
+			}
+		}
+		span.End()
+	}
+
+	return nil
+}
+
+func (e *Eval[I, R]) score(ctx context.Context, scorer Scorer[I, R], c Case[I, R], result R) error {
+	ctx, span := e.tracer.Start(ctx, "score",
+		trace.WithAttributes(attr.String("type", "eval.score")),
+	)
+	defer span.End()
+
+	score, err := scorer(ctx, c.Input, result)
+	if err != nil {
+		span.RecordError(err)
+		return err
+	}
+
+	input := map[string]any{
+		"input":    c.Input,
+		"expected": c.Expected,
+		"output":   result,
+	}
+
+	if err := setJSONAttr(span, "braintrust.input", input); err != nil {
+		return err
+	}
+
+	output := map[string]any{
+		"score": score,
+	}
+	if err := setJSONAttr(span, "braintrust.output", output); err != nil {
+		return err
 	}
 
 	return nil
@@ -49,7 +89,7 @@ func (e *Eval[I, R]) Run() error {
 func runTask[I, R any](ctx context.Context, task Task[I, R], input I) (R, error) {
 	tracer := tracer()
 
-	ctx, span := tracer.Start(ctx, "eval",
+	ctx, span := tracer.Start(ctx, "task",
 		trace.WithAttributes(attr.String("type", "eval.task")),
 	)
 	defer span.End()

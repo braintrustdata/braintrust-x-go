@@ -168,7 +168,7 @@ func TestOpenAIResponsesKitchenSink(t *testing.T) {
 	ts := testspan.New(t, span)
 
 	// Check input field
-	input := ts.Input()
+	input := ts.AttrString("braintrust.input")
 	assert.Contains(input, "13+4")
 
 	// Check output field

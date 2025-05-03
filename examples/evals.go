@@ -80,8 +80,6 @@ func main() {
 	}
 
 	fmt.Println("Experiment ID:", experimentID)
-
-	// set env variables
 	os.Setenv("BRAINTRUST_EXPERIMENT_ID", experimentID)
 
 	diag.SetDebugLogger()
@@ -107,15 +105,24 @@ func main() {
 		return resp.OutputText(), nil
 	}
 
-	eval := eval.Eval[string, string]{
-		Cases: []eval.Case[string, string]{
+	eval := eval.NewEval(
+		experimentID,
+		[]eval.Case[string, string]{
 			{Input: "strawberry", Expected: "fruit"},
 			{Input: "asparagus", Expected: "vegetable"},
-			{Input: "apple", Expected: "fruit"},
-			{Input: "banana", Expected: "fruit"},
+			//{Input: "apple", Expected: "fruit"},
+			// {Input: "banana", Expected: "fruit"},
 		},
-		Task: getFoodType,
-	}
+		getFoodType,
+		[]eval.Scorer[string, string]{
+			func(ctx context.Context, input string, result string) (float64, error) {
+				if result == "fruit" {
+					return 1.0, nil
+				}
+				return 0.0, nil
+			},
+		},
+	)
 	err = eval.Run()
 	if err != nil {
 		log.Fatalf("Error running eval: %v", err)

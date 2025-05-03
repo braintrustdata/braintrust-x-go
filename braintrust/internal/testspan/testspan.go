@@ -21,15 +21,15 @@ type TestSpan struct {
 }
 
 // New teturns a new test span.
-func New(t *testing.T, stub tracetest.SpanStub) *TestSpan {
-	return &TestSpan{
+func New(t *testing.T, stub tracetest.SpanStub) TestSpan {
+	return TestSpan{
 		t:    t,
 		Stub: stub,
 	}
 }
 
 // String returns a pretty print of the span.
-func (s *TestSpan) String() string {
+func (s TestSpan) String() string {
 	// Create a nicely formatted string representation of the span
 	var result string
 	result += "TestSpan:\n"
@@ -56,18 +56,18 @@ func (s *TestSpan) String() string {
 	return result
 }
 
-func (s *TestSpan) AssertNameIs(n string) {
+func (s TestSpan) AssertNameIs(n string) {
 	require.Equal(s.t, n, s.Stub.Name)
 }
 
-func (s *TestSpan) AssertTimingIsValid(start, end time.Time) {
+func (s TestSpan) AssertTimingIsValid(start, end time.Time) {
 	require.True(s.t, s.Stub.StartTime.After(start))
 	require.True(s.t, s.Stub.EndTime.After(s.Stub.StartTime))
 	require.True(s.t, s.Stub.EndTime.Before(end))
 }
 
 // Attr returns the Attr with the given key if it exists.
-func (s *TestSpan) Attr(key string) (bool, attr.Value) {
+func (s TestSpan) Attr(key string) (bool, attr.Value) {
 	for _, a := range s.Stub.Attributes {
 		// MATT: fail if more than one?
 		if string(a.Key) == key {
@@ -77,7 +77,7 @@ func (s *TestSpan) Attr(key string) (bool, attr.Value) {
 	return false, attr.Value{}
 }
 
-func (s *TestSpan) AttrString(key string) string {
+func (s TestSpan) AttrString(key string) string {
 	found, val := s.Attr(key)
 	require.True(s.t, found, "attribute %s not found", key)
 	require.True(s.t, val.Type() == attr.STRING)
@@ -86,37 +86,37 @@ func (s *TestSpan) AttrString(key string) string {
 
 // AttrMust returns the value of the attribute with the given key and fails the test
 // if not found.
-func (s *TestSpan) AttrMust(key string) attr.Value {
+func (s TestSpan) AttrMust(key string) attr.Value {
 	found, val := s.Attr(key)
 	require.True(s.t, found, "attribute %s not found", key)
 	return val
 }
 
-func (s *TestSpan) Input() any {
+func (s TestSpan) Input() any {
 	var input any
 	s.unmarshal("braintrust.input", &input)
 	return input
 }
 
-func (s *TestSpan) Output() any {
+func (s TestSpan) Output() any {
 	var output any
 	s.unmarshal("braintrust.output", &output)
 	return output
 }
 
-func (s *TestSpan) Metadata() map[string]any {
+func (s TestSpan) Metadata() map[string]any {
 	var m map[string]any
 	s.unmarshal("braintrust.metadata", &m)
 	return m
 }
 
-func (s *TestSpan) Metrics() map[string]float64 {
+func (s TestSpan) Metrics() map[string]float64 {
 	var m map[string]float64
 	s.unmarshal("braintrust.metrics", &m)
 	return m
 }
 
-func (s *TestSpan) unmarshal(key string, into any) {
+func (s TestSpan) unmarshal(key string, into any) {
 	raw := s.AttrMust(key)
 	require.True(s.t, raw.Type() == attr.STRING)
 	err := json.Unmarshal([]byte(raw.AsString()), into)
@@ -126,4 +126,25 @@ func (s *TestSpan) unmarshal(key string, into any) {
 func isJSON(s string) bool {
 	var js any
 	return json.Unmarshal([]byte(s), &js) == nil
+}
+
+func Flush(t *testing.T, exporter *tracetest.InMemoryExporter) []TestSpan {
+	spans := FlushSpanStubs(exporter)
+	testSpans := make([]TestSpan, len(spans))
+	for i, span := range spans {
+		testSpans[i] = New(t, span)
+	}
+	return testSpans
+}
+
+func FlushOne(t *testing.T, exporter *tracetest.InMemoryExporter) TestSpan {
+	spans := FlushSpanStubs(exporter)
+	require.Equal(t, 1, len(spans))
+	return New(t, spans[0])
+}
+
+func FlushSpanStubs(exporter *tracetest.InMemoryExporter) []tracetest.SpanStub {
+	spans := exporter.GetSpans()
+	exporter.Reset()
+	return spans
 }
