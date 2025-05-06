@@ -33,6 +33,9 @@ func (r *Recommender) getFoodRec(ctx context.Context, food string, zipcode strin
 
 	prompt := fmt.Sprintf("Recommend a place to get %s in zipcode %s.", food, zipcode)
 
+	fmt.Println("--------------------------------")
+	fmt.Println(prompt)
+
 	params := responses.ResponseNewParams{
 		Input: responses.ResponseNewParamsInputUnion{OfString: openai.String(prompt)},
 		Model: openai.ChatModelGPT4,
@@ -51,6 +54,7 @@ func (r *Recommender) getDrinkRec(ctx context.Context, drink, vibe, zipcode stri
 	defer span.End()
 
 	prompt := fmt.Sprintf("Recommend a place to get %s with vibe %sin zipcode %s.", drink, vibe, zipcode)
+	fmt.Println("--------------------------------")
 	fmt.Println(prompt)
 
 	stream := r.client.Responses.NewStreaming(ctx, responses.ResponseNewParams{
@@ -58,9 +62,15 @@ func (r *Recommender) getDrinkRec(ctx context.Context, drink, vibe, zipcode stri
 		Input: responses.ResponseNewParamsInputUnion{OfString: openai.String(prompt)},
 	})
 
+	completeText := ""
 	for stream.Next() {
-		fmt.Println("got msg")
+		data := stream.Current()
+		fmt.Println("\t\tstreaming ... ", data.Delta)
+		if data.JSON.Text.IsPresent() {
+			completeText = data.Text
+		}
 	}
+	fmt.Println(completeText)
 
 	if err := stream.Err(); err != nil {
 		fmt.Println(err)

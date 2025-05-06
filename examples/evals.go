@@ -71,23 +71,25 @@ func main() {
 		option.WithMiddleware(traceopenai.Middleware),
 	)
 
-	// create a new braintrust experiemnt by calling
-	// api/experiment/register", args)
-	projectID := "6df00e6a-704f-44d9-b332-2b3c2690681c"
-	experimentID, err := registerExperiment("go-eval-x", projectID)
-	if err != nil {
-		log.Fatalf("Error registering experiment: %v", err)
-	}
+	// // create a new braintrust experiemnt by calling
+	// // api/experiment/register", args)
+	// projectID := "6df00e6a-704f-44d9-b332-2b3c2690681c"
+	// experimentID, err := registerExperiment("go-eval-x", projectID)
+	// if err != nil {
+	// 	log.Fatalf("Error registering experiment: %v", err)
+	// }
 
-	fmt.Println("Experiment ID:", experimentID)
-	os.Setenv("BRAINTRUST_EXPERIMENT_ID", experimentID)
+	// fmt.Println("Experiment ID:", experimentID)
+	// os.Setenv("BRAINTRUST_EXPERIMENT_ID", experimentID)
 
-	diag.SetDebugLogger()
+	diag.SetWarnLogger()
 	teardown, err := trace.Quickstart()
 	if err != nil {
 		log.Fatalf("Error starting trace: %v", err)
 	}
 	defer teardown()
+
+	experimentID := "MATT_FAKE_EXPERIMENT_ID"
 
 	getFoodType := func(ctx context.Context, food string) (string, error) {
 		fmt.Println("getFoodType", food)
@@ -105,27 +107,37 @@ func main() {
 		return resp.OutputText(), nil
 	}
 
-	eval := eval.NewEval(
+	eval1 := eval.NewEval[string, string](
 		experimentID,
 		[]eval.Case[string, string]{
 			{Input: "strawberry", Expected: "fruit"},
 			{Input: "asparagus", Expected: "vegetable"},
-			//{Input: "apple", Expected: "fruit"},
-			// {Input: "banana", Expected: "fruit"},
+			{Input: "apple", Expected: "fruit"},
+			{Input: "banana", Expected: "fruit"},
 		},
 		getFoodType,
-		[]eval.Scorer[string, string]{
-			func(ctx context.Context, input string, result string) (float64, error) {
+		[]*eval.Scorer[string, string]{
+			eval.NewScorer("fruit_scorer", func(ctx context.Context, c eval.Case[string, string], result string) (float64, error) {
 				if result == "fruit" {
 					return 1.0, nil
 				}
 				return 0.0, nil
-			},
+			}),
+			eval.NewScorer("vegetable_scorer", func(ctx context.Context, c eval.Case[string, string], result string) (float64, error) {
+				if result == "vegetable" {
+					return 1.0, nil
+				}
+				return 0.0, nil
+			}),
 		},
 	)
-	err = eval.Run()
+	err = eval1.Run()
 	if err != nil {
 		log.Fatalf("Error running eval: %v", err)
 	}
+}
 
+type stringCase struct {
+	Input    string
+	Expected string
 }
