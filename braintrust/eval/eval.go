@@ -107,9 +107,7 @@ func (e *Eval[I, R]) runScorers(ctx context.Context, c Case[I, R], result R) ([]
 func runTask[I, R any](ctx context.Context, task Task[I, R], input I) (R, error) {
 	tracer := tracer()
 
-	ctx, span := tracer.Start(ctx, "task",
-		trace.WithAttributes(attr.String("type", "eval.task")),
-	)
+	ctx, span := tracer.Start(ctx, "task")
 	defer span.End()
 
 	result, err := task(ctx, input)
@@ -126,11 +124,11 @@ func runTask[I, R any](ctx context.Context, task Task[I, R], input I) (R, error)
 		return result, err
 	}
 
-	metadata := map[string]any{
+	meta := map[string]any{
 		"type": "task",
 	}
 
-	if err := setJSONAttr(span, "braintrust.metadata", metadata); err != nil {
+	if err := setJSONAttr(span, "braintrust.span_attributes", meta); err != nil {
 		return result, err
 	}
 
