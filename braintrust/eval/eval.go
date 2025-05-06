@@ -14,11 +14,11 @@ type Eval[I, R any] struct {
 	id      string
 	cases   []Case[I, R]
 	task    Task[I, R]
-	scorers []Scorer[I, R]
+	scorers []*Scorer[I, R]
 	tracer  trace.Tracer
 }
 
-func NewEval[I, R any](id string, cases []Case[I, R], task Task[I, R], scorers []Scorer[I, R]) *Eval[I, R] {
+func NewEval[I, R any](id string, cases []Case[I, R], task Task[I, R], scorers []*Scorer[I, R]) *Eval[I, R] {
 	return &Eval[I, R]{
 		id:      id,
 		cases:   cases,
@@ -41,49 +41,67 @@ func (e *Eval[I, R]) Run() error {
 			return err
 		}
 
-		for _, scorer := range e.scorers {
-			err := e.score(ctx, scorer, c, result)
-			if err != nil {
-				span.End()
+		_, err = e.runScorers(ctx, c, result)
+		if err != nil {
+			span.End()
+			return err
+		}
+
+		// save our span metadata.
+		meta := map[string]any{
+			"braintrust.span_attributes": map[string]any{
+				"type": "eval",
+			},
+			"braintrust.input_json":  c.Input,
+			"braintrust.output_json": result,
+			"braintrust.expected":    c.Expected,
+		}
+
+		for key, value := range meta {
+			if err := setJSONAttr(span, key, value); err != nil {
 				return err
 			}
 		}
+
 		span.End()
 	}
 
 	return nil
 }
 
-func (e *Eval[I, R]) score(ctx context.Context, scorer Scorer[I, R], c Case[I, R], result R) error {
-	ctx, span := e.tracer.Start(ctx, "score",
-		trace.WithAttributes(attr.String("type", "eval.score")),
-	)
+func (e *Eval[I, R]) runScorers(ctx context.Context, c Case[I, R], result R) ([]Score, error) {
+	ctx, span := e.tracer.Start(ctx, "score")
 	defer span.End()
 
-	score, err := scorer(ctx, c.Input, result)
-	if err != nil {
-		span.RecordError(err)
-		return err
+	attrs := map[string]any{
+		"type": "score",
 	}
 
-	input := map[string]any{
-		"input":    c.Input,
-		"expected": c.Expected,
-		"output":   result,
+	if err := setJSONAttr(span, "braintrust.span_attributes", attrs); err != nil {
+		return nil, err
 	}
 
-	if err := setJSONAttr(span, "braintrust.input", input); err != nil {
-		return err
+	scores := make([]Score, len(e.scorers))
+	meta := make(map[string]float64, len(e.scorers))
+
+	for i, scorer := range e.scorers {
+		val, err := scorer.Run(ctx, c, result)
+		if err != nil {
+			span.RecordError(err)
+			return scores, err
+		}
+		scores[i] = Score{
+			Name:  scorer.Name,
+			Score: val,
+		}
+		meta[scorer.Name] = val
 	}
 
-	output := map[string]any{
-		"score": score,
-	}
-	if err := setJSONAttr(span, "braintrust.output", output); err != nil {
-		return err
+	if err := setJSONAttr(span, "braintrust.scores", meta); err != nil {
+		return nil, err
 	}
 
-	return nil
+	return scores, nil
 }
 
 func runTask[I, R any](ctx context.Context, task Task[I, R], input I) (R, error) {
@@ -122,12 +140,27 @@ func runTask[I, R any](ctx context.Context, task Task[I, R], input I) (R, error)
 // Task is a function that takes an input and returns a result.
 type Task[I, R any] func(ctx context.Context, input I) (R, error)
 
-// Scorer is a function that takes an input, result, and expected result and returns a score between 0 and 1
-type Scorer[I, R any] func(ctx context.Context, input I, result R) (float64, error)
+// Scorers evaluate inputs / outputs and return a score between 0 and 1
+type Scorer[I, R any] struct {
+	Name string
+	Run  func(ctx context.Context, c Case[I, R], result R) (float64, error)
+}
+
+func NewScorer[I, R any](name string, run func(ctx context.Context, c Case[I, R], result R) (float64, error)) *Scorer[I, R] {
+	return &Scorer[I, R]{
+		Name: name,
+		Run:  run,
+	}
+}
 
 type Case[I, R any] struct {
 	Input    I
 	Expected R
+}
+
+type Score struct {
+	Name  string  `json:"name"`
+	Score float64 `json:"score"`
 }
 
 func tracer() trace.Tracer {
