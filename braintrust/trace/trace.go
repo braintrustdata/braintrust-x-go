@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -21,17 +22,34 @@ func Quickstart() (teardown func(), err error) {
 
 	diag.Debugf("Initializing OpenTelemetry tracer with experiment_id: %s", os.Getenv("BRAINTRUST_EXPERIMENT_ID"))
 
+	url := getEnvDefault("BRAINTRUST_API_URL", "https://api.braintrust.dev")
+	apiKey := getEnvDefault("BRAINTRUST_API_KEY", "")
+	parent := getEnvDefault("BRAINTRUST_PARENT", "")
+
+	// split url and protocol
+	parts := strings.Split(url, "://")
+	if len(parts) != 2 {
+		return nil, fmt.Errorf("invalid url: %s", url)
+	}
+	protocol := parts[0]
+	url = parts[1]
+
+	opts := []otlptracehttp.Option{
+		otlptracehttp.WithEndpoint(url),
+		otlptracehttp.WithURLPath("/otel/v1/traces"),
+		otlptracehttp.WithHeaders(map[string]string{
+			"Authorization": "Bearer " + apiKey,
+			"x-bt-parent":   parent,
+		}),
+	}
+	if protocol == "http" {
+		opts = append(opts, otlptracehttp.WithInsecure())
+	}
+
 	// Create Braintrust OTLP exporter
 	exporter, err := otlptrace.New(
 		context.Background(),
-		otlptracehttp.NewClient(
-			otlptracehttp.WithEndpoint("api.braintrust.dev"),
-			otlptracehttp.WithURLPath("/otel/v1/traces"),
-			otlptracehttp.WithHeaders(map[string]string{
-				"Authorization": "Bearer " + os.Getenv("BRAINTRUST_API_KEY"),
-				"x-bt-parent":   "experiment_id:" + os.Getenv("BRAINTRUST_EXPERIMENT_ID"),
-			}),
-		),
+		otlptracehttp.NewClient(opts...),
 	)
 	if err != nil {
 		return nil, err
@@ -55,6 +73,13 @@ func Quickstart() (teardown func(), err error) {
 	}
 
 	return teardown, nil
+}
+
+func getEnvDefault(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
 }
 
 const PARENT_ATTR = "x-bt-parent"
