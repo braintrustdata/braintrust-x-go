@@ -3,10 +3,13 @@
 ci: clean fmt lint vet test build
 
 build:
-    go build .
+    go build ./...
 
-run:
-    go run .
+# Run all of the examples.
+examples:
+    go run ./examples/evals
+    go run ./examples/traceopenai
+
 
 clean:
     go clean
@@ -34,8 +37,8 @@ tidy:
     go mod tidy
     go mod verify
 
-# Format, test and run the application
-dev: fmt test run
+# Verify the build and run the examples.
+dev: ci examples
 
 # Run tests in the current directory when files change.
 [no-cd]
