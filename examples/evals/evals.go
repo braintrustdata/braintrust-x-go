@@ -107,7 +107,7 @@ func main() {
 		return resp.OutputText(), nil
 	}
 
-	eval1 := eval.NewEval[string, string](
+	eval1 := eval.New[string, string](
 		experimentID,
 		[]eval.Case[string, string]{
 			{Input: "strawberry", Expected: "fruit"},
@@ -116,7 +116,7 @@ func main() {
 			{Input: "banana", Expected: "fruit"},
 		},
 		getFoodType,
-		[]*eval.Scorer[string, string]{
+		[]eval.Scorer[string, string]{
 			eval.NewScorer("fruit_scorer", func(ctx context.Context, c eval.Case[string, string], result string) (float64, error) {
 				if result == "fruit" {
 					return 1.0, nil

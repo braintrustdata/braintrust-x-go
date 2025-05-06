@@ -10,24 +10,27 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
+// Eval is a collection of cases, a task, and a set of scorers.
 type Eval[I, R any] struct {
 	id      string
 	cases   []Case[I, R]
 	task    Task[I, R]
-	scorers []*Scorer[I, R]
+	scorers []Scorer[I, R]
 	tracer  trace.Tracer
 }
 
-func NewEval[I, R any](id string, cases []Case[I, R], task Task[I, R], scorers []*Scorer[I, R]) *Eval[I, R] {
+// New creates a new eval.
+func New[I, R any](id string, cases []Case[I, R], task Task[I, R], scorers []Scorer[I, R]) *Eval[I, R] {
 	return &Eval[I, R]{
 		id:      id,
 		cases:   cases,
 		task:    task,
 		scorers: scorers,
-		tracer:  otel.GetTracerProvider().Tracer("braintrust.evals"),
+		tracer:  otel.GetTracerProvider().Tracer("braintrust.eval"),
 	}
 }
 
+// Run runs the eval.
 func (e *Eval[I, R]) Run() error {
 	parent := bttrace.NewExperiment(e.id)
 
@@ -35,7 +38,7 @@ func (e *Eval[I, R]) Run() error {
 		ctx := bttrace.SetParent(context.Background(), parent)
 		ctx, span := e.tracer.Start(ctx, "eval")
 
-		result, err := runTask(ctx, e.task, c.Input)
+		result, err := e.runTask(ctx, c)
 		if err != nil {
 			span.End()
 			return err
@@ -88,7 +91,7 @@ func (e *Eval[I, R]) runScorers(ctx context.Context, c Case[I, R], result R) ([]
 		val, err := scorer.Run(ctx, c, result)
 		if err != nil {
 			span.RecordError(err)
-			return scores, err
+			return scores, err // FIXME[matt] probably don't want to crap out here.
 		}
 		scores[i] = Score{
 			Name:  scorer.Name,
@@ -104,23 +107,25 @@ func (e *Eval[I, R]) runScorers(ctx context.Context, c Case[I, R], result R) ([]
 	return scores, nil
 }
 
-func runTask[I, R any](ctx context.Context, task Task[I, R], input I) (R, error) {
-	tracer := tracer()
-
-	ctx, span := tracer.Start(ctx, "task")
+func (e *Eval[I, R]) runTask(ctx context.Context, c Case[I, R]) (R, error) {
+	ctx, span := e.tracer.Start(ctx, "task")
 	defer span.End()
 
-	result, err := task(ctx, input)
+	result, err := e.task(ctx, c.Input)
 	if err != nil {
 		span.RecordError(err)
 		return result, err
 	}
 
-	if err := setJSONAttr(span, "braintrust.input", input); err != nil {
+	if err := setJSONAttr(span, "braintrust.input_json", c.Input); err != nil {
 		return result, err
 	}
 
-	if err := setJSONAttr(span, "braintrust.output", result); err != nil {
+	if err := setJSONAttr(span, "braintrust.output_json", result); err != nil {
+		return result, err
+	}
+
+	if err := setJSONAttr(span, "braintrust.expected", c.Expected); err != nil {
 		return result, err
 	}
 
@@ -135,22 +140,11 @@ func runTask[I, R any](ctx context.Context, task Task[I, R], input I) (R, error)
 	return result, nil
 }
 
-// Task is a function that takes an input and returns a result.
+// Task is a function that takes an input and returns a result. It represents the units of work
+// that eval is trying to evaluate, like a model, a prompt, whatever.
 type Task[I, R any] func(ctx context.Context, input I) (R, error)
 
-// Scorers evaluate inputs / outputs and return a score between 0 and 1
-type Scorer[I, R any] struct {
-	Name string
-	Run  func(ctx context.Context, c Case[I, R], result R) (float64, error)
-}
-
-func NewScorer[I, R any](name string, run func(ctx context.Context, c Case[I, R], result R) (float64, error)) *Scorer[I, R] {
-	return &Scorer[I, R]{
-		Name: name,
-		Run:  run,
-	}
-}
-
+// Case is the input and expected result of a test case.
 type Case[I, R any] struct {
 	Input    I
 	Expected R
@@ -161,8 +155,19 @@ type Score struct {
 	Score float64 `json:"score"`
 }
 
-func tracer() trace.Tracer {
-	return otel.GetTracerProvider().Tracer("braintrust.evals")
+type ScoreFunc[I, R any] func(ctx context.Context, c Case[I, R], result R) (float64, error)
+
+// Scorer
+type Scorer[I, R any] struct {
+	Name string
+	Run  ScoreFunc[I, R]
+}
+
+func NewScorer[I, R any](name string, run ScoreFunc[I, R]) Scorer[I, R] {
+	return Scorer[I, R]{
+		Name: name,
+		Run:  run,
+	}
 }
 
 func setJSONAttr(span trace.Span, key string, value any) error {

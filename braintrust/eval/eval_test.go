@@ -59,8 +59,8 @@ func TestHardcodedEval(t *testing.T) {
 	}
 
 	// here's a fake scorer
-	equals := func(ctx context.Context, actual, expected int) (float64, error) {
-		if actual == expected {
+	equals := func(ctx context.Context, c Case[int, int], actual int) (float64, error) {
+		if actual == c.Expected {
 			return 1.0, nil
 		}
 		return 0.0, nil
@@ -73,7 +73,11 @@ func TestHardcodedEval(t *testing.T) {
 		{Input: 4, Expected: 16},
 	}
 
-	eval := NewEval("test", cases, task, []Scorer[int, int]{equals})
+	scorers := []Scorer[int, int]{
+		NewScorer("equals", equals),
+	}
+
+	eval := New("test", cases, task, scorers)
 
 	err := eval.Run()
 	require.NoError(err)
