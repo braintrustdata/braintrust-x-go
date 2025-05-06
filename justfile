@@ -21,6 +21,8 @@ test:
 # Run tests with coverage
 cover:
     go test ./... -coverprofile=coverage.out
+    go tool cover -func=coverage.out
+    go tool cover -html=coverage.out -o coverage.html
     go tool cover -html=coverage.out
 
 lint:

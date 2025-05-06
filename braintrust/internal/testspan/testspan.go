@@ -20,7 +20,7 @@ type TestSpan struct {
 	Stub tracetest.SpanStub
 }
 
-// New teturns a new test span.
+// New returns a new test span.
 func New(t *testing.T, stub tracetest.SpanStub) TestSpan {
 	return TestSpan{
 		t:    t,
