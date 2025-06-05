@@ -12,7 +12,7 @@ jobs:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY}}
     steps:
       - uses: actions/checkout@v4
-
+      - uses: extractions/setup-just@v2
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
@@ -28,14 +28,11 @@ jobs:
           install-mode: binary
 
       - name: Lint, vet, tests, etc.
-        run: make all
+        run: just ci
 
       - name: Generate coverage report
         if: success()
-        run: |
-          go test ./... -coverprofile=coverage.out
-          go tool cover -func=coverage.out
-          go tool cover -html=coverage.out -o coverage.html
+        run: just cover
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v4

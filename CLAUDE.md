@@ -8,7 +8,6 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Run tests: `go test ./...`
 - Run a single test: `go test -v -run=TestName ./path/to/package`
 - Run tests with race detector: `go test -race ./...`
-- Run with debug logging: `BRAINTRUST_DEBUG=1 go run ./cmd/...`
 
 ## Code Style Guidelines
 
