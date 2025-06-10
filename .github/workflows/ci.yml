@@ -15,9 +15,7 @@ jobs:
       - name: Install mise
         uses: jdx/mise-action@v2
         with:
-          version: v2025.6.0
           install: true # install our dependencies
-          cache: true
 
       - name: Lint, vet, tests, etc.
         run: make ci
