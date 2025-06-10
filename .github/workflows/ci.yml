@@ -15,7 +15,7 @@ jobs:
       - name: Install mise
         uses: jdx/mise-action@v2
         with:
-          version: latest
+          version: v2025.6.0
           install: true # install our dependencies
           cache: true
 
