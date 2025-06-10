@@ -15,7 +15,7 @@ can start.
 git clone git@github.com:braintrustdata/braintrust-x-go.git
 cd braintrust-x-go
 
-# Install our depdencies.
+# Install our dependencies.
 mise trust
 mise install
 
