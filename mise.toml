@@ -1,6 +1,10 @@
 [env]
 _.file = ".env"
 
+[tools]
+go = "1.24"
+watchexec = "latest"
+
 [tasks.watch-test]
 description = "Runs tests when files change"
 run = "watchexec --exts go --watch . --restart --clear -- go test ./..."
