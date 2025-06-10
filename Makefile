@@ -1,4 +1,4 @@
-.PHONY: help ci build examples clean test cover lint fmt vet tidy dev watch-test-cwd watch-test
+.PHONY: help ci build examples clean test cover lint fmt tidy dev
 
 # Default target
 help:
@@ -14,8 +14,6 @@ help:
 	@echo "  examples      - Run all example programs"
 	@echo "  ci            - Run CI pipeline (clean, lint, test, build)"
 	@echo "  dev           - Run development pipeline (ci + examples)"
-	@echo "  watch-test    - Watch for changes and run tests"
-	@echo "  watch-test-cwd - Watch for changes and run tests in current directory"
 
 # Verify the build for ci.
 ci: clean lint test build
