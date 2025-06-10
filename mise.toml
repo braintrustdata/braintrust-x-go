@@ -1,6 +1,11 @@
 [env]
 _.file = ".env"
 
+[tools]
+go = "1.24"
+golangci-lint = "2.1.6"
+watchexec = "latest"
+
 [tasks.watch-test]
 description = "Runs tests when files change"
 run = "watchexec --exts go --watch . --restart --clear -- go test ./..."
@@ -8,5 +13,5 @@ run = "watchexec --exts go --watch . --restart --clear -- go test ./..."
 [tasks.watch-test-cwd]
 description = "Watch for changes in the current directory and run tests"
 dir = "{{cwd}}"
-run = "watchexec --exts go --watch ${MISE_ORIGINAL_CWD} --restart --clear -- go test $MISE_ORIGINAL_CWD/..."
+run = "watchexec --exts go --watch . --restart --clear -- go test ./..."
 alias = "wtc"

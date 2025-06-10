@@ -4,10 +4,11 @@ import (
 	"context"
 	"encoding/json"
 
-	bttrace "github.com/braintrust/braintrust-x-go/braintrust/trace"
 	"go.opentelemetry.io/otel"
 	attr "go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+
+	bttrace "github.com/braintrust/braintrust-x-go/braintrust/trace"
 )
 
 // Eval is a collection of cases, a task, and a set of scorers.

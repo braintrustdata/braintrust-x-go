@@ -1,23 +1,21 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
-	"net/http"
-	"os"
+
+	"github.com/openai/openai-go"
+	"github.com/openai/openai-go/option"
+	"github.com/openai/openai-go/responses"
 
 	"github.com/braintrust/braintrust-x-go/braintrust/diag"
 	"github.com/braintrust/braintrust-x-go/braintrust/eval"
 	"github.com/braintrust/braintrust-x-go/braintrust/trace"
 	"github.com/braintrust/braintrust-x-go/braintrust/trace/traceopenai"
-	"github.com/openai/openai-go"
-	"github.com/openai/openai-go/option"
-	"github.com/openai/openai-go/responses"
 )
 
+/*
 func registerExperiment(name string, projectID string) (string, error) {
 	type ExperimentRequest struct {
 		ProjectID string `json:"project_id"`
@@ -47,7 +45,7 @@ func registerExperiment(name string, projectID string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("error making request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("unexpected status code: %d", resp.StatusCode)
@@ -63,6 +61,7 @@ func registerExperiment(name string, projectID string) (string, error) {
 
 	return result.ID, nil
 }
+*/
 
 func main() {
 	log.Println("Starting eval")
@@ -135,9 +134,4 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error running eval: %v", err)
 	}
-}
-
-type stringCase struct {
-	Input    string
-	Expected string
 }
