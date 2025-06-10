@@ -3,44 +3,32 @@
 
 ## Development Setup
 
-This project uses [mise](https://mise.jdx.dev/) to manage development dependencies and environment variables. If you want to do it manually,
-install the dependencies listed in `mise.toml`.
+This project uses [mise](https://mise.jdx.dev/) to manage dependencies and configure the dev environment. If you want to do it manually,
+install the tools listed in `mise.toml`.
 
-### Installing mise
 
-1. Install mise using one of these methods:
+First, [install mise](https://mise.jdx.dev/installing-mise.html) and then [activate it in your shell](https://mise.jdx.dev/getting-started.html#activate-mise). Now we 
+can start.
 
-   **Using curl (macOS/Linux):**
-   ```bash
-   curl https://mise.jdx.dev/install.sh | sh
-   ```
+```bash
+# Clone the repo.
+git clone git@github.com:braintrustdata/braintrust-x-go.git
+cd braintrust-x-go
 
-   **Using Homebrew (macOS):**
-   ```bash
-   brew install mise
-   ```
+# Install our depdencies.
+mise trust
+mise install
 
-   **Using Windows (PowerShell):**
-   ```powershell
-   iwr https://mise.jdx.dev/install.ps1 -useb | iex
-   ```
+# Setup your env variables 
+cp env.example .env
+```
 
-2. Add mise to your shell. This enables mise's tool version management and environment variable handling whenever you switch to this directory.
-   ```bash
-   # For bash/zsh
-   echo 'eval "$(mise activate)"' >> ~/.bashrc  # or ~/.zshrc
-   
-   # For fish
-   echo 'mise activate fish | source' >> ~/.config/fish/config.fish
-   ```
-2. Run `mise install` to install all required tools
-3. Run `mise use` to activate the development environment
+## Build, Test and Run
 
-### Setup Env Variables
+All of the common dev tasks are in our `Makefile`.
 
-First, `cp env.example .env` and then set your env variables accordingly.
-
-## Build and Test
-
-All of the dev tasks are in our `Makefile`. Run `make help` for more.
-
+```bash
+make build
+make test
+make help
+```
