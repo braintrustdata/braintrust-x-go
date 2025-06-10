@@ -68,7 +68,7 @@ func TestBufferedReaderChunkedReads(t *testing.T) {
 	}
 
 	// Close the writer to signal EOF
-	pw.Close()
+	_ = pw.Close()
 
 	// Try to read again - should get EOF
 	buf := make([]byte, 1024)

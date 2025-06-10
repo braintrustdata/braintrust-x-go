@@ -10,16 +10,15 @@ help:
 	@echo "  clean         - Clean build artifacts and coverage files"
 	@echo "  fmt           - Format Go code"
 	@echo "  lint          - Run golangci-lint"
-	@echo "  vet           - Run go vet"
 	@echo "  tidy          - Tidy and verify Go modules"
 	@echo "  examples      - Run all example programs"
-	@echo "  ci            - Run CI pipeline (clean, fmt, lint, vet, test, build)"
+	@echo "  ci            - Run CI pipeline (clean, lint, test, build)"
 	@echo "  dev           - Run development pipeline (ci + examples)"
 	@echo "  watch-test    - Watch for changes and run tests"
 	@echo "  watch-test-cwd - Watch for changes and run tests in current directory"
 
 # Verify the build for ci.
-ci: clean fmt lint vet test build
+ci: clean lint test build
 
 build:
 	go build ./...
@@ -44,13 +43,12 @@ cover:
 	go tool cover -html=coverage.out
 
 lint:
+	golangci-lint fmt -d
 	golangci-lint run ./...
 
 fmt:
-	go fmt ./...
+	golangci-lint fmt
 
-vet:
-	go vet ./...
 
 # Tidy and verify dependencies
 tidy:

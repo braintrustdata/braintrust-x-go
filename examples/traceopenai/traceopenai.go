@@ -5,11 +5,12 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/braintrust/braintrust-x-go/braintrust/trace"
-	"github.com/braintrust/braintrust-x-go/braintrust/trace/traceopenai"
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
 	"github.com/openai/openai-go/responses"
+
+	"github.com/braintrust/braintrust-x-go/braintrust/trace"
+	"github.com/braintrust/braintrust-x-go/braintrust/trace/traceopenai"
 
 	"go.opentelemetry.io/otel"
 )

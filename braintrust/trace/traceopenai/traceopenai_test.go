@@ -7,9 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/braintrust/braintrust-x-go/braintrust/diag"
-	"github.com/braintrust/braintrust-x-go/braintrust/internal"
-	"github.com/braintrust/braintrust-x-go/braintrust/internal/testspan"
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
 	"github.com/openai/openai-go/packages/param"
@@ -20,6 +17,10 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+
+	"github.com/braintrust/braintrust-x-go/braintrust/diag"
+	"github.com/braintrust/braintrust-x-go/braintrust/internal"
+	"github.com/braintrust/braintrust-x-go/braintrust/internal/testspan"
 )
 
 const TEST_MODEL = "gpt-4o-mini"

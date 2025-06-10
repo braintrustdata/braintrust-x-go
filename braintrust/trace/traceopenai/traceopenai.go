@@ -7,10 +7,11 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/braintrust/braintrust-x-go/braintrust/diag"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/braintrust/braintrust-x-go/braintrust/diag"
 )
 
 func tracer() trace.Tracer {
@@ -26,7 +27,11 @@ func Middleware(req *http.Request, next NextMiddleware) (*http.Response, error) 
 	// Intercept the request body so we can parse it and still pass it along.
 	var buf bytes.Buffer
 	reqBody := req.Body
-	defer reqBody.Close()
+	defer func() {
+		if err := reqBody.Close(); err != nil {
+			diag.Warnf("Error closing request body: %v", err)
+		}
+	}()
 	tee := io.TeeReader(reqBody, &buf)
 	req.Body = io.NopCloser(&buf)
 

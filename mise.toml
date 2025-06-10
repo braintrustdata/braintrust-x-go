@@ -3,7 +3,7 @@ _.file = ".env"
 
 [tools]
 go = "1.24"
-golangci-lint = "latest"
+golangci-lint = "2.1.6"
 watchexec = "latest"
 
 [tasks.watch-test]

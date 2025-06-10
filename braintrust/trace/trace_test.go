@@ -4,8 +4,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/braintrust/braintrust-x-go/braintrust/diag"
-	"github.com/braintrust/braintrust-x-go/braintrust/internal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
@@ -13,6 +11,9 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/braintrust/braintrust-x-go/braintrust/diag"
+	"github.com/braintrust/braintrust-x-go/braintrust/internal"
 )
 
 func setUp(t *testing.T, opts ...sdktrace.TracerProviderOption) (exporter *tracetest.InMemoryExporter, teardown func()) {

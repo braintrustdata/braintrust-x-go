@@ -4,14 +4,15 @@ import (
 	"context"
 	"testing"
 
-	"github.com/braintrust/braintrust-x-go/braintrust/diag"
-	"github.com/braintrust/braintrust-x-go/braintrust/internal"
-	"github.com/braintrust/braintrust-x-go/braintrust/internal/testspan"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+
+	"github.com/braintrust/braintrust-x-go/braintrust/diag"
+	"github.com/braintrust/braintrust-x-go/braintrust/internal"
+	"github.com/braintrust/braintrust-x-go/braintrust/internal/testspan"
 )
 
 func setUpTest(t *testing.T) (*tracetest.InMemoryExporter, func()) {
