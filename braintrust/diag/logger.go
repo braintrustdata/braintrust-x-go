@@ -27,7 +27,6 @@ func SetLogger(logger Logger) {
 	globalLogger = logger
 }
 
-
 // GetLogger returns the current logger.
 func GetLogger() Logger {
 	mu.Lock()
@@ -49,8 +48,6 @@ func SetDebugLogger() {
 func SetWarnLogger() {
 	SetLogger(&warnLogger{})
 }
-
-
 
 func Debugf(format string, args ...any) {
 	logger := get()
