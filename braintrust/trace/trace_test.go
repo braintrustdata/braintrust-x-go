@@ -63,7 +63,7 @@ func TestSpanProcessor(t *testing.T) {
 	span := getOneSpan(t, exporter)
 	ok, attr := getAttr(span, PARENT_ATTR)
 	require.True(ok)
-	assert.Equal(attr.AsString(), "project: 12345")
+	assert.Equal(attr.AsString(), "project_id:12345")
 
 	// Assert we use the parent from the context if it is set.
 	ctx := context.Background()
@@ -73,17 +73,17 @@ func TestSpanProcessor(t *testing.T) {
 	span = getOneSpan(t, exporter)
 	ok, attr = getAttr(span, PARENT_ATTR)
 	require.True(ok)
-	assert.Equal(attr.AsString(), "project: 67890")
+	assert.Equal(attr.AsString(), "project_id:67890")
 
 	// assert that if a span already has a parent, it is not overridden
 	ctx = context.Background()
 	ctx = SetParent(ctx, Project{id: "77777"})
-	_, span4 := tracer.Start(ctx, "test", trace.WithAttributes(attribute.String(PARENT_ATTR, "project: 88888")))
+	_, span4 := tracer.Start(ctx, "test", trace.WithAttributes(attribute.String(PARENT_ATTR, "project_id:88888")))
 	span4.End()
 	span = getOneSpan(t, exporter)
 	ok, attr = getAttr(span, PARENT_ATTR)
 	require.True(ok)
-	assert.Equal(attr.AsString(), "project: 88888")
+	assert.Equal(attr.AsString(), "project_id:88888")
 }
 
 func getOneSpan(t *testing.T, exporter *tracetest.InMemoryExporter) tracetest.SpanStub {
