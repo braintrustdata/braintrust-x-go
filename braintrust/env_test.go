@@ -7,36 +7,40 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+var envVars = []string{
+	"BRAINTRUST_API_KEY",
+	"BRAINTRUST_API_URL",
+	"BRAINTRUST_APP_URL",
+	"BRAINTRUST_TRACE_DEBUG_LOG",
+}
+
+func setUpEnvVarTest(t *testing.T) {
+	original := make(map[string]string)
+
+	for _, v := range envVars {
+		original[v] = os.Getenv(v)
+	}
+
+	t.Cleanup(func() {
+		for k, v := range original {
+			_ = os.Setenv(k, v)
+		}
+	})
+}
+
+func unsetEnvVars() {
+	for _, v := range envVars {
+		_ = os.Unsetenv(v)
+	}
+}
+
 func TestGetConfig_DefaultValues(t *testing.T) {
+	setUpEnvVarTest(t)
+
 	// Clear environment variables to test defaults
-	originalAPIKey := os.Getenv("BRAINTRUST_API_KEY")
-	originalAPIURL := os.Getenv("BRAINTRUST_API_URL")
-	originalAppURL := os.Getenv("BRAINTRUST_APP_URL")
-	originalTraceDebugLog := os.Getenv("BRAINTRUST_TRACE_DEBUG_LOG")
-
-	_ = os.Unsetenv("BRAINTRUST_API_KEY")
-	_ = os.Unsetenv("BRAINTRUST_API_URL")
-	_ = os.Unsetenv("BRAINTRUST_APP_URL")
-	_ = os.Unsetenv("BRAINTRUST_TRACE_DEBUG_LOG")
-
-	defer func() {
-		// Restore original values
-		if originalAPIKey != "" {
-			_ = os.Setenv("BRAINTRUST_API_KEY", originalAPIKey)
-		}
-		if originalAPIURL != "" {
-			_ = os.Setenv("BRAINTRUST_API_URL", originalAPIURL)
-		}
-		if originalAppURL != "" {
-			_ = os.Setenv("BRAINTRUST_APP_URL", originalAppURL)
-		}
-		if originalTraceDebugLog != "" {
-			_ = os.Setenv("BRAINTRUST_TRACE_DEBUG_LOG", originalTraceDebugLog)
-		}
-	}()
+	unsetEnvVars()
 
 	config := GetConfig()
-
 	assert.Equal(t, "", config.APIKey)
 	assert.Equal(t, "https://api.braintrust.dev", config.APIURL)
 	assert.Equal(t, "https://www.braintrust.dev", config.AppURL)
@@ -44,18 +48,13 @@ func TestGetConfig_DefaultValues(t *testing.T) {
 }
 
 func TestGetConfig_EnvironmentValues(t *testing.T) {
+	setUpEnvVarTest(t)
+
 	// Set environment variables
 	_ = os.Setenv("BRAINTRUST_API_KEY", "sk-test-key")
 	_ = os.Setenv("BRAINTRUST_API_URL", "http://localhost:8000")
 	_ = os.Setenv("BRAINTRUST_APP_URL", "http://localhost:3000")
 	_ = os.Setenv("BRAINTRUST_TRACE_DEBUG_LOG", "true")
-
-	defer func() {
-		_ = os.Unsetenv("BRAINTRUST_API_KEY")
-		_ = os.Unsetenv("BRAINTRUST_API_URL")
-		_ = os.Unsetenv("BRAINTRUST_APP_URL")
-		_ = os.Unsetenv("BRAINTRUST_TRACE_DEBUG_LOG")
-	}()
 
 	config := GetConfig()
 
@@ -66,6 +65,8 @@ func TestGetConfig_EnvironmentValues(t *testing.T) {
 }
 
 func TestGetEnvBool(t *testing.T) {
+	setUpEnvVarTest(t)
+
 	tests := []struct {
 		name         string
 		envValue     string
