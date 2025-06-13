@@ -8,9 +8,14 @@ import (
 	"github.com/braintrust/braintrust-x-go/braintrust/diag"
 )
 
-// FailTestsOnWarnings will fail tests if warnings are produced during tests.
+// FailTestsOnWarnings will fail tests if warnings are produced during tests. Currently
+// not able to be parallelized.
 func FailTestsOnWarnings(t *testing.T) {
+	original := diag.GetLogger()
 	diag.SetLogger(newFailTestLogger(t))
+	t.Cleanup(func() {
+		diag.SetLogger(original)
+	})
 }
 
 type failTestLogger struct {
