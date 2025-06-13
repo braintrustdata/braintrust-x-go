@@ -21,7 +21,6 @@ import (
 func Quickstart() (teardown func(), err error) {
 
 	diag.Debugf("Initializing OpenTelemetry tracer with experiment_id: %s", os.Getenv("BRAINTRUST_EXPERIMENT_ID"))
-
 	url := getEnvDefault("BRAINTRUST_API_URL", "https://api.braintrust.dev")
 	apiKey := getEnvDefault("BRAINTRUST_API_KEY", "")
 	parent := getEnvDefault("BRAINTRUST_PARENT", "")

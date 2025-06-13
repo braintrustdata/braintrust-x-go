@@ -245,35 +245,3 @@ func translateMetricPrefix(prefix string) string {
 		return prefix
 	}
 }
-func translateMetricKey(key string) string {
-	switch key {
-	case "input_tokens":
-		return "prompt_tokens"
-	case "output_tokens":
-		return "completion_tokens"
-	case "total_tokens":
-		return "tokens"
-	}
-	return key
-}
-
-func toInt64(v any) (bool, int64) {
-	switch v := v.(type) {
-	case float64:
-		return true, int64(v)
-	case int64:
-		return true, v
-	case int:
-		return true, int64(v)
-	case float32:
-		return true, int64(v)
-	case uint64:
-		return true, int64(v)
-	case uint:
-		return true, int64(v)
-	case uint32:
-		return true, int64(v)
-	default:
-		return false, 0
-	}
-}
