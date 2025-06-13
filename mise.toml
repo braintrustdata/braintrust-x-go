@@ -20,6 +20,7 @@ run = "watchexec --exts go --watch . --restart --clear -- go test ./..."
 alias = "wtc"
 
 [tasks.verify-fmt]
+silent=true
 run = "golangci-lint fmt -d || (golangci-lint fmt && exit 1)"
 
 [hooks]
