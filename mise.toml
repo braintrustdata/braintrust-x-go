@@ -1,3 +1,6 @@
+[settings]
+experimental=true
+
 [env]
 _.file = ".env"
 
@@ -15,3 +18,9 @@ description = "Watch for changes in the current directory and run tests"
 dir = "{{cwd}}"
 run = "watchexec --exts go --watch . --restart --clear -- go test ./..."
 alias = "wtc"
+
+[tasks.verify-fmt]
+run = "golangci-lint fmt -d || (golangci-lint fmt && exit 1)"
+
+[hooks]
+postinstall = "mise generate git-pre-commit --write --task=verify-fmt"
