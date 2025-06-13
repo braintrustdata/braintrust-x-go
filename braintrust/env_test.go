@@ -14,24 +14,24 @@ func TestGetConfig_DefaultValues(t *testing.T) {
 	originalAppURL := os.Getenv("BRAINTRUST_APP_URL")
 	originalTraceDebugLog := os.Getenv("BRAINTRUST_TRACE_DEBUG_LOG")
 
-	os.Unsetenv("BRAINTRUST_API_KEY")
-	os.Unsetenv("BRAINTRUST_API_URL")
-	os.Unsetenv("BRAINTRUST_APP_URL")
-	os.Unsetenv("BRAINTRUST_TRACE_DEBUG_LOG")
+	_ = os.Unsetenv("BRAINTRUST_API_KEY")
+	_ = os.Unsetenv("BRAINTRUST_API_URL")
+	_ = os.Unsetenv("BRAINTRUST_APP_URL")
+	_ = os.Unsetenv("BRAINTRUST_TRACE_DEBUG_LOG")
 
 	defer func() {
 		// Restore original values
 		if originalAPIKey != "" {
-			os.Setenv("BRAINTRUST_API_KEY", originalAPIKey)
+			_ = os.Setenv("BRAINTRUST_API_KEY", originalAPIKey)
 		}
 		if originalAPIURL != "" {
-			os.Setenv("BRAINTRUST_API_URL", originalAPIURL)
+			_ = os.Setenv("BRAINTRUST_API_URL", originalAPIURL)
 		}
 		if originalAppURL != "" {
-			os.Setenv("BRAINTRUST_APP_URL", originalAppURL)
+			_ = os.Setenv("BRAINTRUST_APP_URL", originalAppURL)
 		}
 		if originalTraceDebugLog != "" {
-			os.Setenv("BRAINTRUST_TRACE_DEBUG_LOG", originalTraceDebugLog)
+			_ = os.Setenv("BRAINTRUST_TRACE_DEBUG_LOG", originalTraceDebugLog)
 		}
 	}()
 
@@ -45,16 +45,16 @@ func TestGetConfig_DefaultValues(t *testing.T) {
 
 func TestGetConfig_EnvironmentValues(t *testing.T) {
 	// Set environment variables
-	os.Setenv("BRAINTRUST_API_KEY", "sk-test-key")
-	os.Setenv("BRAINTRUST_API_URL", "http://localhost:8000")
-	os.Setenv("BRAINTRUST_APP_URL", "http://localhost:3000")
-	os.Setenv("BRAINTRUST_TRACE_DEBUG_LOG", "true")
+	_ = os.Setenv("BRAINTRUST_API_KEY", "sk-test-key")
+	_ = os.Setenv("BRAINTRUST_API_URL", "http://localhost:8000")
+	_ = os.Setenv("BRAINTRUST_APP_URL", "http://localhost:3000")
+	_ = os.Setenv("BRAINTRUST_TRACE_DEBUG_LOG", "true")
 
 	defer func() {
-		os.Unsetenv("BRAINTRUST_API_KEY")
-		os.Unsetenv("BRAINTRUST_API_URL")
-		os.Unsetenv("BRAINTRUST_APP_URL")
-		os.Unsetenv("BRAINTRUST_TRACE_DEBUG_LOG")
+		_ = os.Unsetenv("BRAINTRUST_API_KEY")
+		_ = os.Unsetenv("BRAINTRUST_API_URL")
+		_ = os.Unsetenv("BRAINTRUST_APP_URL")
+		_ = os.Unsetenv("BRAINTRUST_TRACE_DEBUG_LOG")
 	}()
 
 	config := GetConfig()
@@ -65,7 +65,7 @@ func TestGetConfig_EnvironmentValues(t *testing.T) {
 	assert.Equal(t, true, config.TraceDebugLog)
 }
 
-func TestGetEnvBoolean(t *testing.T) {
+func TestGetEnvBool(t *testing.T) {
 	tests := []struct {
 		name         string
 		envValue     string
@@ -85,13 +85,13 @@ func TestGetEnvBoolean(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			key := "TEST_BOOL_VAR"
 			if tt.envValue != "" {
-				os.Setenv(key, tt.envValue)
+				_ = os.Setenv(key, tt.envValue)
 			} else {
-				os.Unsetenv(key)
+				_ = os.Unsetenv(key)
 			}
-			defer os.Unsetenv(key)
+			defer func() { _ = os.Unsetenv(key) }()
 
-			result := getEnvBoolean(key, tt.defaultValue)
+			result := getEnvBool(key, tt.defaultValue)
 			assert.Equal(t, tt.expected, result)
 		})
 	}

@@ -89,13 +89,6 @@ func Quickstart() (teardown func(), err error) {
 	return teardown, nil
 }
 
-func getEnvDefault(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
-}
-
 const PARENT_ATTR = "braintrust.parent"
 
 type contextKey string
