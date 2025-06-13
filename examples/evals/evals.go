@@ -15,54 +15,6 @@ import (
 	"github.com/braintrust/braintrust-x-go/braintrust/trace/traceopenai"
 )
 
-/*
-func registerExperiment(name string, projectID string) (string, error) {
-	type ExperimentRequest struct {
-		ProjectID string `json:"project_id"`
-		Name      string `json:"name"`
-		EnsureNew bool   `json:"ensure_new"`
-	}
-
-	req := ExperimentRequest{
-		ProjectID: projectID,
-		Name:      name,
-		EnsureNew: true,
-	}
-
-	jsonData, err := json.Marshal(req)
-	if err != nil {
-		return "", fmt.Errorf("error marshaling request: %w", err)
-	}
-	httpReq, err := http.NewRequest("POST", "https://api.braintrust.dev/v1/experiment", bytes.NewBuffer(jsonData))
-	if err != nil {
-		return "", fmt.Errorf("error creating request: %w", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+os.Getenv("BRAINTRUST_API_KEY"))
-
-	client := &http.Client{}
-	resp, err := client.Do(httpReq)
-	if err != nil {
-		return "", fmt.Errorf("error making request: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("unexpected status code: %d", resp.StatusCode)
-	}
-
-	var result struct {
-		ID        string `json:"id"`
-		ProjectID string `json:"project_id"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", fmt.Errorf("error decoding response: %w", err)
-	}
-
-	return result.ID, nil
-}
-*/
-
 func main() {
 	log.Println("Starting eval")
 
@@ -70,25 +22,12 @@ func main() {
 		option.WithMiddleware(traceopenai.Middleware),
 	)
 
-	// // create a new braintrust experiemnt by calling
-	// // api/experiment/register", args)
-	// projectID := "6df00e6a-704f-44d9-b332-2b3c2690681c"
-	// experimentID, err := registerExperiment("go-eval-x", projectID)
-	// if err != nil {
-	// 	log.Fatalf("Error registering experiment: %v", err)
-	// }
-
-	// fmt.Println("Experiment ID:", experimentID)
-	// os.Setenv("BRAINTRUST_EXPERIMENT_ID", experimentID)
-
 	diag.SetWarnLogger()
 	teardown, err := trace.Quickstart()
 	if err != nil {
 		log.Fatalf("Error starting trace: %v", err)
 	}
 	defer teardown()
-
-	experimentID := "MATT_FAKE_EXPERIMENT_ID"
 
 	getFoodType := func(ctx context.Context, food string) (string, error) {
 		fmt.Println("getFoodType", food)
@@ -106,8 +45,11 @@ func main() {
 		return resp.OutputText(), nil
 	}
 
-	eval1 := eval.New[string, string](
-		experimentID,
+	eval1, err := eval.NewWithOpts(
+		eval.Options{
+			ProjectName:    "go-eval-project",
+			ExperimentName: "go-eval-x",
+		},
 		[]eval.Case[string, string]{
 			{Input: "strawberry", Expected: "fruit"},
 			{Input: "asparagus", Expected: "vegetable"},
@@ -130,6 +72,9 @@ func main() {
 			}),
 		},
 	)
+	if err != nil {
+		log.Fatalf("Error creating eval: %v", err)
+	}
 	err = eval1.Run()
 	if err != nil {
 		log.Fatalf("Error running eval: %v", err)

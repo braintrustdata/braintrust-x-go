@@ -10,8 +10,10 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
 	"go.opentelemetry.io/otel/sdk/trace"
 
+	"github.com/braintrust/braintrust-x-go/braintrust"
 	"github.com/braintrust/braintrust-x-go/braintrust/diag"
 )
 
@@ -22,9 +24,9 @@ func Quickstart() (teardown func(), err error) {
 
 	diag.Debugf("Initializing OpenTelemetry tracer with experiment_id: %s", os.Getenv("BRAINTRUST_EXPERIMENT_ID"))
 
-	url := getEnvDefault("BRAINTRUST_API_URL", "https://api.braintrust.dev")
-	apiKey := getEnvDefault("BRAINTRUST_API_KEY", "")
-	parent := getEnvDefault("BRAINTRUST_PARENT", "")
+	config := braintrust.GetConfig()
+	url := config.APIURL
+	apiKey := config.APIKey
 
 	// split url and protocol
 	parts := strings.Split(url, "://")
@@ -39,7 +41,6 @@ func Quickstart() (teardown func(), err error) {
 		otlptracehttp.WithURLPath("/otel/v1/traces"),
 		otlptracehttp.WithHeaders(map[string]string{
 			"Authorization": "Bearer " + apiKey,
-			"x-bt-parent":   parent,
 		}),
 	}
 	if protocol == "http" {
@@ -58,11 +59,24 @@ func Quickstart() (teardown func(), err error) {
 	// FIXME[matt] this should be a parameter
 	defaultParent := NewExperiment("MATT_FAKE_EXPERIMENT_ID")
 
-	// Create a tracer provider with both exporters
-	tp := trace.NewTracerProvider(
+	// Create tracer provider options
+	tracerOpts := []trace.TracerProviderOption{
 		trace.WithSpanProcessor(NewSpanProcessor(defaultParent)),
 		trace.WithBatcher(exporter),
-	)
+	}
+
+	// Add console debug exporter if BRAINTRUST_TRACE_DEBUG_LOG is set
+	if config.TraceDebugLog {
+		consoleExporter, err := stdouttrace.New(stdouttrace.WithPrettyPrint())
+		if err != nil {
+			return nil, fmt.Errorf("failed to create console exporter: %w", err)
+		}
+		tracerOpts = append(tracerOpts, trace.WithBatcher(consoleExporter))
+		diag.Debugf("OTEL console debug enabled")
+	}
+
+	// Create a tracer provider with all exporters
+	tp := trace.NewTracerProvider(tracerOpts...)
 	otel.SetTracerProvider(tp)
 
 	teardown = func() {
@@ -82,7 +96,7 @@ func getEnvDefault(key, fallback string) string {
 	return fallback
 }
 
-const PARENT_ATTR = "x-bt-parent"
+const PARENT_ATTR = "braintrust.parent"
 
 type contextKey string
 
@@ -114,7 +128,7 @@ type Project struct {
 }
 
 func (p Project) String() string {
-	return fmt.Sprintf("project: %s", p.id)
+	return fmt.Sprintf("project_id:%s", p.id)
 }
 
 var _ Parent = Project{}
@@ -129,7 +143,7 @@ func NewExperiment(id string) Experiment {
 }
 
 func (e Experiment) String() string {
-	return fmt.Sprintf("experiment: %s", e.ID)
+	return fmt.Sprintf("experiment_id:%s", e.ID)
 }
 
 var _ Parent = Experiment{}
