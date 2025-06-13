@@ -27,6 +27,14 @@ func SetLogger(logger Logger) {
 	globalLogger = logger
 }
 
+
+// GetLogger returns the current logger.
+func GetLogger() Logger {
+	mu.Lock()
+	defer mu.Unlock()
+	return globalLogger
+}
+
 // ClearLogger the current logger.
 func ClearLogger() {
 	SetLogger(noopLogger{})
@@ -41,6 +49,8 @@ func SetDebugLogger() {
 func SetWarnLogger() {
 	SetLogger(&warnLogger{})
 }
+
+
 
 func Debugf(format string, args ...any) {
 	logger := get()
