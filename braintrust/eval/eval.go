@@ -3,13 +3,56 @@ package eval
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	"go.opentelemetry.io/otel"
 	attr "go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/braintrust/braintrust-x-go/braintrust/api"
 	bttrace "github.com/braintrust/braintrust-x-go/braintrust/trace"
 )
+
+// Options holds configuration for creating an eval
+type Options struct {
+	ProjectName    string
+	ProjectID      string
+	ExperimentName string
+}
+
+// NewWithOpts creates a new eval using options to resolve project and experiment.
+// It can handle:
+// - ProjectName + ExperimentName: creates/gets project, then creates/gets experiment
+// - ProjectID + ExperimentName: uses existing project, creates/gets experiment
+func NewWithOpts[I, R any](opts Options, cases []Case[I, R], task Task[I, R], scorers []Scorer[I, R]) (*Eval[I, R], error) {
+	var projectID string
+	var err error
+
+	// Resolve project ID
+	if opts.ProjectID != "" {
+		projectID = opts.ProjectID
+	} else if opts.ProjectName != "" {
+		project, err := api.RegisterProject(opts.ProjectName)
+		if err != nil {
+			return nil, fmt.Errorf("failed to register project %q: %w", opts.ProjectName, err)
+		}
+		projectID = project.ID
+	} else {
+		return nil, fmt.Errorf("must provide either ProjectName or ProjectID")
+	}
+
+	// Resolve experiment ID
+	if opts.ExperimentName == "" {
+		return nil, fmt.Errorf("ExperimentName is required")
+	}
+
+	experiment, err := api.RegisterExperiment(opts.ExperimentName, projectID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to register experiment %q: %w", opts.ExperimentName, err)
+	}
+
+	return New(experiment.ID, cases, task, scorers), nil
+}
 
 // Eval is a collection of cases, a task, and a set of scorers.
 type Eval[I, R any] struct {

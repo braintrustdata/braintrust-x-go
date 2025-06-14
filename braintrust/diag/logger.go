@@ -14,7 +14,7 @@ type Logger interface {
 
 var (
 	mu           sync.RWMutex
-	globalLogger Logger = noopLogger{}
+	globalLogger Logger = warnLogger{}
 )
 
 // SetLogger will use the given logger for logging messages.
