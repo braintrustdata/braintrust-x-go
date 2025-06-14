@@ -1,7 +1,6 @@
 package traceopenai
 
 import (
-	"context"
 	"errors"
 	"net/http"
 	"testing"
@@ -45,7 +44,7 @@ func setUpTest(t *testing.T) (openai.Client, *tracetest.InMemoryExporter, func()
 
 	teardown := func() {
 		diag.ClearLogger()
-		err := tp.Shutdown(context.Background())
+		err := tp.Shutdown(t.Context())
 		if err != nil {
 			t.Fatalf("Error shutting down tracer provider: %v", err)
 		}
@@ -74,7 +73,7 @@ func TestError(t *testing.T) {
 		option.WithMiddleware(errorware),
 	)
 
-	resp, err := client.Responses.New(context.Background(), responses.ResponseNewParams{
+	resp, err := client.Responses.New(t.Context(), responses.ResponseNewParams{
 		Input: responses.ResponseNewParamsInputUnion{OfString: openai.String("hai")},
 		Model: TEST_MODEL,
 	})
@@ -115,7 +114,7 @@ func TestOpenAIResponsesRequiredParams(t *testing.T) {
 		Model: TEST_MODEL,
 	}
 
-	resp, err := client.Responses.New(context.Background(), params)
+	resp, err := client.Responses.New(t.Context(), params)
 	end := time.Now()
 	require.NoError(err)
 	require.NotNil(resp)
@@ -156,7 +155,7 @@ func TestOpenAIResponsesKitchenSink(t *testing.T) {
 	}
 
 	start := time.Now()
-	resp, err := client.Responses.New(context.Background(), params)
+	resp, err := client.Responses.New(t.Context(), params)
 	end := time.Now()
 	require.NoError(err)
 	require.NotNil(resp)
@@ -210,7 +209,7 @@ func TestOpenAIResponsesStreamingClose(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	question := "Can you return me a list of the first 15 fibonacci numbers?"
 
 	stream := client.Responses.NewStreaming(ctx, responses.ResponseNewParams{
@@ -235,7 +234,7 @@ func TestOpenAIResponsesStreaming(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	question := "Can you return me a list of the first 15 fibonacci numbers?"
 
 	start := time.Now()
@@ -291,7 +290,7 @@ func TestOpenAIResponsesWithListInput(t *testing.T) {
 
 	// Call the API
 	start := time.Now()
-	resp, err := client.Responses.New(context.Background(), params)
+	resp, err := client.Responses.New(t.Context(), params)
 	end := time.Now()
 	require.NoError(err)
 	require.NotNil(resp)
@@ -384,7 +383,7 @@ func TestTestOTelTracer(t *testing.T) {
 	assert.Empty(spans)
 
 	tracer := otel.Tracer("test")
-	_, span := tracer.Start(context.Background(), "test")
+	_, span := tracer.Start(t.Context(), "test")
 	span.End()
 
 	spans = flushSpans(exporter)

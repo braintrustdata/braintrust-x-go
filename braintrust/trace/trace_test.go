@@ -1,7 +1,6 @@
 package trace
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -35,7 +34,7 @@ func setUp(t *testing.T, opts ...sdktrace.TracerProviderOption) (exporter *trace
 
 	teardown = func() {
 		diag.ClearLogger()
-		err := tp.Shutdown(context.Background())
+		err := tp.Shutdown(t.Context())
 		if err != nil {
 			t.Fatalf("Error shutting down tracer provider: %v", err)
 		}
@@ -58,7 +57,7 @@ func TestSpanProcessor(t *testing.T) {
 	tracer := otel.GetTracerProvider().Tracer("test")
 
 	// Assert we use the default parent if none is set.
-	_, span1 := tracer.Start(context.Background(), "test")
+	_, span1 := tracer.Start(t.Context(), "test")
 	span1.End()
 	span := getOneSpan(t, exporter)
 	ok, attr := getAttr(span, PARENT_ATTR)
@@ -66,7 +65,7 @@ func TestSpanProcessor(t *testing.T) {
 	assert.Equal(attr.AsString(), "project_id:12345")
 
 	// Assert we use the parent from the context if it is set.
-	ctx := context.Background()
+	ctx := t.Context()
 	ctx = SetParent(ctx, Project{id: "67890"})
 	_, span2 := tracer.Start(ctx, "test")
 	span2.End()
@@ -76,7 +75,7 @@ func TestSpanProcessor(t *testing.T) {
 	assert.Equal(attr.AsString(), "project_id:67890")
 
 	// assert that if a span already has a parent, it is not overridden
-	ctx = context.Background()
+	ctx = t.Context()
 	ctx = SetParent(ctx, Project{id: "77777"})
 	_, span4 := tracer.Start(ctx, "test", trace.WithAttributes(attribute.String(PARENT_ATTR, "project_id:88888")))
 	span4.End()

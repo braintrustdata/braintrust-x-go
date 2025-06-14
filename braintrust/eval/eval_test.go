@@ -31,7 +31,7 @@ func setUpTest(t *testing.T) (*tracetest.InMemoryExporter, func()) {
 
 	teardown := func() {
 		diag.ClearLogger()
-		err := tp.Shutdown(context.Background())
+		err := tp.Shutdown(t.Context())
 		if err != nil {
 			t.Fatalf("Error shutting down tracer provider: %v", err)
 		}
