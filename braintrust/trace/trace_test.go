@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
@@ -16,9 +15,7 @@ func TestSpanProcessor(t *testing.T) {
 	assert := assert.New(t)
 
 	processor := NewSpanProcessor(Project{id: "12345"})
-	exporter := oteltest.SetupTracer(t, sdktrace.WithSpanProcessor(processor))
-
-	tracer := otel.GetTracerProvider().Tracer("test")
+	tracer, exporter := oteltest.SetupTracer(t, sdktrace.WithSpanProcessor(processor))
 
 	// Assert we use the default parent if none is set.
 	_, span1 := tracer.Start(t.Context(), "test")
@@ -27,8 +24,6 @@ func TestSpanProcessor(t *testing.T) {
 
 	assert.Equal(span.Name(), "test")
 	span.Attr(PARENT_ATTR).AssertEquals("project_id:12345")
-
-	// Assert we use the parent from the context if it is set.
 
 	// Assert we use the parent from the context if it is set.
 	ctx := t.Context()

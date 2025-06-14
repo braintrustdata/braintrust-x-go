@@ -9,8 +9,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
 	attr "go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/sdk/trace"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	oteltrace "go.opentelemetry.io/otel/trace"
 
 	"github.com/braintrust/braintrust-x-go/braintrust/diag"
 	"github.com/braintrust/braintrust-x-go/braintrust/internal"
@@ -18,20 +19,20 @@ import (
 
 // SetupTracer sets up otel for testing (no sampling, sync, stores spans in memory)
 // and returns an Exporter that can be used to flush the spans.
-func SetupTracer(t *testing.T, opts ...trace.TracerProviderOption) *Exporter {
+func SetupTracer(t *testing.T, opts ...sdktrace.TracerProviderOption) (oteltrace.Tracer, *Exporter) {
 	t.Helper()
 	internal.FailTestsOnWarnings(t)
 
 	// setup otel to be fully synchronous
 	exporter := tracetest.NewInMemoryExporter()
-	processor := trace.NewSimpleSpanProcessor(exporter)
+	processor := sdktrace.NewSimpleSpanProcessor(exporter)
 
 	opts = append(opts,
-		trace.WithSampler(trace.AlwaysSample()),
-		trace.WithSpanProcessor(processor), // flushes immediately
+		sdktrace.WithSampler(sdktrace.AlwaysSample()),
+		sdktrace.WithSpanProcessor(processor), // flushes immediately
 	)
 
-	tp := trace.NewTracerProvider(opts...)
+	tp := sdktrace.NewTracerProvider(opts...)
 
 	original := otel.GetTracerProvider()
 	otel.SetTracerProvider(tp)
@@ -45,7 +46,9 @@ func SetupTracer(t *testing.T, opts ...trace.TracerProviderOption) *Exporter {
 		otel.SetTracerProvider(original)
 	})
 
-	return &Exporter{
+	tracer := otel.GetTracerProvider().Tracer(t.Name())
+
+	return tracer, &Exporter{
 		exporter: exporter,
 		t:        t,
 	}
