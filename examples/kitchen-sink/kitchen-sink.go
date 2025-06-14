@@ -11,12 +11,16 @@ import (
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
 	"github.com/openai/openai-go/responses"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/braintrust/braintrust-x-go/braintrust/autoevals"
 	"github.com/braintrust/braintrust-x-go/braintrust/eval"
 	"github.com/braintrust/braintrust-x-go/braintrust/trace"
 	"github.com/braintrust/braintrust-x-go/braintrust/trace/traceopenai"
 )
+
+var tracer = otel.Tracer("kitchen-sink-example")
 
 func main() {
 	log.Println("🧪 Starting Kitchen Sink Example - Testing All Repository Features")
@@ -113,8 +117,16 @@ func runTextProcessingEval(client openai.Client) {
 	log.Println("\n🤖 Running Text Processing Evaluation (OpenAI Integration)")
 	log.Println("-----------------------------------------------------------")
 
-	// Task using OpenAI that can fail in different ways
+	// Task using OpenAI that can fail in different ways - with custom tracing
 	sentimentTask := func(ctx context.Context, text string) (string, error) {
+		ctx, span := tracer.Start(ctx, "custom_task_span")
+		defer span.End()
+
+		span.SetAttributes(
+			attribute.String("task.type", "sentiment_analysis"),
+			attribute.Int("input.length", len(text)),
+		)
+
 		// Simulate various failure scenarios
 		if strings.Contains(text, "BROKEN") {
 			return "", errors.New("task preprocessing failed: broken input detected")
@@ -151,7 +163,14 @@ func runTextProcessingEval(client openai.Client) {
 	scorers := []eval.Scorer[string, string]{
 		autoevals.NewEquals[string, string](),
 		eval.NewScorer("valid_sentiment", func(ctx context.Context, input, expected, result string) (float64, error) {
-			// This scorer validates the sentiment is one of the expected values
+			_, span := tracer.Start(ctx, "custom_score_span")
+			defer span.End()
+
+			span.SetAttributes(
+				attribute.String("scorer.name", "valid_sentiment"),
+				attribute.String("result.sentiment", result),
+			)
+
 			validSentiments := map[string]bool{
 				"positive": true,
 				"negative": true,
