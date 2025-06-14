@@ -3,6 +3,8 @@ linters:
   default: standard
   enable:
     - bodyclose
+    - usetesting
+    - thelper
 
 formatters:
   enable:
