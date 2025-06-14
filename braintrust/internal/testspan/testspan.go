@@ -22,6 +22,7 @@ type TestSpan struct {
 
 // New returns a new test span.
 func New(t *testing.T, stub tracetest.SpanStub) TestSpan {
+	t.Helper()
 	return TestSpan{
 		t:    t,
 		Stub: stub,

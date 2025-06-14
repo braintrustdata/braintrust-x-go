@@ -11,6 +11,7 @@ import (
 // FailTestsOnWarnings will fail tests if warnings are produced during tests. Currently
 // not able to be parallelized.
 func FailTestsOnWarnings(t *testing.T) {
+	t.Helper()
 	original := diag.GetLogger()
 	diag.SetLogger(newFailTestLogger(t))
 	t.Cleanup(func() {
@@ -29,6 +30,7 @@ func newFailTestLogger(t *testing.T) *failTestLogger {
 func (f *failTestLogger) Debugf(format string, args ...any) {}
 
 func (f *failTestLogger) Warnf(format string, args ...any) {
+	f.t.Helper()
 	f.t.Fatalf("failTestLogger caught a warning: %s\n%s", fmt.Sprintf(format, args...), string(debug.Stack()))
 }
 

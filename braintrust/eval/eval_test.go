@@ -16,6 +16,7 @@ import (
 )
 
 func setUpTest(t *testing.T) (*tracetest.InMemoryExporter, func()) {
+	t.Helper()
 	internal.FailTestsOnWarnings(t)
 
 	// setup otel to be fully synchronous
