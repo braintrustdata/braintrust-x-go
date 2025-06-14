@@ -2,7 +2,6 @@ package oteltest
 
 import (
 	"context"
-	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -17,9 +16,9 @@ import (
 	"github.com/braintrust/braintrust-x-go/braintrust/internal"
 )
 
-// SetupTracer sets up otel for testing (no sampling, sync, stores spans in memory)
-// and returns an Exporter that can be used to flush the spans.
-func SetupTracer(t *testing.T, opts ...sdktrace.TracerProviderOption) (oteltrace.Tracer, *Exporter) {
+// Setup sets up otel tracing for testing (no sampling, sync, stores spans in memory)
+// and returns a Tracer and an Exporter that can be used to flush the spans.
+func Setup(t *testing.T, opts ...sdktrace.TracerProviderOption) (oteltrace.Tracer, *Exporter) {
 	t.Helper()
 	internal.FailTestsOnWarnings(t)
 
@@ -36,22 +35,22 @@ func SetupTracer(t *testing.T, opts ...sdktrace.TracerProviderOption) (oteltrace
 
 	original := otel.GetTracerProvider()
 	otel.SetTracerProvider(tp)
+	tracer := otel.GetTracerProvider().Tracer(t.Name())
 
 	t.Cleanup(func() {
 		diag.ClearLogger()
-		err := tp.Shutdown(context.Background())
+		// withoutcancel is a workaround for usetesting linter which is otherwise
+		// kinda useful https://github.com/ldez/usetesting/issues/4
+		ctx := context.WithoutCancel(t.Context())
+
+		err := tp.Shutdown(ctx)
 		if err != nil {
 			t.Errorf("Error shutting down tracer provider: %v", err)
 		}
 		otel.SetTracerProvider(original)
 	})
 
-	tracer := otel.GetTracerProvider().Tracer(t.Name())
-
-	return tracer, &Exporter{
-		exporter: exporter,
-		t:        t,
-	}
+	return tracer, &Exporter{exporter: exporter, t: t}
 }
 
 // Exporter is a wrapper around the OTel InMemoryExporter that provides some
@@ -97,6 +96,13 @@ func (s *Span) Name() string {
 	return s.Stub.Name
 }
 
+// AssertAttrEquals asserts that the attribute is equal to the expected value.
+func (s *Span) AssertAttrEquals(key string, expected any) {
+	s.t.Helper()
+	attr := s.Attr(key)
+	attr.AssertEquals(expected)
+}
+
 // Attrs returns all the span's attributes matching the key.
 func (s *Span) Attrs(key string) []Attr {
 	attrs := []Attr{}
@@ -134,16 +140,16 @@ func (a Attr) String() string {
 // AssertEquals asserts that the attribute is equal to the expected value.
 func (a Attr) AssertEquals(expected any) {
 	a.t.Helper()
-	switch reflect.TypeOf(expected) {
-	case reflect.TypeOf("string"):
-		assert.Equal(a.t, a.String(), expected)
-	case reflect.TypeOf(int64(1)):
-		assert.Equal(a.t, a.Value.AsInt64(), expected)
-	case reflect.TypeOf(float64(1.0)):
-		assert.Equal(a.t, a.Value.AsFloat64(), expected)
-	case reflect.TypeOf(true):
-		assert.Equal(a.t, a.Value.AsBool(), expected)
+	switch v := expected.(type) {
+	case string:
+		assert.Equal(a.t, v, a.String())
+	case int64:
+		assert.Equal(a.t, v, a.Value.AsInt64())
+	case float64:
+		assert.Equal(a.t, v, a.Value.AsFloat64())
+	case bool:
+		assert.Equal(a.t, v, a.Value.AsBool())
 	default:
-		assert.Fail(a.t, "unsupported type: %s", reflect.TypeOf(expected))
+		assert.Failf(a.t, "unsupported type", "expected type %T is not supported", expected)
 	}
 }

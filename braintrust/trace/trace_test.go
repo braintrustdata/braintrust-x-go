@@ -15,7 +15,7 @@ func TestSpanProcessor(t *testing.T) {
 	assert := assert.New(t)
 
 	processor := NewSpanProcessor(Project{id: "12345"})
-	tracer, exporter := oteltest.SetupTracer(t, sdktrace.WithSpanProcessor(processor))
+	tracer, exporter := oteltest.Setup(t, sdktrace.WithSpanProcessor(processor))
 
 	// Assert we use the default parent if none is set.
 	_, span1 := tracer.Start(t.Context(), "test")
@@ -23,7 +23,7 @@ func TestSpanProcessor(t *testing.T) {
 	span := exporter.FlushOne()
 
 	assert.Equal(span.Name(), "test")
-	span.Attr(PARENT_ATTR).AssertEquals("project_id:12345")
+	span.AssertAttrEquals(PARENT_ATTR, "project_id:12345")
 
 	// Assert we use the parent from the context if it is set.
 	ctx := t.Context()
@@ -31,7 +31,7 @@ func TestSpanProcessor(t *testing.T) {
 	_, span2 := tracer.Start(ctx, "test")
 	span2.End()
 	span = exporter.FlushOne()
-	span.Attr(PARENT_ATTR).AssertEquals("project_id:67890")
+	span.AssertAttrEquals(PARENT_ATTR, "project_id:67890")
 
 	// assert that if a span already has a parent, it is not overridden
 	ctx = t.Context()
@@ -39,5 +39,5 @@ func TestSpanProcessor(t *testing.T) {
 	_, span4 := tracer.Start(ctx, "test", trace.WithAttributes(attribute.String(PARENT_ATTR, "project_id:88888")))
 	span4.End()
 	span = exporter.FlushOne()
-	span.Attr(PARENT_ATTR).AssertEquals("project_id:88888")
+	span.AssertAttrEquals(PARENT_ATTR, "project_id:88888")
 }
