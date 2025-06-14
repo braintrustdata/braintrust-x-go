@@ -1,4 +1,4 @@
-.PHONY: help ci build clean test cover lint fmt mod-tidy mod-verify
+.PHONY: help ci build clean test cover lint fmt mod-tidy mod-verify fix
 
 help:
 	@echo "Available commands:"
@@ -9,6 +9,7 @@ help:
 	@echo "  clean         - Clean build artifacts and coverage files"
 	@echo "  fmt           - Format Go code"
 	@echo "  lint          - Run golangci-lint"
+	@echo "  fix           - Run golangci-lint with auto-fix"
 	@echo "  mod-tidy      - Tidy and verify Go modules"
 	@echo "  ci            - Run CI pipeline (clean, lint, test, build)"
 
@@ -43,3 +44,8 @@ mod-verify:
 
 mod-tidy:
 	go mod tidy
+
+fix: fmt
+	golangci-lint run --fix
+
+
