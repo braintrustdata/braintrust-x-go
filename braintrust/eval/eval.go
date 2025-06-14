@@ -132,16 +132,14 @@ func (e *Eval[I, R]) runScorers(ctx context.Context, c Case[I, R], result R) ([]
 	meta := make(map[string]float64, len(e.scorers))
 
 	for i, scorer := range e.scorers {
-		val, err := scorer.Run(ctx, c, result)
+		val, err := scorer.Run(ctx, c.Input, c.Expected, result)
 		if err != nil {
 			span.RecordError(err)
 			return scores, err // FIXME[matt] probably don't want to crap out here.
 		}
-		scores[i] = Score{
-			Name:  scorer.Name,
-			Score: val,
-		}
-		meta[scorer.Name] = val
+
+		scores[i] = Score{Name: scorer.Name(), Score: val}
+		meta[scorer.Name()] = val
 	}
 
 	if err := setJSONAttr(span, "braintrust.scores", meta); err != nil {
@@ -199,18 +197,31 @@ type Score struct {
 	Score float64 `json:"score"`
 }
 
-type ScoreFunc[I, R any] func(ctx context.Context, c Case[I, R], result R) (float64, error)
+type ScoreFunc[I, R any] func(ctx context.Context, input I, expected, result R) (float64, error)
 
 // Scorer
-type Scorer[I, R any] struct {
-	Name string
-	Run  ScoreFunc[I, R]
+type Scorer[I, R any] interface {
+	Name() string
+	Run(ctx context.Context, input I, expected, result R) (float64, error)
 }
 
-func NewScorer[I, R any](name string, run ScoreFunc[I, R]) Scorer[I, R] {
-	return Scorer[I, R]{
-		Name: name,
-		Run:  run,
+type scorerImpl[I, R any] struct {
+	name      string
+	scoreFunc ScoreFunc[I, R]
+}
+
+func (s *scorerImpl[I, R]) Name() string {
+	return s.name
+}
+
+func (s *scorerImpl[I, R]) Run(ctx context.Context, input I, expected, result R) (float64, error) {
+	return s.scoreFunc(ctx, input, expected, result)
+}
+
+func NewScorer[I, R any](name string, scoreFunc ScoreFunc[I, R]) Scorer[I, R] {
+	return &scorerImpl[I, R]{
+		name:      name,
+		scoreFunc: scoreFunc,
 	}
 }
 
