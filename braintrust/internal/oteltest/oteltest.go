@@ -74,8 +74,8 @@ func (e *Exporter) Flush() []Span {
 	return spans
 }
 
-// FlushOne returns the first span buffered in memory and fails if there is more
-// than one span
+// FlushOne returns the first span buffered in memory and fails if there is not
+// exactly one span.
 func (e *Exporter) FlushOne() Span {
 	e.t.Helper()
 	spans := e.Flush()
