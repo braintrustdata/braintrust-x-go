@@ -6,61 +6,28 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/sdk/trace"
-	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
-	"github.com/braintrust/braintrust-x-go/braintrust/diag"
-	"github.com/braintrust/braintrust-x-go/braintrust/internal"
-	"github.com/braintrust/braintrust-x-go/braintrust/internal/testspan"
+	"github.com/braintrust/braintrust-x-go/braintrust/internal/oteltest"
 )
-
-func setUpTest(t *testing.T) (*tracetest.InMemoryExporter, func()) {
-	t.Helper()
-	internal.FailTestsOnWarnings(t)
-
-	// setup otel to be fully synchronous
-	exporter := tracetest.NewInMemoryExporter()
-	processor := trace.NewSimpleSpanProcessor(exporter)
-	tp := trace.NewTracerProvider(
-		trace.WithSampler(trace.AlwaysSample()),
-		trace.WithSpanProcessor(processor), // flushes immediately
-	)
-
-	original := otel.GetTracerProvider()
-	otel.SetTracerProvider(tp)
-
-	teardown := func() {
-		diag.ClearLogger()
-		err := tp.Shutdown(t.Context())
-		if err != nil {
-			t.Fatalf("Error shutting down tracer provider: %v", err)
-		}
-		otel.SetTracerProvider(original)
-	}
-
-	return exporter, teardown
-}
 
 func TestHardcodedEval(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	assert.True(true)
-	require.True(true)
 
-	exporter, teardown := setUpTest(t)
-	defer teardown()
+	_, exporter := oteltest.Setup(t)
 
-	// here's a fake task
-	task := func(ctx context.Context, x int) (int, error) {
+	// test task
+	id := "experiment_id:123"
+
+	brokenSquare := func(ctx context.Context, x int) (int, error) {
 		square := x * x
-		if x > 3 {
+		if x > 1 {
 			square += 1 // oh no it's wrong
 		}
 		return square, nil
 	}
 
-	// here's a fake scorer
+	// test scorer
 	equals := func(ctx context.Context, c Case[int, int], actual int) (float64, error) {
 		if actual == c.Expected {
 			return 1.0, nil
@@ -71,23 +38,110 @@ func TestHardcodedEval(t *testing.T) {
 	cases := []Case[int, int]{
 		{Input: 1, Expected: 1},
 		{Input: 2, Expected: 4},
-		{Input: 3, Expected: 9},
-		{Input: 4, Expected: 16},
 	}
 
 	scorers := []Scorer[int, int]{
 		NewScorer("equals", equals),
 	}
 
-	eval := New("test", cases, task, scorers)
-
-	err := eval.Run()
+	eval1 := New(id, cases, brokenSquare, scorers)
+	err := eval1.Run()
 	require.NoError(err)
 
-	spans := testspan.Flush(t, exporter)
-	assert.NotEmpty(spans)
+	spans := exporter.Flush()
+	assert.Equal(len(cases)*3, len(spans))
 
-	// for _, span := range spans {
-	// 	//fmt.Println(span)
-	// }
+	// Assert first case spans
+	assert.JSONEq(`{
+		"attributes": {
+			"braintrust.expected": "1",
+			"braintrust.input_json": "1",
+			"braintrust.output_json": "1",
+			"braintrust.span_attributes": "{\"type\":\"task\"}"
+		},
+		"events": [],
+		"name": "task",
+		"spanKind": "internal",
+		"status": {
+			"code": "Unset",
+			"description": ""
+		}
+	}`, spans[0].Snapshot())
+
+	assert.JSONEq(`{
+		"attributes": {
+			"braintrust.scores": "{\"equals\":1}",
+			"braintrust.span_attributes": "{\"type\":\"score\"}"
+		},
+		"events": [],
+		"name": "score",
+		"spanKind": "internal",
+		"status": {
+			"code": "Unset",
+			"description": ""
+		}
+	}`, spans[1].Snapshot())
+
+	assert.JSONEq(`{
+		"attributes": {
+			"braintrust.expected": "1",
+			"braintrust.input_json": "1",
+			"braintrust.output_json": "1",
+			"braintrust.span_attributes": "{\"type\":\"eval\"}"
+		},
+		"events": [],
+		"name": "eval",
+		"spanKind": "internal",
+		"status": {
+			"code": "Unset",
+			"description": ""
+		}
+	}`, spans[2].Snapshot())
+
+	// Assert second case spans
+	assert.JSONEq(`{
+		"attributes": {
+			"braintrust.expected": "4",
+			"braintrust.input_json": "2",
+			"braintrust.output_json": "5",
+			"braintrust.span_attributes": "{\"type\":\"task\"}"
+		},
+		"events": [],
+		"name": "task",
+		"spanKind": "internal",
+		"status": {
+			"code": "Unset",
+			"description": ""
+		}
+	}`, spans[3].Snapshot())
+
+	assert.JSONEq(`{
+		"attributes": {
+			"braintrust.scores": "{\"equals\":0}",
+			"braintrust.span_attributes": "{\"type\":\"score\"}"
+		},
+		"events": [],
+		"name": "score",
+		"spanKind": "internal",
+		"status": {
+			"code": "Unset",
+			"description": ""
+		}
+	}`, spans[4].Snapshot())
+
+	assert.JSONEq(`{
+		"attributes": {
+			"braintrust.expected": "4",
+			"braintrust.input_json": "2",
+			"braintrust.output_json": "5",
+			"braintrust.span_attributes": "{\"type\":\"eval\"}"
+		},
+		"events": [],
+		"name": "eval",
+		"spanKind": "internal",
+		"status": {
+			"code": "Unset",
+			"description": ""
+		}
+	}`, spans[5].Snapshot())
 }

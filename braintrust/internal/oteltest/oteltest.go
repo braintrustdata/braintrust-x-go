@@ -2,6 +2,7 @@ package oteltest
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -62,15 +63,15 @@ type Exporter struct {
 
 // Flush returns the spans buffered in memory.
 func (e *Exporter) Flush() []Span {
-	spans := e.exporter.GetSpans()
+	stubs := e.exporter.GetSpans()
 	e.exporter.Reset()
 
-	spanObjs := make([]Span, len(spans))
-	for i, span := range spans {
-		spanObjs[i] = Span{t: e.t, Stub: span}
+	spans := make([]Span, len(stubs))
+	for i, span := range stubs {
+		spans[i] = Span{t: e.t, Stub: span}
 	}
 
-	return spanObjs
+	return spans
 }
 
 // FlushOne returns the first span buffered in memory and fails if there is more
@@ -121,6 +122,72 @@ func (s *Span) Attr(key string) Attr {
 	attrs := s.Attrs(key)
 	require.Len(s.t, attrs, 1)
 	return attrs[0]
+}
+
+// Map returns a map containing critical span attributes for use in testing.
+func (s *Span) Map() map[string]interface{} {
+	return map[string]interface{}{
+		"name":       s.Stub.Name,
+		"spanKind":   s.Stub.SpanKind.String(),
+		"attributes": convertAttributes(s.Stub.Attributes),
+		"events":     convertEvents(s.Stub.Events),
+		"status": map[string]interface{}{
+			"code":        s.Stub.Status.Code.String(),
+			"description": s.Stub.Status.Description,
+		},
+	}
+}
+
+// Snapshot returns a JSON string containing critical span attributes
+// for use in testing assertions.
+func (s *Span) Snapshot() string {
+	jsonBytes, err := json.MarshalIndent(s.Map(), "", "  ")
+	if err != nil {
+		s.t.Fatalf("Failed to marshal span snapshot: %v", err)
+	}
+	return string(jsonBytes)
+}
+
+func convertAttributes(attrs []attr.KeyValue) map[string]interface{} {
+	result := make(map[string]interface{})
+	for _, a := range attrs {
+		result[string(a.Key)] = convertAttributeValue(a.Value)
+	}
+	return result
+}
+
+func convertAttributeValue(value attr.Value) interface{} {
+	switch value.Type() {
+	case attr.BOOL:
+		return value.AsBool()
+	case attr.INT64:
+		return value.AsInt64()
+	case attr.FLOAT64:
+		return value.AsFloat64()
+	case attr.STRING:
+		return value.AsString()
+	case attr.BOOLSLICE:
+		return value.AsBoolSlice()
+	case attr.INT64SLICE:
+		return value.AsInt64Slice()
+	case attr.FLOAT64SLICE:
+		return value.AsFloat64Slice()
+	case attr.STRINGSLICE:
+		return value.AsStringSlice()
+	default:
+		return value.AsString() // fallback
+	}
+}
+
+func convertEvents(events []sdktrace.Event) []map[string]interface{} {
+	result := make([]map[string]interface{}, len(events))
+	for i, event := range events {
+		result[i] = map[string]interface{}{
+			"name":       event.Name,
+			"attributes": convertAttributes(event.Attributes),
+		}
+	}
+	return result
 }
 
 // Attr is a wrapper around the OTel Attribute with some helpful
