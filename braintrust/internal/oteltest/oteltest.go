@@ -132,8 +132,8 @@ func (s *Span) Summary() map[string]any {
 	return map[string]any{
 		"name":       s.Stub.Name,
 		"spanKind":   s.Stub.SpanKind.String(),
-		"attributes": convertAttributes(s.Stub.Attributes),
-		"events":     convertEvents(s.Stub.Events),
+		"attributes": convertAttributes(s.t, s.Stub.Attributes),
+		"events":     convertEvents(s.t, s.Stub.Events),
 		"status": map[string]any{
 			"code":        s.Stub.Status.Code.String(),
 			"description": s.Stub.Status.Description,
@@ -144,6 +144,7 @@ func (s *Span) Summary() map[string]any {
 // Snapshot returns a JSON string containing the span's summary. Read the docs on
 // Summary() for more information.
 func (s *Span) Snapshot() string {
+	s.t.Helper()
 	jsonBytes, err := json.MarshalIndent(s.Summary(), "", "  ")
 	if err != nil {
 		s.t.Fatalf("Failed to marshal span snapshot: %v", err)
@@ -151,15 +152,20 @@ func (s *Span) Snapshot() string {
 	return string(jsonBytes)
 }
 
-func convertAttributes(attrs []attr.KeyValue) map[string]interface{} {
+func convertAttributes(t *testing.T, attrs []attr.KeyValue) map[string]interface{} {
+	t.Helper()
 	result := make(map[string]interface{})
 	for _, a := range attrs {
-		result[string(a.Key)] = convertAttributeValue(a.Value)
+		if a.Key == "" {
+			t.Fatalf("Empty attribute key found")
+		}
+		result[string(a.Key)] = convertAttributeValue(t, a.Value)
 	}
 	return result
 }
 
-func convertAttributeValue(value attr.Value) interface{} {
+func convertAttributeValue(t *testing.T, value attr.Value) interface{} {
+	t.Helper()
 	switch value.Type() {
 	case attr.BOOL:
 		return value.AsBool()
@@ -177,17 +183,22 @@ func convertAttributeValue(value attr.Value) interface{} {
 		return value.AsFloat64Slice()
 	case attr.STRINGSLICE:
 		return value.AsStringSlice()
+	case attr.INVALID:
+		t.Fatalf("Invalid attribute value encountered")
+		return nil
 	default:
-		return value.AsString() // fallback
+		t.Fatalf("Unsupported attribute type: %v", value.Type())
+		return nil
 	}
 }
 
-func convertEvents(events []sdktrace.Event) []map[string]interface{} {
+func convertEvents(t *testing.T, events []sdktrace.Event) []map[string]interface{} {
+	t.Helper()
 	result := make([]map[string]interface{}, len(events))
 	for i, event := range events {
 		result[i] = map[string]interface{}{
 			"name":       event.Name,
-			"attributes": convertAttributes(event.Attributes),
+			"attributes": convertAttributes(t, event.Attributes),
 		}
 	}
 	return result
@@ -203,6 +214,7 @@ type Attr struct {
 
 // String returns the attribute as a string and fails if the attribute is not a string.
 func (a Attr) String() string {
+	a.t.Helper()
 	require.Equal(a.t, a.Value.Type(), attr.STRING)
 	return a.Value.AsString()
 }

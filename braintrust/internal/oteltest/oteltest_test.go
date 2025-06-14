@@ -3,6 +3,7 @@ package oteltest
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	oteltrace "go.opentelemetry.io/otel/trace"
@@ -56,8 +57,6 @@ func TestSpanSnapshot(t *testing.T) {
   }
 }`
 
-	// Use a simple string comparison for now - in practice you'd use assert.JSONEq or similar
-	if snapshot != expected {
-		t.Errorf("Snapshot mismatch.\nGot:\n%s\n\nExpected:\n%s", snapshot, expected)
-	}
+	// Use assert.JSONEq for robust JSON comparison
+	assert.JSONEq(t, expected, snapshot)
 }
