@@ -24,6 +24,7 @@ type failTestLogger struct {
 }
 
 func newFailTestLogger(t *testing.T) *failTestLogger {
+	t.Helper()
 	return &failTestLogger{t: t}
 }
 

@@ -130,6 +130,7 @@ func isJSON(s string) bool {
 }
 
 func Flush(t *testing.T, exporter *tracetest.InMemoryExporter) []TestSpan {
+	t.Helper()
 	spans := FlushSpanStubs(exporter)
 	testSpans := make([]TestSpan, len(spans))
 	for i, span := range spans {
@@ -139,6 +140,7 @@ func Flush(t *testing.T, exporter *tracetest.InMemoryExporter) []TestSpan {
 }
 
 func FlushOne(t *testing.T, exporter *tracetest.InMemoryExporter) TestSpan {
+	t.Helper()
 	spans := FlushSpanStubs(exporter)
 	require.Equal(t, 1, len(spans))
 	return New(t, spans[0])
