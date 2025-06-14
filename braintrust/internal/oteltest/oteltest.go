@@ -124,24 +124,27 @@ func (s *Span) Attr(key string) Attr {
 	return attrs[0]
 }
 
-// Map returns a map containing critical span attributes for use in testing.
-func (s *Span) Map() map[string]interface{} {
-	return map[string]interface{}{
+// Summary returns the core data of the span, including attributes, events, and status.
+// It omits non-deterministic fields such as timestamps and span IDs. If two spans trace
+// the same code path with identical data, their Summary outputs should be equal,
+// even if the spans themselves are not.
+func (s *Span) Summary() map[string]any {
+	return map[string]any{
 		"name":       s.Stub.Name,
 		"spanKind":   s.Stub.SpanKind.String(),
 		"attributes": convertAttributes(s.Stub.Attributes),
 		"events":     convertEvents(s.Stub.Events),
-		"status": map[string]interface{}{
+		"status": map[string]any{
 			"code":        s.Stub.Status.Code.String(),
 			"description": s.Stub.Status.Description,
 		},
 	}
 }
 
-// Snapshot returns a JSON string containing critical span attributes
-// for use in testing assertions.
+// Snapshot returns a JSON string containing the span's summary. Read the docs on
+// Summary() for more information.
 func (s *Span) Snapshot() string {
-	jsonBytes, err := json.MarshalIndent(s.Map(), "", "  ")
+	jsonBytes, err := json.MarshalIndent(s.Summary(), "", "  ")
 	if err != nil {
 		s.t.Fatalf("Failed to marshal span snapshot: %v", err)
 	}

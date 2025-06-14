@@ -1,7 +1,6 @@
 package oteltest
 
 import (
-	"context"
 	"testing"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -12,8 +11,7 @@ import (
 func TestSpanSnapshot(t *testing.T) {
 	tracer, exporter := Setup(t)
 
-	ctx := context.Background()
-	ctx, span := tracer.Start(ctx, "test-span", oteltrace.WithSpanKind(oteltrace.SpanKindClient))
+	_, span := tracer.Start(t.Context(), "test-span", oteltrace.WithSpanKind(oteltrace.SpanKindClient))
 
 	// Add some attributes
 	span.SetAttributes(
