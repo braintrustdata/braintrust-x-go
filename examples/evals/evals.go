@@ -9,7 +9,6 @@ import (
 	"github.com/openai/openai-go/option"
 	"github.com/openai/openai-go/responses"
 
-	"github.com/braintrust/braintrust-x-go/braintrust/diag"
 	"github.com/braintrust/braintrust-x-go/braintrust/eval"
 	"github.com/braintrust/braintrust-x-go/braintrust/trace"
 	"github.com/braintrust/braintrust-x-go/braintrust/trace/traceopenai"
@@ -22,7 +21,6 @@ func main() {
 		option.WithMiddleware(traceopenai.Middleware),
 	)
 
-	diag.SetWarnLogger()
 	teardown, err := trace.Quickstart()
 	if err != nil {
 		log.Fatalf("Error starting trace: %v", err)
@@ -32,7 +30,6 @@ func main() {
 	getFoodType := func(ctx context.Context, food string) (string, error) {
 		fmt.Println("getFoodType", food)
 		input := fmt.Sprintf("What kind of food is %s?", food)
-
 		params := responses.ResponseNewParams{
 			Input:        responses.ResponseNewParamsInputUnion{OfString: openai.String(input)},
 			Model:        openai.ChatModelGPT4oMini,
