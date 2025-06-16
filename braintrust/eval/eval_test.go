@@ -3,6 +3,7 @@ package eval
 import (
 	"context"
 	"errors"
+	"io"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -37,7 +38,7 @@ func TestEval_TaskErrors(t *testing.T) {
 		autoevals.NewEquals[int, int](),
 	}
 
-	eval := New("experiment_id:123", cases, task, scorers)
+	eval := New("experiment_id:123", NewCases(cases), task, scorers)
 	timer := oteltest.NewTimer()
 	err := eval.Run()
 	timeRange := timer.Tick()
@@ -165,7 +166,7 @@ func TestEval_ScorerErrors(t *testing.T) {
 		}),
 	}
 
-	eval := New("experiment_id:123", cases, task, scorers)
+	eval := New("experiment_id:123", NewCases(cases), task, scorers)
 	timer := oteltest.NewTimer()
 	err := eval.Run()
 	timeRange := timer.Tick()
@@ -315,7 +316,7 @@ func TestHardcodedEval(t *testing.T) {
 		NewScorer("equals", equals),
 	}
 
-	eval1 := New(id, cases, brokenSquare, scorers)
+	eval1 := New(id, NewCases(cases), brokenSquare, scorers)
 	err := eval1.Run()
 	require.NoError(err)
 
@@ -415,4 +416,79 @@ func TestHardcodedEval(t *testing.T) {
 			"description": ""
 		}
 	}`, spans[5].Snapshot())
+}
+
+func TestCases(t *testing.T) {
+	assert := assert.New(t)
+
+	// Test with empty slice
+	emptyCases := NewCases([]Case[int, int]{})
+	_, err := emptyCases.Next()
+	assert.ErrorIs(err, io.EOF)
+
+	// Test with populated slice
+	cases := []Case[int, int]{
+		{Input: 1, Expected: 2},
+		{Input: 3, Expected: 6},
+	}
+
+	sliceCases := NewCases(cases)
+
+	// First case
+	case1, err := sliceCases.Next()
+	assert.NoError(err)
+	assert.Equal(1, case1.Input)
+	assert.Equal(2, case1.Expected)
+
+	// Second case
+	case2, err := sliceCases.Next()
+	assert.NoError(err)
+	assert.Equal(3, case2.Input)
+	assert.Equal(6, case2.Expected)
+
+	// No more cases - should return io.EOF
+	_, err = sliceCases.Next()
+	assert.ErrorIs(err, io.EOF)
+
+	// Subsequent calls should also return io.EOF
+	_, err = sliceCases.Next()
+	assert.ErrorIs(err, io.EOF)
+}
+
+type intGenerator struct {
+	start int
+	end   int
+}
+
+func newIntGenerator(start, end int) *intGenerator {
+	return &intGenerator{start: start, end: end}
+}
+
+func (g *intGenerator) Next() (Case[int, int], error) {
+	if g.start >= g.end {
+		return Case[int, int]{}, io.EOF
+	}
+	g.start++
+	return Case[int, int]{Input: g.start, Expected: g.start}, nil
+}
+
+func TestEvalWithCustomGenerator(t *testing.T) {
+	require := require.New(t)
+
+	_, exporter := oteltest.Setup(t)
+
+	generator := newIntGenerator(0, 2)
+
+	task := func(ctx context.Context, x int) (int, error) {
+		return x * 2, nil
+	}
+
+	scorers := []Scorer[int, int]{autoevals.NewEquals[int, int]()}
+
+	eval := New("test-generator", generator, task, scorers)
+	err := eval.Run()
+	require.NoError(err)
+
+	spans := exporter.Flush()
+	require.Equal(6, len(spans)) // 2 cases * 3 spans each
 }
