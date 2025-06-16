@@ -1,7 +1,6 @@
 package traceopenai
 
 import (
-	"context"
 	"errors"
 	"net/http"
 	"testing"
@@ -28,6 +27,7 @@ const TEST_MODEL = "gpt-4o-mini"
 // setUpTest is a helper function that sets up a new tracer provider for each test.
 // It returns an openai client, an exporter, and a teardown function.
 func setUpTest(t *testing.T) (openai.Client, *tracetest.InMemoryExporter, func()) {
+	t.Helper()
 
 	// fail tests if we log warnings.
 	internal.FailTestsOnWarnings(t)
@@ -45,7 +45,7 @@ func setUpTest(t *testing.T) (openai.Client, *tracetest.InMemoryExporter, func()
 
 	teardown := func() {
 		diag.ClearLogger()
-		err := tp.Shutdown(context.Background())
+		err := tp.Shutdown(t.Context())
 		if err != nil {
 			t.Fatalf("Error shutting down tracer provider: %v", err)
 		}
@@ -74,7 +74,7 @@ func TestError(t *testing.T) {
 		option.WithMiddleware(errorware),
 	)
 
-	resp, err := client.Responses.New(context.Background(), responses.ResponseNewParams{
+	resp, err := client.Responses.New(t.Context(), responses.ResponseNewParams{
 		Input: responses.ResponseNewParamsInputUnion{OfString: openai.String("hai")},
 		Model: TEST_MODEL,
 	})
@@ -115,7 +115,7 @@ func TestOpenAIResponsesRequiredParams(t *testing.T) {
 		Model: TEST_MODEL,
 	}
 
-	resp, err := client.Responses.New(context.Background(), params)
+	resp, err := client.Responses.New(t.Context(), params)
 	end := time.Now()
 	require.NoError(err)
 	require.NotNil(resp)
@@ -156,7 +156,7 @@ func TestOpenAIResponsesKitchenSink(t *testing.T) {
 	}
 
 	start := time.Now()
-	resp, err := client.Responses.New(context.Background(), params)
+	resp, err := client.Responses.New(t.Context(), params)
 	end := time.Now()
 	require.NoError(err)
 	require.NotNil(resp)
@@ -199,6 +199,7 @@ func flushSpans(exporter *tracetest.InMemoryExporter) []tracetest.SpanStub {
 }
 
 func flushOne(t *testing.T, exporter *tracetest.InMemoryExporter) tracetest.SpanStub {
+	t.Helper()
 	spans := flushSpans(exporter)
 	require.Len(t, spans, 1)
 	return spans[0]
@@ -210,7 +211,7 @@ func TestOpenAIResponsesStreamingClose(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	question := "Can you return me a list of the first 15 fibonacci numbers?"
 
 	stream := client.Responses.NewStreaming(ctx, responses.ResponseNewParams{
@@ -235,7 +236,7 @@ func TestOpenAIResponsesStreaming(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	question := "Can you return me a list of the first 15 fibonacci numbers?"
 
 	start := time.Now()
@@ -291,7 +292,7 @@ func TestOpenAIResponsesWithListInput(t *testing.T) {
 
 	// Call the API
 	start := time.Now()
-	resp, err := client.Responses.New(context.Background(), params)
+	resp, err := client.Responses.New(t.Context(), params)
 	end := time.Now()
 	require.NoError(err)
 	require.NotNil(resp)
@@ -312,6 +313,7 @@ func TestOpenAIResponsesWithListInput(t *testing.T) {
 }
 
 func getResponseText(t *testing.T, resp any) string {
+	t.Helper()
 	// 	[]interface {}{map[string]interface {}{"content":[]interface {}{map[string]interface {}{"annotations":[]interface {}{}, "text":"Sure, here is the list of the first 15 Fibonacci numbers:\n\n[0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 377]", "type":"output_text"}}, "id":"msg_6815653f1238819281f85b0bd4f95c8e05b761f031bf9c10", "role":"assistant", "status":"completed", "type":"message"}}
 	require := require.New(t)
 
@@ -336,6 +338,7 @@ func getResponseText(t *testing.T, resp any) string {
 
 // assertSpanValid asserts all the common properties of a span are valid.
 func assertSpanValid(t *testing.T, stub tracetest.SpanStub, start, end time.Time) {
+	t.Helper()
 	assert := assert.New(t)
 
 	span := testspan.New(t, stub)
@@ -392,7 +395,7 @@ func TestTestOTelTracer(t *testing.T) {
 	assert.Empty(spans)
 
 	tracer := otel.Tracer("test")
-	_, span := tracer.Start(context.Background(), "test")
+	_, span := tracer.Start(t.Context(), "test")
 	span.End()
 
 	spans = flushSpans(exporter)

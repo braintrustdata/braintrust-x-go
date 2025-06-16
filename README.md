@@ -3,7 +3,7 @@
 
 ## Development Setup
 
-This project uses [mise](https://mise.jdx.dev/) to manage dependencies and configure the dev environment. If you want to do it manually,
+This project uses [mise](https://mise.jdx.dev/) to manage dependencies, hooks and configure the dev environment. If you want to do it manually,
 install the tools listed in `mise.toml`.
 
 
@@ -28,7 +28,5 @@ cp env.example .env
 All of the common dev tasks are in our `Makefile`.
 
 ```bash
-make build
-make test
 make help
 ```
