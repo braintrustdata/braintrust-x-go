@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -95,6 +96,16 @@ type Span struct {
 // Name returns the span's name.
 func (s *Span) Name() string {
 	return s.Stub.Name
+}
+
+func (s *Span) AssertInTimeRange(tr TimeRange) {
+	s.t.Helper()
+	stub := s.Stub
+	assert.NotZero(s.t, tr.Start)
+	assert.NotZero(s.t, tr.End)
+	assert.True(s.t, tr.Start.Before(stub.StartTime))
+	assert.True(s.t, tr.End.After(stub.EndTime))
+	assert.True(s.t, stub.StartTime.Before(stub.EndTime))
 }
 
 // AssertAttrEquals asserts that the attribute is equal to the expected value.
@@ -234,4 +245,27 @@ func (a Attr) AssertEquals(expected any) {
 	default:
 		assert.Failf(a.t, "unsupported type", "expected type %T is not supported", expected)
 	}
+}
+
+type Timer struct {
+	start time.Time
+}
+
+func NewTimer() *Timer {
+	return &Timer{
+		start: time.Now(),
+	}
+}
+
+// Returns the time range since the timer was created to now.
+func (t *Timer) Tick() TimeRange {
+	return TimeRange{
+		Start: t.start,
+		End:   time.Now(),
+	}
+}
+
+type TimeRange struct {
+	Start time.Time
+	End   time.Time
 }

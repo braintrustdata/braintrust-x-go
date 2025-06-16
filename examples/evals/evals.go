@@ -55,13 +55,13 @@ func main() {
 		},
 		getFoodType,
 		[]eval.Scorer[string, string]{
-			eval.NewScorer("fruit_scorer", func(ctx context.Context, c eval.Case[string, string], result string) (float64, error) {
+			eval.NewScorer("fruit_scorer", func(ctx context.Context, input, expected, result string) (float64, error) {
 				if result == "fruit" {
 					return 1.0, nil
 				}
 				return 0.0, nil
 			}),
-			eval.NewScorer("vegetable_scorer", func(ctx context.Context, c eval.Case[string, string], result string) (float64, error) {
+			eval.NewScorer("vegetable_scorer", func(ctx context.Context, input, expected, result string) (float64, error) {
 				if result == "vegetable" {
 					return 1.0, nil
 				}
