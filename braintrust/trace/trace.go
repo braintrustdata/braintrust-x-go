@@ -40,9 +40,6 @@ func Quickstart() (teardown func(), err error) {
 	opts := []otlptracehttp.Option{
 		otlptracehttp.WithEndpoint(url),
 		otlptracehttp.WithURLPath("/otel/v1/traces"),
-		otlptracehttp.WithHeaders(map[string]string{
-			"Authorization": "Bearer " + apiKey,
-		}),
 	}
 	if protocol == "http" {
 		opts = append(opts, otlptracehttp.WithInsecure())
@@ -50,7 +47,12 @@ func Quickstart() (teardown func(), err error) {
 
 	if parentHeader != "" {
 		opts = append(opts, otlptracehttp.WithHeaders(map[string]string{
-			"x-bt-parent": parentHeader,
+			"x-bt-parent":   parentHeader,
+			"Authorization": "Bearer " + apiKey,
+		}))
+	} else {
+		opts = append(opts, otlptracehttp.WithHeaders(map[string]string{
+			"Authorization": "Bearer " + apiKey,
 		}))
 	}
 
