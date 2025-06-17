@@ -1,3 +1,4 @@
+// This example is used to test the UI and all the features it supports (OpenAI, errors, custom tracing, etc).
 package main
 
 import (
@@ -52,7 +53,7 @@ func runMathEval() {
 	log.Println("--------------------------------------------------")
 
 	// Task that sometimes works, sometimes fails
-	mathTask := func(ctx context.Context, input int) (float64, error) {
+	mathTask := func(_ context.Context, input int) (float64, error) {
 		switch input {
 		case 42:
 			return 0, errors.New("universe error: cannot compute answer to everything")
@@ -66,7 +67,7 @@ func runMathEval() {
 	// Mix of scorers - some pass, some fail
 	scorers := []eval.Scorer[int, float64]{
 		autoevals.NewEquals[int, float64](),
-		eval.NewScorer("within_tolerance", func(ctx context.Context, input int, expected, result float64) (float64, error) {
+		eval.NewScorer("within_tolerance", func(_ context.Context, input int, expected, result float64) (float64, error) {
 			if input == 16 {
 				return 0, errors.New("tolerance checker malfunction")
 			}
@@ -76,7 +77,7 @@ func runMathEval() {
 			}
 			return 0.0, nil
 		}),
-		eval.NewScorer("is_positive", func(ctx context.Context, input int, expected, result float64) (float64, error) {
+		eval.NewScorer("is_positive", func(_ context.Context, _ int, _, result float64) (float64, error) {
 			if result >= 0 {
 				return 1.0, nil
 			}
@@ -162,7 +163,7 @@ func runTextProcessingEval(client openai.Client) {
 	// Scorers with different failure scenarios
 	scorers := []eval.Scorer[string, string]{
 		autoevals.NewEquals[string, string](),
-		eval.NewScorer("valid_sentiment", func(ctx context.Context, input, expected, result string) (float64, error) {
+		eval.NewScorer("valid_sentiment", func(ctx context.Context, input, _, result string) (float64, error) {
 			_, span := tracer.Start(ctx, "custom_score_span")
 			defer span.End()
 
@@ -186,7 +187,7 @@ func runTextProcessingEval(client openai.Client) {
 			}
 			return 0.0, nil
 		}),
-		eval.NewScorer("sentiment_agreement", func(ctx context.Context, input, expected, result string) (float64, error) {
+		eval.NewScorer("sentiment_agreement", func(_ context.Context, input, expected, result string) (float64, error) {
 			// More lenient scorer that gives partial credit
 			if strings.Contains(input, "PARTIAL_SCORER_FAIL") {
 				return 0, errors.New("agreement checker malfunction: cannot determine agreement")

@@ -1,3 +1,4 @@
+// This example demonstrates OpenAI tracing with Braintrust.
 package main
 
 import (
@@ -22,7 +23,7 @@ type Recommender struct {
 	client openai.Client
 }
 
-func NewRecommender(client openai.Client) *Recommender {
+func newRecommender(client openai.Client) *Recommender {
 	return &Recommender{
 		client: client,
 	}
@@ -54,7 +55,7 @@ func (r *Recommender) getDrinkRec(ctx context.Context, drink, vibe, zipcode stri
 	ctx, span := tracer.Start(ctx, "getDrinkRec")
 	defer span.End()
 
-	prompt := fmt.Sprintf("Recommend a place to get %s with vibe %sin zipcode %s.", drink, vibe, zipcode)
+	prompt := fmt.Sprintf("Recommend a place to get %s with vibe %s in zipcode %s.", drink, vibe, zipcode)
 	fmt.Println("--------------------------------")
 	fmt.Println(prompt)
 
@@ -98,7 +99,7 @@ func main() {
 	)
 
 	// Make some open ai requests that will be traced.
-	recommender := NewRecommender(client)
+	recommender := newRecommender(client)
 	ctx, span := tracer.Start(ctx, "recommendations")
 	defer span.End()
 

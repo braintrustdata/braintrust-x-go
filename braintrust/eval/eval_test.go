@@ -293,7 +293,7 @@ func TestHardcodedEval(t *testing.T) {
 	brokenSquare := func(ctx context.Context, x int) (int, error) {
 		square := x * x
 		if x > 1 {
-			square += 1 // oh no it's wrong
+			square++ // oh no it's wrong
 		}
 		return square, nil
 	}

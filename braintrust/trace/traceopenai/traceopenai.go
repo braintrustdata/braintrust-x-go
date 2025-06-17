@@ -1,3 +1,27 @@
+// Package traceopenai provides OpenTelemetry middleware for tracing OpenAI API calls.
+//
+// First, set up tracing with Quickstart (requires BRAINTRUST_API_KEY environment variable):
+//
+//	// export BRAINTRUST_API_KEY="your-api-key-here"
+//	teardown, err := trace.Quickstart()
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+//	defer teardown()
+//
+// Then add the middleware to your OpenAI client:
+//
+//	client := openai.NewClient(
+//		option.WithMiddleware(traceopenai.Middleware),
+//	)
+//
+//	// Your OpenAI calls will now be automatically traced
+//	resp, err := client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+//		Model: openai.F(openai.ChatModelGPT4),
+//		Messages: openai.F([]openai.ChatCompletionMessageParamUnion{
+//			openai.UserMessage("Hello!"),
+//		}),
+//	})
 package traceopenai
 
 import (
@@ -18,8 +42,11 @@ func tracer() trace.Tracer {
 	return otel.GetTracerProvider().Tracer("braintrust")
 }
 
+// NextMiddleware represents the next middleware to run in the OpenAI client middleware chain.
 type NextMiddleware = func(req *http.Request) (*http.Response, error)
 
+// Middleware adds OpenTelemetry tracing to OpenAI client requests.
+// Ensure OpenTelemetry is properly configured before using this middleware.
 func Middleware(req *http.Request, next NextMiddleware) (*http.Response, error) {
 	diag.Debugf("Middleware: %s %s", req.Method, req.URL.Path)
 	start := time.Now()
@@ -90,12 +117,12 @@ func newNoopTracer() *noopTracer {
 	return &noopTracer{}
 }
 
-func (*noopTracer) StartSpan(ctx context.Context, start time.Time, request io.Reader) (context.Context, trace.Span, error) {
+func (*noopTracer) StartSpan(ctx context.Context, _ time.Time, _ io.Reader) (context.Context, trace.Span, error) {
 	span := trace.SpanFromContext(context.Background()) // create a non-recording span
 	return ctx, span, nil
 }
 
-func (*noopTracer) TagSpan(span trace.Span, response io.Reader) error {
+func (*noopTracer) TagSpan(_ trace.Span, _ io.Reader) error {
 	return nil
 }
 

@@ -95,9 +95,8 @@ func (rt *responsesTracer) StartSpan(ctx context.Context, t time.Time, request i
 func (rt *responsesTracer) TagSpan(span trace.Span, body io.Reader) error {
 	if rt.streaming {
 		return rt.parseStreamingResponse(span, body)
-	} else {
-		return rt.parseResponse(span, body)
 	}
+	return rt.parseResponse(span, body)
 }
 
 func (rt *responsesTracer) parseStreamingResponse(span trace.Span, body io.Reader) error {

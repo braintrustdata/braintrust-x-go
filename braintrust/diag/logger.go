@@ -1,3 +1,4 @@
+// Package diag provides diagnostic logging functionality for the Braintrust SDK.
 package diag
 
 import (
@@ -34,7 +35,7 @@ func GetLogger() Logger {
 	return globalLogger
 }
 
-// ClearLogger the current logger.
+// ClearLogger clears the current logger.
 func ClearLogger() {
 	SetLogger(noopLogger{})
 }
@@ -49,6 +50,7 @@ func SetWarnLogger() {
 	SetLogger(&warnLogger{})
 }
 
+// Debugf logs a debug message using the configured logger.
 func Debugf(format string, args ...any) {
 	logger := get()
 	if logger == nil {
@@ -57,6 +59,7 @@ func Debugf(format string, args ...any) {
 	logger.Debugf(format, args...)
 }
 
+// Warnf logs a warning message using the configured logger.
 func Warnf(format string, args ...any) {
 	logger := get()
 	if logger == nil {

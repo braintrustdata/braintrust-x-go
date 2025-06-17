@@ -1,3 +1,35 @@
+// Package trace provides distributed tracing functionality for Braintrust experiments.
+//
+// This package is built on OpenTelemetry and provides an easy way to integrate
+// Braintrust tracing into your applications.
+//
+// For new applications, use Quickstart() to get up and running quickly:
+//
+//	// First, set your API key: export BRAINTRUST_API_KEY="your-api-key-here"
+//	teardown, err := trace.Quickstart()
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+//	defer teardown()
+//
+// Once you have the tracer set up, get a tracer instance and create spans:
+//
+//	tracer := otel.Tracer("my-app")
+//	ctx, span := tracer.Start(ctx, "my-operation")
+//	span.SetAttributes(attribute.String("user.id", "123"))
+//	// ... do work ...
+//	span.End()
+//
+// For existing OpenTelemetry setups, add our SpanProcessor to your tracer provider:
+//
+//	processor := trace.NewSpanProcessor(trace.NewExperiment("your-experiment-id"))
+//	tp := sdktrace.NewTracerProvider(
+//		sdktrace.WithSpanProcessor(processor),
+//		// ... your other processors
+//	)
+//
+// For automatic instrumentation of external libraries like OpenAI, see the
+// traceopenai subpackage for ready-to-use middleware.
 package trace
 
 import (
@@ -17,7 +49,7 @@ import (
 	"github.com/braintrust/braintrust-x-go/braintrust/diag"
 )
 
-// Quickstart will configure the OpenTelemetry tracer to
+// Quickstart configures OpenTelemetry tracing for Braintrust and provides
 // an easy way of getting up and running if you are new to OpenTelemetry. It
 // returns a teardown function that should be called before your program exits.
 func Quickstart() (teardown func(), err error) {
@@ -89,20 +121,44 @@ func Quickstart() (teardown func(), err error) {
 	return teardown, nil
 }
 
-const PARENT_ATTR = "braintrust.parent"
+// ParentOtelAttrKey is the OpenTelemetry attribute key used to associate spans with Braintrust parents.
+// This enables spans to be grouped under specific projects or experiments in the Braintrust platform.
+// Parents are formatted as "project_id:{uuid}" or "experiment_id:{uuid}".
+const ParentOtelAttrKey = "braintrust.parent"
 
 type contextKey string
 
 // a context key that cannot possibly collide with any other keys
-var parentContextKey contextKey = PARENT_ATTR
+var parentContextKey contextKey = ParentOtelAttrKey
 
 // SetParent will set the parent to the given Parent for any span created from the returned context.
+//
+// Example:
+//
+//	experiment := trace.NewExperiment("my-experiment-123")
+//	ctx = trace.SetParent(ctx, experiment)
+//
+//	// All spans created from this context will be assigned to the experiment
+//	tracer := otel.Tracer("my-app")
+//	_, span := tracer.Start(ctx, "database-query")
+//	defer span.End()
 func SetParent(ctx context.Context, parent Parent) context.Context {
 	return context.WithValue(ctx, parentContextKey, parent)
 }
 
+// SetParentOnSpan sets the Braintrust parent attribute on the given span.
+// The parent identifies which project or experiment the span belongs to.
+//
+// Example:
+//
+//	tracer := otel.Tracer("my-app")
+//	_, span := tracer.Start(ctx, "api-call")
+//	defer span.End()
+//
+//	experiment := trace.NewExperiment("my-experiment-456")
+//	trace.SetParentOnSpan(span, experiment)
 func SetParentOnSpan(span trace.ReadWriteSpan, parent Parent) {
-	span.SetAttributes(attribute.String(PARENT_ATTR, parent.String()))
+	span.SetAttributes(attribute.String(ParentOtelAttrKey, parent.String()))
 }
 
 func getParent(ctx context.Context) (bool, Parent) {
@@ -131,6 +187,8 @@ type Experiment struct {
 	ID string
 }
 
+// NewExperiment creates a new experiment parent with the given ID.
+// The resulting parent will be formatted as "experiment_id:{id}".
 func NewExperiment(id string) Experiment {
 	return Experiment{ID: id}
 }
@@ -141,27 +199,32 @@ func (e Experiment) String() string {
 
 var _ Parent = Experiment{}
 
-// SpanProcessor is an OTel span processor that labels spans with their parent key....
-//
-//	It must be included in the OTel pipeline to send data to Braintrust.
-type SpanProcessor struct {
+// SpanProcessor is an OTel span processor that labels spans with their parent key.
+// It must be included in the OTel pipeline to send data to Braintrust.
+type SpanProcessor interface {
+	trace.SpanProcessor
+}
+
+type spanProcessor struct {
 	defaultParent Parent
 	defaultAttr   attribute.KeyValue
 }
 
 // NewSpanProcessor creates a new span processor that will assign any unlabelled spans to the default parent.
-func NewSpanProcessor(defaultParent Parent) *SpanProcessor {
+func NewSpanProcessor(defaultParent Parent) SpanProcessor {
 	// FIXME[matt]: option to drop unlabelled spans?
-	return &SpanProcessor{
+	return &spanProcessor{
 		defaultParent: defaultParent,
-		defaultAttr:   attribute.String(PARENT_ATTR, defaultParent.String()),
+		defaultAttr:   attribute.String(ParentOtelAttrKey, defaultParent.String()),
 	}
 }
 
-func (p *SpanProcessor) OnStart(ctx context.Context, span trace.ReadWriteSpan) {
+// OnStart is called when a span is started and assigns parent attributes.
+// It assigns spans to projects or experiments based on context or default parent.
+func (p *spanProcessor) OnStart(ctx context.Context, span trace.ReadWriteSpan) {
 	// If that span already has a parent, don't override
 	for _, attr := range span.Attributes() {
-		if attr.Key == PARENT_ATTR && attr.Value.AsString() != "" {
+		if attr.Key == ParentOtelAttrKey && attr.Value.AsString() != "" {
 			diag.Debugf("SpanProcessor.OnStart: noop. Span has parent %s", attr.Value.AsString())
 			return
 		}
@@ -180,8 +243,13 @@ func (p *SpanProcessor) OnStart(ctx context.Context, span trace.ReadWriteSpan) {
 	diag.Debugf("SpanProcessor.OnStart: setting default parent: %s", p.defaultParent)
 }
 
-func (*SpanProcessor) OnEnd(span trace.ReadOnlySpan)        {}
-func (*SpanProcessor) Shutdown(ctx context.Context) error   { return nil }
-func (*SpanProcessor) ForceFlush(ctx context.Context) error { return nil }
+// OnEnd is called when a span ends.
+func (*spanProcessor) OnEnd(_ trace.ReadOnlySpan) {}
 
-var _ trace.SpanProcessor = &SpanProcessor{}
+// Shutdown shuts down the span processor.
+func (*spanProcessor) Shutdown(_ context.Context) error { return nil }
+
+// ForceFlush forces a flush of the span processor.
+func (*spanProcessor) ForceFlush(_ context.Context) error { return nil }
+
+var _ trace.SpanProcessor = &spanProcessor{}

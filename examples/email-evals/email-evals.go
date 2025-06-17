@@ -1,3 +1,4 @@
+// This is a realistic eval example.
 package main
 
 import (
@@ -201,7 +202,7 @@ Respond with just the subject line, no quotes or explanations.`,
 		}),
 
 		// AI-powered engagement prediction scorer
-		eval.NewScorer("engagement_prediction", func(ctx context.Context, input EmailCampaign, expected, result SubjectLineResponse) (float64, error) {
+		eval.NewScorer("engagement_prediction", func(ctx context.Context, input EmailCampaign, _, result SubjectLineResponse) (float64, error) {
 			_, span := tracer.Start(ctx, "custom_engagement_scoring")
 			defer span.End()
 

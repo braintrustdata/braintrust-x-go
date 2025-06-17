@@ -1,10 +1,22 @@
 version: "2"
 linters:
   default: standard
+  exclusions:
+      rules:
+        - text: "^unused-parameter:"
+          linters: [revive]
+        - text: "^exported:"
+          linters: [revive]
+          path: braintrust/internal
+        - text: "package-comments:"
+          linters: [revive]
+          path: braintrust/internal
+
   enable:
     - bodyclose
-    - usetesting
-    - thelper
+    - usetesting  # nice-to-have not critical
+    - thelper     # nice-to-have not critical
+    - revive      # critical for ensuring public functions/packages have docs.
 
 formatters:
   enable:
