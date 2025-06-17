@@ -127,7 +127,7 @@ func TestBufferedReaderCallbackOnlyOnce(t *testing.T) {
 	in.WriteString(input)
 
 	var callCount int
-	onDone := func(r io.Reader) {
+	onDone := func(_ io.Reader) {
 		callCount++
 	}
 

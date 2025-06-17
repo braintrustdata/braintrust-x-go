@@ -9,12 +9,12 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestDefaultLogger(t *testing.T) {
+func TestDefaultLogger(_ *testing.T) {
 	Debugf("no panic")
 	Warnf("no panic")
 }
 
-func TestSetNilLogger(t *testing.T) {
+func TestSetNilLogger(_ *testing.T) {
 	defer ClearLogger()
 	SetLogger(nil)
 	Debugf("no panic")

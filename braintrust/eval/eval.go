@@ -1,3 +1,4 @@
+// Package eval provides functionality for running evaluations of AI model outputs.
 package eval
 
 import (
@@ -16,7 +17,9 @@ import (
 )
 
 var (
-	ErrScorer  = errors.New("scorer error")
+	// ErrScorer is returned when a scorer fails to execute.
+	ErrScorer = errors.New("scorer error")
+	// ErrTaskRun is returned when a task fails to execute.
 	ErrTaskRun = errors.New("task run error")
 )
 
@@ -206,14 +209,16 @@ type Case[I, R any] struct {
 	Expected R
 }
 
+// Score represents the result of a scorer evaluation.
 type Score struct {
 	Name  string  `json:"name"`
 	Score float64 `json:"score"`
 }
 
+// ScoreFunc is a function that scores the result of a task against the expected result.
 type ScoreFunc[I, R any] func(ctx context.Context, input I, expected, result R) (float64, error)
 
-// Scorer
+// Scorer evaluates the quality of results against expected values.
 type Scorer[I, R any] interface {
 	Name() string
 	Run(ctx context.Context, input I, expected, result R) (float64, error)
@@ -232,6 +237,7 @@ func (s *scorerImpl[I, R]) Run(ctx context.Context, input I, expected, result R)
 	return s.scoreFunc(ctx, input, expected, result)
 }
 
+// NewScorer creates a new scorer with the given name and score function.
 func NewScorer[I, R any](name string, scoreFunc ScoreFunc[I, R]) Scorer[I, R] {
 	return &scorerImpl[I, R]{
 		name:      name,

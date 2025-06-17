@@ -1,3 +1,4 @@
+// This example demonstrates basic evaluation functionality with Braintrust.
 package main
 
 import (
@@ -55,13 +56,13 @@ func main() {
 		},
 		getFoodType,
 		[]eval.Scorer[string, string]{
-			eval.NewScorer("fruit_scorer", func(ctx context.Context, input, expected, result string) (float64, error) {
+			eval.NewScorer("fruit_scorer", func(_ context.Context, _, _, result string) (float64, error) {
 				if result == "fruit" {
 					return 1.0, nil
 				}
 				return 0.0, nil
 			}),
-			eval.NewScorer("vegetable_scorer", func(ctx context.Context, input, expected, result string) (float64, error) {
+			eval.NewScorer("vegetable_scorer", func(_ context.Context, _, _, result string) (float64, error) {
 				if result == "vegetable" {
 					return 1.0, nil
 				}

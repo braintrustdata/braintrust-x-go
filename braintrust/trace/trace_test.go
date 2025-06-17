@@ -23,7 +23,7 @@ func TestSpanProcessor(t *testing.T) {
 	span := exporter.FlushOne()
 
 	assert.Equal(span.Name(), "test")
-	span.AssertAttrEquals(PARENT_ATTR, "project_id:12345")
+	span.AssertAttrEquals(ParentOtelAttrKey, "project_id:12345")
 
 	// Assert we use the parent from the context if it is set.
 	ctx := t.Context()
@@ -31,13 +31,13 @@ func TestSpanProcessor(t *testing.T) {
 	_, span2 := tracer.Start(ctx, "test")
 	span2.End()
 	span = exporter.FlushOne()
-	span.AssertAttrEquals(PARENT_ATTR, "project_id:67890")
+	span.AssertAttrEquals(ParentOtelAttrKey, "project_id:67890")
 
 	// assert that if a span already has a parent, it is not overridden
 	ctx = t.Context()
 	ctx = SetParent(ctx, Project{id: "77777"})
-	_, span4 := tracer.Start(ctx, "test", trace.WithAttributes(attribute.String(PARENT_ATTR, "project_id:88888")))
+	_, span4 := tracer.Start(ctx, "test", trace.WithAttributes(attribute.String(ParentOtelAttrKey, "project_id:88888")))
 	span4.End()
 	span = exporter.FlushOne()
-	span.AssertAttrEquals(PARENT_ATTR, "project_id:88888")
+	span.AssertAttrEquals(ParentOtelAttrKey, "project_id:88888")
 }

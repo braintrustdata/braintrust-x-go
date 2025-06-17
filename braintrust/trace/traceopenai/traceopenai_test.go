@@ -22,7 +22,7 @@ import (
 	"github.com/braintrust/braintrust-x-go/braintrust/internal/testspan"
 )
 
-const TEST_MODEL = "gpt-4o-mini"
+const testModel = "gpt-4o-mini"
 
 // setUpTest is a helper function that sets up a new tracer provider for each test.
 // It returns an openai client, an exporter, and a teardown function.
@@ -64,7 +64,7 @@ func TestError(t *testing.T) {
 	defer teardown()
 	assert := assert.New(t)
 
-	errorware := func(req *http.Request, next NextMiddleware) (*http.Response, error) {
+	errorware := func(_ *http.Request, _ NextMiddleware) (*http.Response, error) {
 		return nil, errors.New("ye-olde-test-error")
 	}
 
@@ -76,7 +76,7 @@ func TestError(t *testing.T) {
 
 	resp, err := client.Responses.New(t.Context(), responses.ResponseNewParams{
 		Input: responses.ResponseNewParamsInputUnion{OfString: openai.String("hai")},
-		Model: TEST_MODEL,
+		Model: testModel,
 	})
 	require.Error(t, err)
 	assert.Nil(resp)
@@ -112,7 +112,7 @@ func TestOpenAIResponsesRequiredParams(t *testing.T) {
 	start := time.Now()
 	params := responses.ResponseNewParams{
 		Input: responses.ResponseNewParamsInputUnion{OfString: openai.String("What is 13+4?")},
-		Model: TEST_MODEL,
+		Model: testModel,
 	}
 
 	resp, err := client.Responses.New(t.Context(), params)
@@ -144,7 +144,7 @@ func TestOpenAIResponsesKitchenSink(t *testing.T) {
 	// Test with string output
 	params := responses.ResponseNewParams{
 		Input:             prompt,
-		Model:             TEST_MODEL,
+		Model:             testModel,
 		Instructions:      openai.String("Answer the question in a concise manner."),
 		MaxOutputTokens:   openai.Int(100),
 		ParallelToolCalls: openai.Bool(true),
@@ -179,7 +179,7 @@ func TestOpenAIResponsesKitchenSink(t *testing.T) {
 
 	metadata := ts.Metadata()
 	assert.Equal("openai", metadata["provider"])
-	assert.Equal(TEST_MODEL, metadata["model"])
+	assert.Equal(testModel, metadata["model"])
 	assert.Equal("Answer the question in a concise manner.", metadata["instructions"])
 	assert.Equal("test user", metadata["user"])
 	assert.Equal(0.5, metadata["temperature"])
@@ -287,7 +287,7 @@ func TestOpenAIResponsesWithListInput(t *testing.T) {
 		Input: responses.ResponseNewParamsInputUnion{
 			OfInputItemList: inputMessages,
 		},
-		Model: TEST_MODEL,
+		Model: testModel,
 	}
 
 	// Call the API
@@ -348,7 +348,7 @@ func assertSpanValid(t *testing.T, stub tracetest.SpanStub, start, end time.Time
 
 	metadata := span.Metadata()
 	assert.Equal("openai", metadata["provider"])
-	assert.Contains(TEST_MODEL, metadata["model"])
+	assert.Contains(testModel, metadata["model"])
 
 	// validate metrics
 	metrics := span.Metrics()
