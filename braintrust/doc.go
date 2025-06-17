@@ -14,7 +14,8 @@
 //		"github.com/braintrust/braintrust-x-go/braintrust/trace"
 //	)
 //
-//	// Set up tracing
+//	// Set up tracing (requires BRAINTRUST_API_KEY environment variable)
+//	// export BRAINTRUST_API_KEY="your-api-key-here"
 //	teardown, err := trace.Quickstart()
 //	if err != nil {
 //		log.Fatal(err)

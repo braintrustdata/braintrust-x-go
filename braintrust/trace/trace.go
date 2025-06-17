@@ -5,6 +5,7 @@
 //
 // For new applications, use Quickstart() to get up and running quickly:
 //
+//	// First, set your API key: export BRAINTRUST_API_KEY="your-api-key-here"
 //	teardown, err := trace.Quickstart()
 //	if err != nil {
 //		log.Fatal(err)

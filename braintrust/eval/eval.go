@@ -1,4 +1,69 @@
 // Package eval provides functionality for running evaluations of AI model outputs.
+// Evaluations help measure AI application performance (accuracy/quality) and create
+// an effective feedback loop for AI development. They help teams understand if
+// updates improve or regress application quality.
+//
+// An evaluation consists of three main components:
+//   - Data: A set of test examples with inputs and expected outputs
+//   - Task: An AI function that takes an input and returns an output
+//   - Scores: Scoring functions that compute performance metrics
+//
+// Example usage:
+//
+//	import (
+//		"context"
+//		"log"
+//		"github.com/braintrust/braintrust-x-go/braintrust/eval"
+//		"github.com/braintrust/braintrust-x-go/braintrust/trace"
+//	)
+//
+//	// Set up tracing (requires BRAINTRUST_API_KEY)
+//	// export BRAINTRUST_API_KEY="your-api-key-here"
+//	teardown, err := trace.Quickstart()
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+//	defer teardown()
+//
+//	// This task is hardcoded but usually you'd call an AI model here.
+//	greetingTask := func(ctx context.Context, input string) (string, error) {
+//		return "Hello " + input, nil
+//	}
+//
+//	// Define your scoring function
+//	exactMatch := func(ctx context.Context, input, expected, result string) (float64, error) {
+//		if expected == result {
+//			return 1.0, nil // Perfect match
+//		}
+//		return 0.0, nil // No match
+//	}
+//
+//	// Create and run the evaluation
+//	evaluation, err := eval.NewWithOpts(
+//		eval.Options{
+//			ProjectName:    "my-ai-project",
+//			ExperimentName: "greeting-experiment-v1",
+//		},
+//		[]eval.Case[string, string]{
+//			{Input: "World", Expected: "Hello World"},
+//			{Input: "Alice", Expected: "Hello Alice"},
+//			{Input: "Bob", Expected: "Hello Bob"},
+//		},
+//		greetingTask,
+//		[]eval.Scorer[string, string]{
+//			eval.NewScorer("exact_match", exactMatch),
+//		},
+//	)
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+//
+//	summary, err := evaluation.Run(context.Background())
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+//
+//	fmt.Printf("Evaluation completed. Average score: %.2f\n", summary.Scores["exact_match"])
 package eval
 
 import (
@@ -19,6 +84,7 @@ import (
 var (
 	// ErrScorer is returned when a scorer fails to execute.
 	ErrScorer = errors.New("scorer error")
+
 	// ErrTaskRun is returned when a task fails to execute.
 	ErrTaskRun = errors.New("task run error")
 )

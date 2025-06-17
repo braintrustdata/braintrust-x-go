@@ -1,7 +1,8 @@
 // Package traceopenai provides OpenTelemetry middleware for tracing OpenAI API calls.
 //
-// First, set up tracing with Quickstart:
+// First, set up tracing with Quickstart (requires BRAINTRUST_API_KEY environment variable):
 //
+//	// export BRAINTRUST_API_KEY="your-api-key-here"
 //	teardown, err := trace.Quickstart()
 //	if err != nil {
 //		log.Fatal(err)
