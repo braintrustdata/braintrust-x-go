@@ -1,4 +1,4 @@
-.PHONY: help ci build clean test cover lint fmt mod-tidy mod-verify fix
+.PHONY: help ci build clean test cover lint fmt mod-tidy mod-verify fix examples
 
 help:
 	@echo "Available commands:"
@@ -24,6 +24,10 @@ clean:
 
 test:
 	go test ./...
+
+examples:
+	go run ./examples/evals
+	go run ./examples/traceopenai
 
 cover:
 	go test ./... -coverprofile=coverage.out
