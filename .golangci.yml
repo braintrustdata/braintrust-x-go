@@ -5,6 +5,7 @@ linters:
     - bodyclose
     - usetesting
     - thelper
+    - forcetypeassert
 
 formatters:
   enable:

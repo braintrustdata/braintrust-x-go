@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"strings"
 	"time"
@@ -112,14 +113,14 @@ func (ct *chatCompletionsTracer) parseStreamingResponse(span trace.Span, body io
 
 	for scanner.Scan() {
 		line := scanner.Text()
+
 		if !strings.HasPrefix(line, "data: ") {
 			continue
 		}
 
 		line = strings.TrimPrefix(line, "data: ")
 		if line == "[DONE]" {
-			// End of stream
-			break
+			break // End of stream
 		}
 
 		var chunk map[string]any
@@ -145,18 +146,31 @@ func (ct *chatCompletionsTracer) parseStreamingResponse(span trace.Span, body io
 
 			for _, choice := range choices {
 				if choiceMap, ok := choice.(map[string]any); ok {
-					idx := int(choiceMap["index"].(float64))
+					index, ok := choiceMap["index"].(float64)
+					if !ok {
+						return fmt.Errorf("index is not a float64")
+					}
+					idx := int(index)
+
 					if idx < len(allChoices) {
+						message, ok := allChoices[idx]["message"].(map[string]any)
+						if !ok {
+							return fmt.Errorf("message is not a map[string]any")
+						}
+
 						if delta, ok := choiceMap["delta"].(map[string]any); ok {
 							if content, ok := delta["content"].(string); ok {
-								currentContent := allChoices[idx]["message"].(map[string]any)["content"].(string)
-								allChoices[idx]["message"].(map[string]any)["content"] = currentContent + content
+								currentContent, ok := message["content"].(string)
+								if !ok {
+									return fmt.Errorf("currentContent is not a string")
+								}
+								message["content"] = currentContent + content
 							}
 							if role, ok := delta["role"].(string); ok {
-								allChoices[idx]["message"].(map[string]any)["role"] = role
+								message["role"] = role
 							}
 							if toolCalls, ok := delta["tool_calls"]; ok {
-								allChoices[idx]["message"].(map[string]any)["tool_calls"] = toolCalls
+								message["tool_calls"] = toolCalls
 							}
 						}
 						if finishReason, ok := choiceMap["finish_reason"]; ok && finishReason != nil {

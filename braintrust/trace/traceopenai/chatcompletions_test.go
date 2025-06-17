@@ -1,7 +1,6 @@
 package traceopenai
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -29,7 +28,7 @@ func TestOpenAIChatCompletions(t *testing.T) {
 	}
 
 	start := time.Now()
-	resp, err := client.Chat.Completions.New(context.Background(), params)
+	resp, err := client.Chat.Completions.New(t.Context(), params)
 	end := time.Now()
 	require.NoError(err)
 	require.NotNil(resp)
@@ -96,7 +95,7 @@ func TestOpenAIChatCompletionsStreaming(t *testing.T) {
 	}
 
 	start := time.Now()
-	stream := client.Chat.Completions.NewStreaming(context.Background(), params)
+	stream := client.Chat.Completions.NewStreaming(t.Context(), params)
 
 	var fullContent string
 	for stream.Next() {
@@ -167,7 +166,7 @@ func TestOpenAIChatCompletionsWithTools(t *testing.T) {
 	}
 
 	start := time.Now()
-	resp, err := client.Chat.Completions.New(context.Background(), params)
+	resp, err := client.Chat.Completions.New(t.Context(), params)
 	end := time.Now()
 	require.NoError(err)
 	require.NotNil(resp)
@@ -204,7 +203,7 @@ func TestOpenAIChatCompletionsWithSystemMessage(t *testing.T) {
 	}
 
 	start := time.Now()
-	resp, err := client.Chat.Completions.New(context.Background(), params)
+	resp, err := client.Chat.Completions.New(t.Context(), params)
 	end := time.Now()
 	require.NoError(err)
 	require.NotNil(resp)
@@ -229,6 +228,7 @@ func TestOpenAIChatCompletionsWithSystemMessage(t *testing.T) {
 
 // assertChatSpanValid asserts all the common properties of a chat completion span are valid.
 func assertChatSpanValid(t *testing.T, stub tracetest.SpanStub, start, end time.Time) {
+	t.Helper()
 	assert := assert.New(t)
 
 	span := testspan.New(t, stub)
