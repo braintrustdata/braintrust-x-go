@@ -9,6 +9,7 @@ import (
 	"github.com/openai/openai-go/option"
 	"github.com/openai/openai-go/responses"
 
+	"github.com/braintrust/braintrust-x-go/braintrust/api"
 	"github.com/braintrust/braintrust-x-go/braintrust/trace"
 	"github.com/braintrust/braintrust-x-go/braintrust/trace/traceopenai"
 
@@ -160,6 +161,22 @@ func main() {
 	)
 
 	ctx := context.Background()
+
+	// Register project and experiment via API
+	project, err := api.RegisterProject("bt-go")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	experiment, err := api.RegisterExperiment("openai-examples", project.ID)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Set the experiment as parent for tracing
+	ctx = trace.SetParent(ctx, trace.NewExperiment(experiment.ID))
+	fmt.Printf("Using project: %s (%s), experiment: %s\n", project.Name, project.ID, experiment.ID)
+
 	ctx, rootSpan := tracer.Start(ctx, "openai-examples")
 	defer rootSpan.End()
 

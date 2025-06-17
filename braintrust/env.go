@@ -10,6 +10,7 @@ type Config struct {
 	APIKey        string
 	APIURL        string
 	AppURL        string
+	Parent        string
 	TraceDebugLog bool
 }
 
@@ -19,6 +20,7 @@ func GetConfig() Config {
 		APIKey:        getEnvString("BRAINTRUST_API_KEY", ""),
 		APIURL:        getEnvString("BRAINTRUST_API_URL", "https://api.braintrust.dev"),
 		AppURL:        getEnvString("BRAINTRUST_APP_URL", "https://www.braintrust.dev"),
+		Parent:        getEnvString("BRAINTRUST_PARENT", ""),
 		TraceDebugLog: getEnvBool("BRAINTRUST_TRACE_DEBUG_LOG", false),
 	}
 }

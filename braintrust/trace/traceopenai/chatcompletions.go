@@ -182,7 +182,7 @@ func (ct *chatCompletionsTracer) parseStreamingResponse(span trace.Span, body io
 
 	// Handle usage metrics
 	if usage, ok := ct.metadata["usage"].(map[string]any); ok {
-		metrics := parseChatUsageTokens(usage)
+		metrics := parseUsageTokens(usage)
 		if err := setJSONAttr(span, "braintrust.metrics", metrics); err != nil {
 			return err
 		}
@@ -221,7 +221,7 @@ func (ct *chatCompletionsTracer) handleChatCompletionResponse(span trace.Span, r
 	}
 
 	if usage, ok := rawMsg["usage"].(map[string]any); ok {
-		metrics := parseChatUsageTokens(usage)
+		metrics := parseUsageTokens(usage)
 		if err := setJSONAttr(span, "braintrust.metrics", metrics); err != nil {
 			return err
 		}
@@ -234,44 +234,4 @@ func (ct *chatCompletionsTracer) handleChatCompletionResponse(span trace.Span, r
 	}
 
 	return nil
-}
-
-// parseChatUsageTokens parses the usage tokens from the chat completions response
-func parseChatUsageTokens(usage map[string]interface{}) map[string]int64 {
-	metrics := make(map[string]int64)
-
-	if usage == nil {
-		return metrics
-	}
-
-	// Direct token fields for chat completions
-	directTokenFields := []string{"completion_tokens", "prompt_tokens", "total_tokens"}
-
-	for _, field := range directTokenFields {
-		if v, exists := usage[field]; exists {
-			if ok, i := toInt64(v); ok {
-				translatedKey := translateMetricKey(field)
-				metrics[translatedKey] = i
-			}
-		}
-	}
-
-	// Handle detailed token breakdowns if present
-	if details, ok := usage["completion_tokens_details"].(map[string]interface{}); ok {
-		for k, v := range details {
-			if ok, i := toInt64(v); ok {
-				metrics["completion_"+k] = i
-			}
-		}
-	}
-
-	if details, ok := usage["prompt_tokens_details"].(map[string]interface{}); ok {
-		for k, v := range details {
-			if ok, i := toInt64(v); ok {
-				metrics["prompt_"+k] = i
-			}
-		}
-	}
-
-	return metrics
 }

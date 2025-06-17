@@ -27,6 +27,7 @@ func Quickstart() (teardown func(), err error) {
 	config := braintrust.GetConfig()
 	url := config.APIURL
 	apiKey := config.APIKey
+	parentHeader := config.Parent
 
 	// split url and protocol
 	parts := strings.Split(url, "://")
@@ -45,6 +46,12 @@ func Quickstart() (teardown func(), err error) {
 	}
 	if protocol == "http" {
 		opts = append(opts, otlptracehttp.WithInsecure())
+	}
+
+	if parentHeader != "" {
+		opts = append(opts, otlptracehttp.WithHeaders(map[string]string{
+			"x-bt-parent": parentHeader,
+		}))
 	}
 
 	// Create Braintrust OTLP exporter
