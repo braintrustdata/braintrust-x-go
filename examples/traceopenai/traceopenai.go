@@ -55,7 +55,7 @@ func (r *Recommender) getDrinkRec(ctx context.Context, drink, vibe, zipcode stri
 	ctx, span := tracer.Start(ctx, "getDrinkRec")
 	defer span.End()
 
-	prompt := fmt.Sprintf("Recommend a place to get %s with vibe %sin zipcode %s.", drink, vibe, zipcode)
+	prompt := fmt.Sprintf("Recommend a place to get %s with vibe %s in zipcode %s.", drink, vibe, zipcode)
 	fmt.Println("--------------------------------")
 	fmt.Println(prompt)
 

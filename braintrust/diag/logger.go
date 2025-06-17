@@ -35,7 +35,7 @@ func GetLogger() Logger {
 	return globalLogger
 }
 
-// ClearLogger the current logger.
+// ClearLogger clears the current logger.
 func ClearLogger() {
 	SetLogger(noopLogger{})
 }

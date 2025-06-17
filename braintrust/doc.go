@@ -8,6 +8,8 @@
 // To get started with evaluations:
 //
 //	import (
+//		"context"
+//		"log"
 //		"github.com/braintrust/braintrust-x-go/braintrust/eval"
 //		"github.com/braintrust/braintrust-x-go/braintrust/trace"
 //	)
@@ -18,6 +20,22 @@
 //		log.Fatal(err)
 //	}
 //	defer teardown()
+//
+//	// Define your task function
+//	myTask := func(ctx context.Context, input string) (string, error) {
+//		if input == "Hello" {
+//			return "greeting", nil
+//		}
+//		return "unknown", nil
+//	}
+//
+//	// Define your scorer function
+//	myScorer := func(ctx context.Context, input, expected, result string) (float64, error) {
+//		if expected == result {
+//			return 1.0, nil
+//		}
+//		return 0.0, nil
+//	}
 //
 //	// Create an evaluation
 //	evaluation, err := eval.NewWithOpts(

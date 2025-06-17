@@ -1,4 +1,16 @@
 // Package autoevals provides scoring functions for evaluating AI model outputs.
+//
+// This package includes built-in scorers for common evaluation tasks and supports
+// creating custom scorers for specific use cases.
+//
+// Example usage:
+//
+//	equals := autoevals.NewEquals[string, string]()
+//	score, err := equals.Run(ctx, "input", "expected", "actual")
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+//	fmt.Printf("Score: %.2f\n", score) // Score: 0.00 (since "expected" != "actual")
 package autoevals
 
 import (

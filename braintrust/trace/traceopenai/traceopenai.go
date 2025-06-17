@@ -1,6 +1,14 @@
 // Package traceopenai provides OpenTelemetry middleware for tracing OpenAI API calls.
 //
-// Example usage:
+// First, set up tracing with Quickstart:
+//
+//	teardown, err := trace.Quickstart()
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+//	defer teardown()
+//
+// Then add the middleware to your OpenAI client:
 //
 //	client := openai.NewClient(
 //		option.WithMiddleware(traceopenai.Middleware),
