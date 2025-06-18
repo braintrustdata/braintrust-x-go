@@ -82,6 +82,135 @@ func (c *ChatBot) streamChat(ctx context.Context, messages []openai.ChatCompleti
 	return stream.Err()
 }
 
+func (c *ChatBot) toolCallsChat(ctx context.Context, prompt string) error {
+	ctx, span := tracer.Start(ctx, "toolCallsChat")
+	defer span.End()
+
+	fmt.Println("--------------------------------")
+	fmt.Println("Streaming tool calls chat...")
+
+	params := openai.ChatCompletionNewParams{
+		Messages: []openai.ChatCompletionMessageParamUnion{
+			openai.SystemMessage("You are a helpful assistant with access to tools."),
+			openai.UserMessage(prompt),
+		},
+		Model: openai.ChatModelGPT4oMini,
+		Tools: []openai.ChatCompletionToolParam{
+			{
+				Type: "function",
+				Function: openai.FunctionDefinitionParam{
+					Name:        "get_current_weather",
+					Description: openai.String("Get the current weather in a given location"),
+					Parameters: openai.FunctionParameters{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"location": map[string]interface{}{
+								"type":        "string",
+								"description": "The city and state, e.g. San Francisco, CA",
+							},
+							"unit": map[string]interface{}{
+								"type": "string",
+								"enum": []string{"celsius", "fahrenheit"},
+							},
+						},
+						"required": []string{"location"},
+					},
+				},
+			},
+			{
+				Type: "function",
+				Function: openai.FunctionDefinitionParam{
+					Name:        "get_current_time",
+					Description: openai.String("Get the current time in a given timezone"),
+					Parameters: openai.FunctionParameters{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"timezone": map[string]interface{}{
+								"type":        "string",
+								"description": "The timezone, e.g. America/New_York",
+							},
+						},
+						"required": []string{"timezone"},
+					},
+				},
+			},
+		},
+		StreamOptions: openai.ChatCompletionStreamOptionsParam{
+			IncludeUsage: openai.Bool(true),
+		},
+	}
+
+	stream := c.client.Chat.Completions.NewStreaming(ctx, params)
+
+	var toolCalls []map[string]interface{}
+	var content string
+
+	for stream.Next() {
+		chunk := stream.Current()
+		if len(chunk.Choices) > 0 {
+			choice := chunk.Choices[0]
+
+			// Handle regular content
+			if choice.Delta.Content != "" {
+				content += choice.Delta.Content
+				fmt.Print(choice.Delta.Content)
+			}
+
+			// Handle tool calls
+			if len(choice.Delta.ToolCalls) > 0 {
+				for _, tc := range choice.Delta.ToolCalls {
+					if tc.ID != "" {
+						// New tool call
+						toolCall := map[string]interface{}{
+							"id":   tc.ID,
+							"type": tc.Type,
+							"function": map[string]interface{}{
+								"name":      tc.Function.Name,
+								"arguments": tc.Function.Arguments,
+							},
+						}
+						toolCalls = append(toolCalls, toolCall)
+						fmt.Printf("\n🔧 Tool call: %s(%s)", tc.Function.Name, tc.Function.Arguments)
+					} else if len(toolCalls) > 0 {
+						// Continue existing tool call
+						lastCall := toolCalls[len(toolCalls)-1]
+						if function, ok := lastCall["function"].(map[string]interface{}); ok {
+							if args, ok := function["arguments"].(string); ok {
+								function["arguments"] = args + tc.Function.Arguments
+								fmt.Print(tc.Function.Arguments)
+							}
+						}
+					}
+				}
+			}
+
+			if choice.FinishReason == "tool_calls" {
+				fmt.Println("\n🎯 Model wants to call tools!")
+				// Simulate tool call execution
+				for _, toolCall := range toolCalls {
+					if function, ok := toolCall["function"].(map[string]interface{}); ok {
+						if name, ok := function["name"].(string); ok {
+							var result string
+							switch name {
+							case "get_current_weather":
+								result = `{"location":"San Francisco, CA","temperature":"72°F","condition":"sunny"}`
+							case "get_current_time":
+								result = `{"timezone":"America/New_York","time":"2024-01-15 14:30:00 EST"}`
+							default:
+								result = `{"error":"Unknown function"}`
+							}
+							fmt.Printf("📡 Tool result: %s\n", result)
+						}
+					}
+				}
+			}
+		}
+	}
+	fmt.Println()
+
+	return stream.Err()
+}
+
 // Recommender demonstrates using OpenAI responses API with tracing
 type Recommender struct {
 	client openai.Client
@@ -234,6 +363,12 @@ func main() {
 		log.Fatal(err)
 	}
 	fmt.Printf("Follow-up response: %s\n", response)
+
+	// Example 6: Tool calls with streaming
+	fmt.Println("\n6. Streaming Tool Calls")
+	if err := bot.toolCallsChat(ctx, "What's the weather like in San Francisco and what time is it in New York?"); err != nil {
+		log.Fatal(err)
+	}
 
 	// ======================
 	// RESPONSES API EXAMPLES

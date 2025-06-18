@@ -228,6 +228,375 @@ func TestOpenAIChatCompletionsWithSystemMessage(t *testing.T) {
 	assert.Equal(100.0, metadata["max_tokens"]) // JSON numbers are floats
 }
 
+func TestOpenAIChatCompletionsStreamingToolCalls(t *testing.T) {
+	client, exporter, teardown := setUpTest(t)
+	t.Cleanup(teardown)
+	assert := assert.New(t)
+	require := require.New(t)
+
+	// Test streaming chat completion with tool calls
+	params := openai.ChatCompletionNewParams{
+		Messages: []openai.ChatCompletionMessageParamUnion{
+			openai.UserMessage("What's the weather in San Francisco?"),
+		},
+		Model: testModel,
+		Tools: []openai.ChatCompletionToolParam{
+			{
+				Type: "function",
+				Function: openai.FunctionDefinitionParam{
+					Name:        "get_weather",
+					Description: openai.String("Get weather for a location"),
+					Parameters: openai.FunctionParameters{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"location": map[string]interface{}{
+								"type":        "string",
+								"description": "The city and state",
+							},
+						},
+						"required": []string{"location"},
+					},
+				},
+			},
+		},
+		StreamOptions: openai.ChatCompletionStreamOptionsParam{
+			IncludeUsage: openai.Bool(true),
+		},
+	}
+
+	start := time.Now()
+	stream := client.Chat.Completions.NewStreaming(t.Context(), params)
+
+	for stream.Next() {
+		chunk := stream.Current()
+		if len(chunk.Choices) > 0 {
+			choice := chunk.Choices[0]
+			// We don't need to process the chunks here, just consume them
+			_ = choice.Delta.Content
+			_ = choice.Delta.ToolCalls
+		}
+	}
+	end := time.Now()
+
+	require.NoError(stream.Err())
+
+	// Wait for spans to be exported
+	span := flushOne(t, exporter)
+
+	assertChatSpanValid(t, span, start, end)
+
+	ts := testspan.New(t, span)
+
+	// Check that the span name is correct
+	assert.Equal("openai.chat.completions.create", span.Name)
+
+	// Check output field - should be properly structured
+	output := ts.Output()
+	assert.NotNil(output)
+
+	// The output should be an array with one choice
+	choices, ok := output.([]interface{})
+	require.True(ok, "output should be an array of choices")
+	require.Len(choices, 1, "should have exactly one choice")
+
+	firstChoice, ok := choices[0].(map[string]interface{})
+	require.True(ok, "first choice should be a map")
+
+	// Verify choice structure
+	assert.Equal(0.0, firstChoice["index"]) // JSON numbers are floats
+	assert.Nil(firstChoice["logprobs"])
+
+	// Check message structure
+	message, ok := firstChoice["message"].(map[string]interface{})
+	require.True(ok, "choice should have a message")
+
+	// Role should be set (not nil/null)
+	role := message["role"]
+	assert.NotNil(role, "role should be set for tool calls")
+	if role != nil {
+		assert.Equal("assistant", role)
+	}
+
+	// Check metadata contains tools
+	metadata := ts.Metadata()
+	tools, ok := metadata["tools"].([]interface{})
+	require.True(ok, "metadata should contain tools array")
+	assert.Len(tools, 1)
+}
+
+func TestStreamingToolCallsPostprocessing(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	ct := newChatCompletionsTracer()
+
+	t.Run("EmptyResults", func(t *testing.T) {
+		result := ct.postprocessStreamingResults([]map[string]any{})
+		require.Len(result, 1)
+		choice := result[0]
+
+		message, ok := choice["message"].(map[string]interface{})
+		require.True(ok)
+		assert.Nil(message["role"])
+		assert.Equal("", message["content"])
+		assert.Nil(message["tool_calls"])
+	})
+
+	t.Run("SingleToolCall", func(t *testing.T) {
+		// Simulate a streaming response with a single tool call
+		results := []map[string]any{
+			{
+				"choices": []interface{}{
+					map[string]any{
+						"index": 0,
+						"delta": map[string]any{
+							"role": "assistant",
+						},
+					},
+				},
+			},
+			{
+				"choices": []interface{}{
+					map[string]any{
+						"index": 0,
+						"delta": map[string]any{
+							"tool_calls": []interface{}{
+								map[string]any{
+									"id":   "call_123",
+									"type": "function",
+									"function": map[string]any{
+										"name":      "get_weather",
+										"arguments": `{"location":"`,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			{
+				"choices": []interface{}{
+					map[string]any{
+						"index": 0,
+						"delta": map[string]any{
+							"tool_calls": []interface{}{
+								map[string]any{
+									"function": map[string]any{
+										"arguments": `San Francisco"}`,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			{
+				"choices": []interface{}{
+					map[string]any{
+						"index":         0,
+						"finish_reason": "tool_calls",
+						"delta":         map[string]any{},
+					},
+				},
+			},
+		}
+
+		result := ct.postprocessStreamingResults(results)
+		require.Len(result, 1)
+
+		choice := result[0]
+		message, ok := choice["message"].(map[string]interface{})
+		require.True(ok)
+
+		assert.Equal("assistant", message["role"])
+		assert.Equal("", message["content"])
+		assert.Equal("tool_calls", choice["finish_reason"])
+
+		toolCalls, ok := message["tool_calls"].([]interface{})
+		require.True(ok, "should have tool_calls")
+		require.Len(toolCalls, 1)
+
+		toolCall, ok := toolCalls[0].(map[string]interface{})
+		require.True(ok)
+		assert.Equal("call_123", toolCall["id"])
+		assert.Equal("function", toolCall["type"])
+
+		function, ok := toolCall["function"].(map[string]interface{})
+		require.True(ok)
+		assert.Equal("get_weather", function["name"])
+		assert.Equal(`{"location":"San Francisco"}`, function["arguments"])
+	})
+
+	t.Run("MultipleToolCalls", func(t *testing.T) {
+		// Simulate a streaming response with multiple tool calls
+		results := []map[string]any{
+			{
+				"choices": []interface{}{
+					map[string]any{
+						"index": 0,
+						"delta": map[string]any{
+							"role": "assistant",
+							"tool_calls": []interface{}{
+								map[string]any{
+									"id":   "call_1",
+									"type": "function",
+									"function": map[string]any{
+										"name":      "get_weather",
+										"arguments": `{"location":"SF"}`,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			{
+				"choices": []interface{}{
+					map[string]any{
+						"index": 0,
+						"delta": map[string]any{
+							"tool_calls": []interface{}{
+								map[string]any{
+									"id":   "call_2",
+									"type": "function",
+									"function": map[string]any{
+										"name":      "get_time",
+										"arguments": `{"timezone":"EST"}`,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+
+		result := ct.postprocessStreamingResults(results)
+		require.Len(result, 1)
+
+		choice := result[0]
+		message, ok := choice["message"].(map[string]interface{})
+		require.True(ok)
+
+		toolCalls, ok := message["tool_calls"].([]interface{})
+		require.True(ok, "should have tool_calls")
+		require.Len(toolCalls, 2)
+
+		// Check first tool call
+		toolCall1, ok := toolCalls[0].(map[string]interface{})
+		require.True(ok)
+		assert.Equal("call_1", toolCall1["id"])
+		function1, ok := toolCall1["function"].(map[string]interface{})
+		require.True(ok)
+		assert.Equal("get_weather", function1["name"])
+
+		// Check second tool call
+		toolCall2, ok := toolCalls[1].(map[string]interface{})
+		require.True(ok)
+		assert.Equal("call_2", toolCall2["id"])
+		function2, ok := toolCall2["function"].(map[string]interface{})
+		require.True(ok)
+		assert.Equal("get_time", function2["name"])
+	})
+
+	t.Run("ContentAndToolCalls", func(t *testing.T) {
+		// Test mixed content and tool calls
+		results := []map[string]any{
+			{
+				"choices": []interface{}{
+					map[string]any{
+						"index": 0,
+						"delta": map[string]any{
+							"role":    "assistant",
+							"content": "I'll help you with that. ",
+						},
+					},
+				},
+			},
+			{
+				"choices": []interface{}{
+					map[string]any{
+						"index": 0,
+						"delta": map[string]any{
+							"content": "Let me check the weather.",
+						},
+					},
+				},
+			},
+			{
+				"choices": []interface{}{
+					map[string]any{
+						"index": 0,
+						"delta": map[string]any{
+							"tool_calls": []interface{}{
+								map[string]any{
+									"id":   "call_weather",
+									"type": "function",
+									"function": map[string]any{
+										"name":      "get_weather",
+										"arguments": `{"location":"NYC"}`,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+
+		result := ct.postprocessStreamingResults(results)
+		require.Len(result, 1)
+
+		choice := result[0]
+		message, ok := choice["message"].(map[string]interface{})
+		require.True(ok)
+
+		assert.Equal("assistant", message["role"])
+		assert.Equal("I'll help you with that. Let me check the weather.", message["content"])
+
+		toolCalls, ok := message["tool_calls"].([]interface{})
+		require.True(ok)
+		require.Len(toolCalls, 1)
+	})
+
+	t.Run("EmptyToolCallsArray", func(t *testing.T) {
+		// Test the edge case that caused the original bug
+		results := []map[string]any{
+			{
+				"choices": []interface{}{
+					map[string]any{
+						"index": 0,
+						"delta": map[string]any{
+							"role": "assistant",
+							"tool_calls": []interface{}{
+								map[string]any{
+									"id":   "call_first",
+									"type": "function",
+									"function": map[string]any{
+										"name":      "test_function",
+										"arguments": `{"param":"value"}`,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+
+		// This should not panic (the bug we fixed)
+		result := ct.postprocessStreamingResults(results)
+		require.Len(result, 1)
+
+		choice := result[0]
+		message, ok := choice["message"].(map[string]interface{})
+		require.True(ok)
+		toolCalls, ok := message["tool_calls"].([]interface{})
+		require.True(ok)
+		require.Len(toolCalls, 1)
+	})
+}
+
 // assertChatSpanValid asserts all the common properties of a chat completion span are valid.
 func assertChatSpanValid(t *testing.T, stub tracetest.SpanStub, start, end time.Time) {
 	t.Helper()

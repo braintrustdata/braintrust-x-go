@@ -190,9 +190,17 @@ func (ct *chatCompletionsTracer) postprocessStreamingResults(allResults []map[st
 				if toolDelta, ok := deltaToolCalls[0].(map[string]any); ok {
 					// Check if this is a new tool call or continuation
 					if toolID, ok := toolDelta["id"].(string); ok && toolID != "" {
-						// New tool call
-						lastTool, ok := toolCalls[len(toolCalls)-1].(map[string]interface{})
-						if len(toolCalls) == 0 || (len(toolCalls) > 0 && ok && lastTool["id"] != toolID) {
+						// New tool call - check if we need to create a new one
+						isNewToolCall := len(toolCalls) == 0
+						if !isNewToolCall {
+							// Safe to access last tool call since slice is not empty
+							if lastTool, ok := toolCalls[len(toolCalls)-1].(map[string]interface{}); ok {
+								isNewToolCall = lastTool["id"] != toolID
+							} else {
+								isNewToolCall = true // type assertion failed, treat as new
+							}
+						}
+						if isNewToolCall {
 							newToolCall := map[string]interface{}{
 								"id":   toolID,
 								"type": toolDelta["type"],
