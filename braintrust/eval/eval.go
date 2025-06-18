@@ -372,80 +372,6 @@ func (s *Cases[I, R]) Next() (Case[I, R], error) {
 	return testCase, nil
 }
 
-// QueryDatasetAs creates a Dataset that automatically converts dataset events to the given struct type
-// The struct should have fields that match the dataset event structure
-func QueryDatasetAs[T any](datasetID string) Dataset[T, T] {
-	return &structDataset[T]{
-		datasetID: datasetID,
-		dataset:   api.NewDataset(datasetID),
-	}
-}
-
-// structDataset implements Dataset for struct types using JSON unmarshaling
-type structDataset[T any] struct {
-	datasetID string
-	dataset   *api.Dataset
-}
-
-// Next returns the next case, converting the dataset event to the struct type
-func (s *structDataset[T]) Next() (Case[T, T], error) {
-	event, err := s.dataset.Next()
-	if err != nil {
-		var zero Case[T, T]
-		return zero, err
-	}
-
-	// Convert the event to the struct type
-	var result T
-	err = s.convertEventToStruct(event, &result)
-	if err != nil {
-		var zero Case[T, T]
-		return zero, fmt.Errorf("failed to convert event to struct: %w", err)
-	}
-
-	return Case[T, T]{
-		Input:    result,
-		Expected: result, // For struct datasets, input and expected are the same
-	}, nil
-}
-
-// convertEventToStruct converts a DatasetEvent to the target struct type
-func (s *structDataset[T]) convertEventToStruct(event api.DatasetEvent, target *T) error {
-	// First try to unmarshal the entire event as JSON
-	eventJSON, err := json.Marshal(event)
-	if err != nil {
-		return fmt.Errorf("failed to marshal event: %w", err)
-	}
-
-	err = json.Unmarshal(eventJSON, target)
-	if err == nil {
-		return nil
-	}
-
-	// If that fails, try to unmarshal just the input field
-	if event.Input != nil {
-		inputJSON, err := json.Marshal(event.Input)
-		if err != nil {
-			return fmt.Errorf("failed to marshal input: %w", err)
-		}
-
-		err = json.Unmarshal(inputJSON, target)
-		if err == nil {
-			return nil
-		}
-	}
-
-	// If both JSON unmarshaling attempts fail, return the error
-	return fmt.Errorf("failed to unmarshal event or input to target struct: %w", err)
-}
-
-// NewDatasetFromStruct creates a Dataset that unmarshals events into the given struct type
-func NewDatasetFromStruct[T any](datasetID string) Dataset[T, T] {
-	return &structDatasetIterator[T]{
-		dataset: api.NewDataset(datasetID),
-	}
-}
-
 // NewDatasetFromStructWithTypes creates a Dataset that unmarshals Input and Expected into separate types
 func NewDatasetFromStructWithTypes[InputType, ExpectedType any](datasetID string) Dataset[InputType, ExpectedType] {
 	return &typedDatasetIterator[InputType, ExpectedType]{
@@ -453,29 +379,9 @@ func NewDatasetFromStructWithTypes[InputType, ExpectedType any](datasetID string
 	}
 }
 
-// structDatasetIterator implements Dataset for struct types using NextAs
-type structDatasetIterator[T any] struct {
-	dataset *api.Dataset
-}
-
 // typedDatasetIterator implements Dataset for separate Input/Expected types
 type typedDatasetIterator[InputType, ExpectedType any] struct {
 	dataset *api.Dataset
-}
-
-// Next returns the next case, unmarshaling the dataset event into the struct type
-func (s *structDatasetIterator[T]) Next() (Case[T, T], error) {
-	var result T
-	err := s.dataset.NextAs(&result)
-	if err != nil {
-		var zero Case[T, T]
-		return zero, err
-	}
-
-	return Case[T, T]{
-		Input:    result,
-		Expected: result, // For struct datasets, input and expected are the same
-	}, nil
 }
 
 // Next returns the next case, unmarshaling Input and Expected into separate types
