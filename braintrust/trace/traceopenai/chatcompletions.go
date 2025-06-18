@@ -6,12 +6,10 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"strings"
 	"time"
 
-	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -83,18 +81,14 @@ func (ct *chatCompletionsTracer) StartSpan(ctx context.Context, t time.Time, req
 	}
 
 	if messages, ok := raw["messages"]; ok {
-		b, err := json.Marshal(messages)
-		if err != nil {
+		if err := setJSONAttr(span, "braintrust.input", messages); err != nil {
 			return ctx, span, err
 		}
-		span.SetAttributes(attribute.String("braintrust.input", string(b)))
 	}
 
-	b, err := json.Marshal(ct.metadata)
-	if err != nil {
+	if err := setJSONAttr(span, "braintrust.metadata", ct.metadata); err != nil {
 		return ctx, span, err
 	}
-	span.SetAttributes(attribute.String("braintrust.metadata", string(b)))
 
 	return ctx, span, nil
 }
@@ -102,14 +96,13 @@ func (ct *chatCompletionsTracer) StartSpan(ctx context.Context, t time.Time, req
 func (ct *chatCompletionsTracer) TagSpan(span trace.Span, body io.Reader) error {
 	if ct.streaming {
 		return ct.parseStreamingResponse(span, body)
-	} else {
-		return ct.parseResponse(span, body)
 	}
+	return ct.parseResponse(span, body)
 }
 
 func (ct *chatCompletionsTracer) parseStreamingResponse(span trace.Span, body io.Reader) error {
 	scanner := bufio.NewScanner(body)
-	var allChoices []map[string]any
+	var allResults []map[string]any
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -129,57 +122,7 @@ func (ct *chatCompletionsTracer) parseStreamingResponse(span trace.Span, body io
 			return err
 		}
 
-		// Aggregate choices from streaming chunks
-		if choices, ok := chunk["choices"].([]interface{}); ok && len(choices) > 0 {
-			if allChoices == nil {
-				allChoices = make([]map[string]any, len(choices))
-				for i := range allChoices {
-					allChoices[i] = map[string]any{
-						"index": i,
-						"message": map[string]any{
-							"role":    "assistant",
-							"content": "",
-						},
-					}
-				}
-			}
-
-			for _, choice := range choices {
-				if choiceMap, ok := choice.(map[string]any); ok {
-					index, ok := choiceMap["index"].(float64)
-					if !ok {
-						return fmt.Errorf("index is not a float64")
-					}
-					idx := int(index)
-
-					if idx < len(allChoices) {
-						message, ok := allChoices[idx]["message"].(map[string]any)
-						if !ok {
-							return fmt.Errorf("message is not a map[string]any")
-						}
-
-						if delta, ok := choiceMap["delta"].(map[string]any); ok {
-							if content, ok := delta["content"].(string); ok {
-								currentContent, ok := message["content"].(string)
-								if !ok {
-									return fmt.Errorf("currentContent is not a string")
-								}
-								message["content"] = currentContent + content
-							}
-							if role, ok := delta["role"].(string); ok {
-								message["role"] = role
-							}
-							if toolCalls, ok := delta["tool_calls"]; ok {
-								message["tool_calls"] = toolCalls
-							}
-						}
-						if finishReason, ok := choiceMap["finish_reason"]; ok && finishReason != nil {
-							allChoices[idx]["finish_reason"] = finishReason
-						}
-					}
-				}
-			}
-		}
+		allResults = append(allResults, chunk)
 
 		// Handle usage in streaming response (if stream_options.include_usage is true)
 		if usage, ok := chunk["usage"]; ok {
@@ -187,9 +130,10 @@ func (ct *chatCompletionsTracer) parseStreamingResponse(span trace.Span, body io
 		}
 	}
 
-	// Set the aggregated output
-	if allChoices != nil {
-		if err := setJSONAttr(span, "braintrust.output", allChoices); err != nil {
+	// Post-process streaming results to match Python SDK behavior
+	output := ct.postprocessStreamingResults(allResults)
+	if output != nil {
+		if err := setJSONAttr(span, "braintrust.output", output); err != nil {
 			return err
 		}
 	}
@@ -203,6 +147,105 @@ func (ct *chatCompletionsTracer) parseStreamingResponse(span trace.Span, body io
 	}
 
 	return scanner.Err()
+}
+
+func (ct *chatCompletionsTracer) postprocessStreamingResults(allResults []map[string]any) []map[string]interface{} {
+	var role *string
+	var content string
+	var toolCalls []interface{}
+	var finishReason interface{}
+
+	for _, result := range allResults {
+		choices, ok := result["choices"].([]interface{})
+		if !ok || len(choices) == 0 {
+			continue
+		}
+
+		// Process first choice (index 0) similar to Python SDK
+		if choiceMap, ok := choices[0].(map[string]any); ok {
+			delta, ok := choiceMap["delta"].(map[string]any)
+			if !ok {
+				continue
+			}
+
+			// Handle role (set once from first delta that has it)
+			if role == nil {
+				if deltaRole, ok := delta["role"].(string); ok {
+					role = &deltaRole
+				}
+			}
+
+			// Handle finish_reason
+			if fr, ok := choiceMap["finish_reason"]; ok && fr != nil {
+				finishReason = fr
+			}
+
+			// Handle content aggregation
+			if deltaContent, ok := delta["content"].(string); ok {
+				content += deltaContent
+			}
+
+			// Handle tool_calls aggregation (similar to Python SDK logic)
+			if deltaToolCalls, ok := delta["tool_calls"].([]interface{}); ok && len(deltaToolCalls) > 0 {
+				if toolDelta, ok := deltaToolCalls[0].(map[string]any); ok {
+					// Check if this is a new tool call or continuation
+					if toolID, ok := toolDelta["id"].(string); ok && toolID != "" {
+						// New tool call
+						lastTool, ok := toolCalls[len(toolCalls)-1].(map[string]interface{})
+						if len(toolCalls) == 0 || (len(toolCalls) > 0 && ok && lastTool["id"] != toolID) {
+							newToolCall := map[string]interface{}{
+								"id":   toolID,
+								"type": toolDelta["type"],
+							}
+							if function, ok := toolDelta["function"].(map[string]any); ok {
+								newToolCall["function"] = function
+							}
+							toolCalls = append(toolCalls, newToolCall)
+						}
+					} else if len(toolCalls) > 0 {
+						// Continuation of existing tool call - append arguments
+						if lastTool, ok := toolCalls[len(toolCalls)-1].(map[string]interface{}); ok {
+							if function, ok := lastTool["function"].(map[string]interface{}); ok {
+								if deltaFunction, ok := toolDelta["function"].(map[string]any); ok {
+									if args, ok := deltaFunction["arguments"].(string); ok {
+										if currentArgs, ok := function["arguments"].(string); ok {
+											function["arguments"] = currentArgs + args
+										} else {
+											function["arguments"] = args
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Build the final response similar to Python SDK
+	var finalRole interface{}
+	if role != nil {
+		finalRole = *role
+	}
+
+	var finalToolCalls interface{}
+	if len(toolCalls) > 0 {
+		finalToolCalls = toolCalls
+	}
+
+	return []map[string]interface{}{
+		{
+			"index": 0,
+			"message": map[string]interface{}{
+				"role":       finalRole,
+				"content":    content,
+				"tool_calls": finalToolCalls,
+			},
+			"logprobs":      nil,
+			"finish_reason": finishReason,
+		},
+	}
 }
 
 func (ct *chatCompletionsTracer) parseResponse(span trace.Span, body io.Reader) error {

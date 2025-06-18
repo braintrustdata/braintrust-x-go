@@ -1,6 +1,7 @@
 package traceopenai
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -24,7 +25,7 @@ func TestOpenAIChatCompletions(t *testing.T) {
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.UserMessage("What is 2+2?"),
 		},
-		Model: TEST_MODEL,
+		Model: testModel,
 	}
 
 	start := time.Now()
@@ -32,6 +33,7 @@ func TestOpenAIChatCompletions(t *testing.T) {
 	end := time.Now()
 	require.NoError(err)
 	require.NotNil(resp)
+	fmt.Println(resp)
 
 	// Wait for spans to be exported
 	span := flushOne(t, exporter)
@@ -68,7 +70,7 @@ func TestOpenAIChatCompletions(t *testing.T) {
 	metadata := ts.Metadata()
 	assert.Equal("openai", metadata["provider"])
 	assert.Equal("/v1/chat/completions", metadata["endpoint"])
-	assert.Equal(TEST_MODEL, metadata["model"])
+	assert.Equal(testModel, metadata["model"])
 
 	// Check metrics
 	metrics := ts.Metrics()
@@ -88,7 +90,7 @@ func TestOpenAIChatCompletionsStreaming(t *testing.T) {
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.UserMessage("Count from 1 to 3"),
 		},
-		Model: TEST_MODEL,
+		Model: testModel,
 		StreamOptions: openai.ChatCompletionStreamOptionsParam{
 			IncludeUsage: openai.Bool(true),
 		},
@@ -143,7 +145,7 @@ func TestOpenAIChatCompletionsWithTools(t *testing.T) {
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.UserMessage("What's the weather in San Francisco?"),
 		},
-		Model: TEST_MODEL,
+		Model: testModel,
 		Tools: []openai.ChatCompletionToolParam{
 			{
 				Type: "function",
@@ -197,7 +199,7 @@ func TestOpenAIChatCompletionsWithSystemMessage(t *testing.T) {
 			openai.SystemMessage("You are a helpful assistant that speaks like a pirate."),
 			openai.UserMessage("Hello, how are you?"),
 		},
-		Model:       TEST_MODEL,
+		Model:       testModel,
 		Temperature: openai.Float(0.7),
 		MaxTokens:   openai.Int(100),
 	}
@@ -239,7 +241,7 @@ func assertChatSpanValid(t *testing.T, stub tracetest.SpanStub, start, end time.
 	metadata := span.Metadata()
 	assert.Equal("openai", metadata["provider"])
 	assert.Equal("/v1/chat/completions", metadata["endpoint"])
-	assert.Contains(TEST_MODEL, metadata["model"])
+	assert.Contains(testModel, metadata["model"])
 
 	// validate metrics
 	metrics := span.Metrics()
