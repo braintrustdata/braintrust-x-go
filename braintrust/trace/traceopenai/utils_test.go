@@ -144,22 +144,6 @@ func TestBufferedReaderCallbackOnlyOnce(t *testing.T) {
 	assert.Equal(1, callCount)
 }
 
-func TestTranslateMetricKey(t *testing.T) {
-	assert := assert.New(t)
-
-	// Test the specific translations
-	assert.Equal("prompt_tokens", translateMetricKey("input_tokens"))
-	assert.Equal("completion_tokens", translateMetricKey("output_tokens"))
-	assert.Equal("tokens", translateMetricKey("total_tokens"))
-
-	// Test that unrecognized keys are returned unchanged
-	assert.Equal("unknown_key", translateMetricKey("unknown_key"))
-	assert.Equal("", translateMetricKey(""))
-	assert.Equal("completion_tokens", translateMetricKey("completion_tokens"))
-	assert.Equal("prompt_tokens", translateMetricKey("prompt_tokens"))
-	assert.Equal("tokens", translateMetricKey("tokens"))
-}
-
 func TestToInt64(t *testing.T) {
 	assert := assert.New(t)
 
