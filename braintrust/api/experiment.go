@@ -10,9 +10,27 @@ import (
 	"github.com/braintrust/braintrust-x-go/braintrust"
 )
 
+// MANU_COMMENT: In your experience, what is the best way to maintain rich
+// typespec definitions across multiple language APIs. I have a pipe dream where
+// we maintain the source of truth for all of our APIs as zod typespecs, and
+// then in theory we could autogenerate type definitions in other languages from
+// these. We already sort-of do this in python.
+//
+// The pros are that we get nice things like per-field documentation
+// synchronized across languages. But on the other hand, it's unlikely to be
+// trivial to port generic zod typespecs over to every language, and we end up
+// implementing a compiler.
+
 // ExperimentRequest represents the request payload for creating an experiment
+// MANU_COMMENT: Maybe RegisterExperimentRequest?
 type ExperimentRequest struct {
 	ProjectID string `json:"project_id"`
+	// MANU_COMMENT: Should we omitempty these too? I imagine all optional args
+	// in the REST API should be marked omitempty here. Otherwise we'll create
+	// an empty-valued experiment.
+	//
+	// Also, should we use `omitzero` instead of `omitempty`?
+	// (https://tip.golang.org/doc/go1.24#encodingjsonpkgencodingjson)
 	Name      string `json:"name"`
 	EnsureNew bool   `json:"ensure_new"`
 }
@@ -24,6 +42,20 @@ type Experiment struct {
 }
 
 // RegisterExperiment creates a new experiment via the Braintrust API
+
+// MANU_COMMENT: Should we use struct args for these functions? I worry that if
+// the set of args grows large like it is in python then a giant positional
+// arglist will become unwieldy. I guess you're doing that in the dataset API.
+
+// MANU_COMMENT: It feels a little bit confusing to have separate
+// RegisterExperiment and GetOrCreateExperimentMethods. I imagine users will
+// just need to use GetOrCreateExperiment?
+
+// MANU_COMMENT: In the python and TS sdks, we do this thing where the objects
+// returned by `init/init_dataset/etc` are lazily-initialized. Meaning we return
+// something immediately and resolve the experiment against the control plane
+// only in the background logger. That makes all of these inits non-blocking.
+// Should we do the same in go?
 func RegisterExperiment(name string, projectID string) (*Experiment, error) {
 	req := ExperimentRequest{
 		ProjectID: projectID,

@@ -67,6 +67,9 @@ func FetchDatasetEvents(datasetID string, req DatasetFetchRequest) (*DatasetFetc
 		return nil, fmt.Errorf("error parsing base URL: %w", err)
 	}
 
+	// MANU_COMMENT: We should probably use `/btql` here so that we can inject
+	// filters and other stuff. We kind of want to get away from the /fetch
+	// endpoints because they are very limited compared to btql.
 	endpoint, err := url.Parse(fmt.Sprintf("/v1/dataset/%s/fetch", datasetID))
 	if err != nil {
 		return nil, fmt.Errorf("error parsing endpoint: %w", err)
@@ -99,6 +102,8 @@ func FetchDatasetEvents(datasetID string, req DatasetFetchRequest) (*DatasetFetc
 
 	return &result, nil
 }
+
+// MANU_COMMENT: Should we have the GetOrCreateDataset method too (or instead) which also handles project registration?
 
 // CreateDataset creates a new dataset via the Braintrust API
 func CreateDataset(req DatasetRequest) (*DatasetInfo, error) {
@@ -165,6 +170,9 @@ func InsertDatasetEvents(datasetID string, events []DatasetEvent) error {
 		return fmt.Errorf("error parsing base URL: %w", err)
 	}
 
+	// MANU_COMMENT: I think for these sorts of things we should use the async
+	// background logger similar to what we do in python/TS. We don't want every
+	// insert to be a synchronous web request.
 	endpoint, err := url.Parse(fmt.Sprintf("/v1/dataset/%s/insert", datasetID))
 	if err != nil {
 		return fmt.Errorf("error parsing endpoint: %w", err)

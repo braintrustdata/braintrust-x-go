@@ -48,6 +48,10 @@ func RegisterProject(name string) (*Project, error) {
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Authorization", "Bearer "+config.APIKey)
 
+	// MANU_COMMENT: In python we have ways of letting users customize HTTP
+	// client adapters used throughout, to configure retries and stuff. Seems
+	// fine to do in a later iteration, but just floating the idea of enabling
+	// something similar in go.
 	client := &http.Client{}
 	resp, err := client.Do(httpReq)
 	if err != nil {

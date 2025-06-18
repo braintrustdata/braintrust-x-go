@@ -14,6 +14,12 @@
 //		"github.com/braintrust/braintrust-x-go/braintrust/trace"
 //	)
 //
+// MANU_COMMENT: I wonder if "idiomatic" go docs would put this in a main()
+// function? Or is writing them this at the toplevel better? Also I wonder if we
+// have to format it a certain way to get syntax highlighting (e.g.
+// https://pkg.go.dev/builtin@go1.24.4#append), or is it a matter of the hosting
+// platform?
+//
 //	// Set up tracing (requires BRAINTRUST_API_KEY environment variable)
 //	// export BRAINTRUST_API_KEY="your-api-key-here"
 //	teardown, err := trace.Quickstart()
