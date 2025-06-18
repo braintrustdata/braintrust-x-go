@@ -339,8 +339,7 @@ func setJSONAttr(span trace.Span, key string, value any) error {
 	return nil
 }
 
-// Dataset is an interface that provides a way to iterate over a set of eval case's (aka
-// inputs to evals).
+// Dataset is an interface that provides a way to iterate over a set of evaluation cases.
 type Dataset[I, R any] interface {
 
 	// Next must return the next case in the dataset, or io.EOF if there are no more cases.
