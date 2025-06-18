@@ -58,7 +58,7 @@ import (
 //	teardown, err := trace.Quickstart()
 //
 //	// Use specific project
-//	teardown, err := trace.Quickstart(trace.WithDefaultProjectId("my-project"))
+//	teardown, err := trace.Quickstart(trace.WithDefaultProjectID("my-project"))
 func Quickstart(opts ...braintrust.Option) (teardown func(), err error) {
 
 	config := braintrust.GetConfig(opts...)
