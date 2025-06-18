@@ -107,7 +107,7 @@ func Quickstart(opts ...braintrust.Option) (teardown func(), err error) {
 		tracerOpts = append(tracerOpts, trace.WithSpanProcessor(NewSpanProcessor(parent)))
 	}
 
-	// Add console debug exporter if BRAINTRUST_TRACE_DEBUG_LOG is set
+	// Add console debug exporter if BRAINTRUST_ENABLE_TRACE_DEBUG_LOG is set
 	if config.EnableTraceDebugLog {
 		consoleExporter, err := stdouttrace.New(stdouttrace.WithPrettyPrint())
 		if err != nil {
