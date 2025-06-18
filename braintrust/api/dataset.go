@@ -49,8 +49,8 @@ type DatasetFetchRequest struct {
 
 // DatasetFetchResponse represents the response from fetching events
 type DatasetFetchResponse struct {
-	Events []DatasetEvent `json:"events"`
-	Cursor string         `json:"cursor,omitempty"`
+	Events []json.RawMessage `json:"events"`
+	Cursor string            `json:"cursor,omitempty"`
 }
 
 // FetchDatasetEvents retrieves events from a dataset
@@ -195,28 +195,28 @@ func InsertDatasetEvents(datasetID string, events []DatasetEvent) error {
 
 // Dataset handles fetching raw DatasetEvents from the Braintrust API with pagination
 type Dataset struct {
-	datasetID string
-	events    []DatasetEvent
-	index     int
-	cursor    string
-	exhausted bool
+	DatasetID string
+	Events    []json.RawMessage
+	Index     int
+	Cursor    string
+	Exhausted bool
 }
 
 // NewDataset creates a new Dataset that fetches data from the given dataset ID
 func NewDataset(datasetID string) *Dataset {
 	return &Dataset{
-		datasetID: datasetID,
-		events:    nil,
-		index:     0,
-		cursor:    "",
-		exhausted: false,
+		DatasetID: datasetID,
+		Events:    nil,
+		Index:     0,
+		Cursor:    "",
+		Exhausted: false,
 	}
 }
 
 // Next returns the next DatasetEvent, fetching more data as needed
 func (d *Dataset) Next() (DatasetEvent, error) {
 	// If we've consumed all events in the current batch and haven't exhausted the dataset, fetch more
-	if d.index >= len(d.events) && !d.exhausted {
+	if d.Index >= len(d.Events) && !d.Exhausted {
 		err := d.fetchNextBatch()
 		if err != nil {
 			return DatasetEvent{}, err
@@ -224,12 +224,18 @@ func (d *Dataset) Next() (DatasetEvent, error) {
 	}
 
 	// If we still don't have any events, we're done
-	if d.index >= len(d.events) {
+	if d.Index >= len(d.Events) {
 		return DatasetEvent{}, io.EOF
 	}
 
-	event := d.events[d.index]
-	d.index++
+	// Unmarshal the raw message into a DatasetEvent
+	var event DatasetEvent
+	err := json.Unmarshal(d.Events[d.Index], &event)
+	if err != nil {
+		return DatasetEvent{}, fmt.Errorf("failed to unmarshal event: %w", err)
+	}
+
+	d.Index++
 	return event, nil
 }
 
@@ -237,21 +243,21 @@ func (d *Dataset) Next() (DatasetEvent, error) {
 func (d *Dataset) fetchNextBatch() error {
 	req := DatasetFetchRequest{
 		Limit:  100, // Fetch 100 records at a time
-		Cursor: d.cursor,
+		Cursor: d.Cursor,
 	}
 
-	resp, err := FetchDatasetEvents(d.datasetID, req)
+	resp, err := FetchDatasetEvents(d.DatasetID, req)
 	if err != nil {
 		return fmt.Errorf("failed to fetch dataset events: %w", err)
 	}
 
-	d.events = resp.Events
-	d.index = 0
-	d.cursor = resp.Cursor
+	d.Events = resp.Events
+	d.Index = 0
+	d.Cursor = resp.Cursor
 
 	// If no cursor is returned or no events, we've exhausted the dataset
 	if resp.Cursor == "" || len(resp.Events) == 0 {
-		d.exhausted = true
+		d.Exhausted = true
 	}
 
 	return nil
@@ -286,4 +292,29 @@ func (di *DatasetIterator[I, R]) Next() (Case[I, R], error) {
 	}
 
 	return di.converter(event)
+}
+
+// NextAs unmarshals the next event into the given struct type
+func (d *Dataset) NextAs(target interface{}) error {
+	// If we've consumed all events in the current batch and haven't exhausted the dataset, fetch more
+	if d.Index >= len(d.Events) && !d.Exhausted {
+		err := d.fetchNextBatch()
+		if err != nil {
+			return err
+		}
+	}
+
+	// If we still don't have any events, we're done
+	if d.Index >= len(d.Events) {
+		return io.EOF
+	}
+
+	// Unmarshal the raw message into the target struct
+	err := json.Unmarshal(d.Events[d.Index], target)
+	if err != nil {
+		return fmt.Errorf("failed to unmarshal event: %w", err)
+	}
+
+	d.Index++
+	return nil
 }
