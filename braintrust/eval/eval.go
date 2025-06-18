@@ -372,8 +372,8 @@ func (s *Cases[I, R]) Next() (Case[I, R], error) {
 	return testCase, nil
 }
 
-// NewDatasetFromStructWithTypes creates a Dataset that unmarshals Input and Expected into separate types
-func NewDatasetFromStructWithTypes[InputType, ExpectedType any](datasetID string) Dataset[InputType, ExpectedType] {
+// QueryDataset creates a Dataset that unmarshals Input and Expected into separate types
+func QueryDataset[InputType, ExpectedType any](datasetID string) Dataset[InputType, ExpectedType] {
 	return &typedDatasetIterator[InputType, ExpectedType]{
 		dataset: api.NewDataset(datasetID),
 	}

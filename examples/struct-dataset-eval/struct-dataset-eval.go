@@ -121,8 +121,8 @@ func main() {
 		log.Fatalf("Failed to initialize dataset: %v", err)
 	}
 
-	// Create dataset using NewDatasetFromStruct with separate Input/Expected types
-	dataset := eval.NewDatasetFromStructWithTypes[QuestionInput, AnswerExpected](datasetID)
+	// Create dataset using QueryDataset with separate Input/Expected types
+	dataset := eval.QueryDataset[QuestionInput, AnswerExpected](datasetID)
 
 	// Define a task that processes the input and returns the expected structure
 	task := func(ctx context.Context, input QuestionInput) (AnswerExpected, error) {
