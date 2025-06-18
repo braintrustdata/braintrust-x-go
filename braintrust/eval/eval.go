@@ -8,6 +8,17 @@
 //   - Task: An AI function that takes an input and returns an output
 //   - Scores: Scoring functions that compute performance metrics
 //
+// # Type Parameters
+//
+// This package uses two generic type parameters throughout its API:
+//   - I: The input type for your task (e.g., string, struct, []byte)
+//   - R: The result/output type from your task (e.g., string, struct, complex types)
+//
+// For example:
+//   - eval.Case[string, string] represents a test case with string input and string output
+//   - eval.Task[MyInput, MyOutput] represents a task that takes MyInput and returns MyOutput
+//   - eval.Cases[string, bool] represents an iterator over cases with string inputs and boolean outputs
+//
 // Example usage:
 //
 //	import (
@@ -108,7 +119,7 @@ type Options struct {
 // It can handle:
 // - ProjectName + ExperimentName: creates/gets project, then creates/gets experiment
 // - ProjectID + ExperimentName: uses existing project, creates/gets experiment
-func NewWithOpts[I, R any](opts Options, cases Dataset[I, R], task Task[I, R], scorers []Scorer[I, R]) (*Eval[I, R], error) {
+func NewWithOpts[I, R any](opts Options, cases Cases[I, R], task Task[I, R], scorers []Scorer[I, R]) (*Eval[I, R], error) {
 	var projectID string
 	var err error
 
@@ -138,19 +149,20 @@ func NewWithOpts[I, R any](opts Options, cases Dataset[I, R], task Task[I, R], s
 	return New(experiment.ID, cases, task, scorers), nil
 }
 
-// Eval is a collection of cases, a task, and a set of scorers.
+// Eval is a collection of cases, a task, and a set of scorers. It has two generic types;
+// I is the input type, and R is the result type.
 type Eval[I, R any] struct {
 	id      string
-	cases   Dataset[I, R]
+	cases   Cases[I, R]
 	task    Task[I, R]
 	scorers []Scorer[I, R]
 	tracer  trace.Tracer
 }
 
 // New creates a new eval.
-func New[I, R any](id string, cases Dataset[I, R], task Task[I, R], scorers []Scorer[I, R]) *Eval[I, R] {
+func New[I, R any](experimentID string, cases Cases[I, R], task Task[I, R], scorers []Scorer[I, R]) *Eval[I, R] {
 	return &Eval[I, R]{
-		id:      id,
+		id:      experimentID,
 		cases:   cases,
 		task:    task,
 		scorers: scorers,
@@ -291,7 +303,8 @@ type Score struct {
 	Score float64 `json:"score"`
 }
 
-// ScoreFunc is a function that scores the result of a task against the expected result.
+// ScoreFunc is a function that scores the result of a task against the expected result. The returned
+// score is a float64 between 0 and 1.
 type ScoreFunc[I, R any] func(ctx context.Context, input I, expected, result R) (float64, error)
 
 // Scorer evaluates the quality of results against expected values.
@@ -339,29 +352,27 @@ func setJSONAttr(span trace.Span, key string, value any) error {
 	return nil
 }
 
-// Dataset is an interface that provides a way to iterate over a set of evaluation cases.
-type Dataset[I, R any] interface {
-
+// Cases is an iterator of Case[I, R] that is used by Eval to iterate over the cases.
+type Cases[I, R any] interface {
 	// Next must return the next case in the dataset, or io.EOF if there are no more cases.
+	// The returned case must be a valid input for the task.
 	Next() (Case[I, R], error)
 }
 
-// Cases is an implementation of the Dataset interface for a static slice of cases.
-type Cases[I, R any] struct {
-	cases []Case[I, R]
-	index int
-}
-
-// NewCases creates a new Cases from a slice of cases.
-func NewCases[I, R any](cases []Case[I, R]) *Cases[I, R] {
-	return &Cases[I, R]{
+// NewCases creates a Cases iterator from a slice of cases.
+func NewCases[I, R any](cases []Case[I, R]) Cases[I, R] {
+	return &casesImpl[I, R]{
 		cases: cases,
 		index: 0,
 	}
 }
 
-// Next returns the next case in the slice, or io.EOF if there are no more cases.
-func (s *Cases[I, R]) Next() (Case[I, R], error) {
+type casesImpl[I, R any] struct {
+	cases []Case[I, R]
+	index int
+}
+
+func (s *casesImpl[I, R]) Next() (Case[I, R], error) {
 	if s.index >= len(s.cases) {
 		var zero Case[I, R]
 		return zero, io.EOF
@@ -371,19 +382,18 @@ func (s *Cases[I, R]) Next() (Case[I, R], error) {
 	return testCase, nil
 }
 
-// QueryDataset creates a Dataset that unmarshals Input and Expected into separate types
-func QueryDataset[InputType, ExpectedType any](datasetID string) Dataset[InputType, ExpectedType] {
+// QueryDataset queries a dataset from the Braintrust server and returns a Cases iterator that unmarshals
+// the dataset JSON into the given input and expected types.
+func QueryDataset[InputType, ExpectedType any](datasetID string) Cases[InputType, ExpectedType] {
 	return &typedDatasetIterator[InputType, ExpectedType]{
 		dataset: api.NewDataset(datasetID),
 	}
 }
 
-// typedDatasetIterator implements Dataset for separate Input/Expected types
 type typedDatasetIterator[InputType, ExpectedType any] struct {
 	dataset *api.Dataset
 }
 
-// Next returns the next case, unmarshaling Input and Expected into separate types
 func (s *typedDatasetIterator[InputType, ExpectedType]) Next() (Case[InputType, ExpectedType], error) {
 	// First, unmarshal the full event to get access to Input and Expected fields
 	var fullEvent struct {

@@ -121,8 +121,8 @@ func main() {
 		log.Fatalf("Failed to initialize dataset: %v", err)
 	}
 
-	// Create dataset using QueryDataset with separate Input/Expected types
-	dataset := eval.QueryDataset[QuestionInput, AnswerExpected](datasetID)
+	// Create cases using QueryDataset with separate Input/Expected types
+	cases := eval.QueryDataset[QuestionInput, AnswerExpected](datasetID)
 
 	// Define a task that processes the input and returns the expected structure
 	task := func(ctx context.Context, input QuestionInput) (AnswerExpected, error) {
@@ -164,7 +164,7 @@ func main() {
 			ProjectID:      project.ID,
 			ExperimentName: "Capitalization Task Demo",
 		},
-		dataset,
+		cases,
 		task,
 		scorers,
 	)
