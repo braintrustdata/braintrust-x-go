@@ -1,3 +1,5 @@
+// revive:disable:package-comments
+// revive:disable:exported
 package internal
 
 import (
@@ -28,7 +30,7 @@ func newFailTestLogger(t *testing.T) *failTestLogger {
 	return &failTestLogger{t: t}
 }
 
-func (f *failTestLogger) Debugf(format string, args ...any) {}
+func (f *failTestLogger) Debugf(_ string, _ ...any) {}
 
 func (f *failTestLogger) Warnf(format string, args ...any) {
 	f.t.Helper()

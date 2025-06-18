@@ -1,16 +1,99 @@
+// Package eval provides functionality for running evaluations of AI model outputs.
+// Evaluations help measure AI application performance (accuracy/quality) and create
+// an effective feedback loop for AI development. They help teams understand if
+// updates improve or regress application quality.
+//
+// An evaluation consists of three main components:
+//   - Data: A set of test examples with inputs and expected outputs
+//   - Task: An AI function that takes an input and returns an output
+//   - Scores: Scoring functions that compute performance metrics
+//
+// Example usage:
+//
+//	import (
+//		"context"
+//		"log"
+//		"github.com/braintrust/braintrust-x-go/braintrust/eval"
+//		"github.com/braintrust/braintrust-x-go/braintrust/trace"
+//	)
+//
+//	// Set up tracing (requires BRAINTRUST_API_KEY)
+//	// export BRAINTRUST_API_KEY="your-api-key-here"
+//	teardown, err := trace.Quickstart()
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+//	defer teardown()
+//
+//	// This task is hardcoded but usually you'd call an AI model here.
+//	greetingTask := func(ctx context.Context, input string) (string, error) {
+//		return "Hello " + input, nil
+//	}
+//
+//	// Define your scoring function
+//	exactMatch := func(ctx context.Context, input, expected, result string) (float64, error) {
+//		if expected == result {
+//			return 1.0, nil // Perfect match
+//		}
+//		return 0.0, nil // No match
+//	}
+//
+//	// Create and run the evaluation
+//	evaluation, err := eval.NewWithOpts(
+//		eval.Options{
+//			ProjectName:    "my-ai-project",
+//			ExperimentName: "greeting-experiment-v1",
+//		},
+//		[]eval.Case[string, string]{
+//			{Input: "World", Expected: "Hello World"},
+//			{Input: "Alice", Expected: "Hello Alice"},
+//			{Input: "Bob", Expected: "Hello Bob"},
+//		},
+//		greetingTask,
+//		[]eval.Scorer[string, string]{
+//			eval.NewScorer("exact_match", exactMatch),
+//		},
+//	)
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+//
+//	summary, err := evaluation.Run(context.Background())
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+//
+//	fmt.Printf("Evaluation completed. Average score: %.2f\n", summary.Scores["exact_match"])
 package eval
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"go.opentelemetry.io/otel"
 	attr "go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/braintrust/braintrust-x-go/braintrust/api"
 	bttrace "github.com/braintrust/braintrust-x-go/braintrust/trace"
+)
+
+var (
+	// ErrScorer is returned when a scorer fails to execute.
+	ErrScorer = errors.New("scorer error")
+
+	// ErrTaskRun is returned when a task fails to execute.
+	ErrTaskRun = errors.New("task run error")
+)
+
+var (
+	// braintrust "span_attributes" for each type of eval span.
+	evalSpanAttrs  = map[string]any{"type": "eval"}
+	taskSpanAttrs  = map[string]any{"type": "task"}
+	scoreSpanAttrs = map[string]any{"type": "score"}
 )
 
 // Options holds configuration for creating an eval
@@ -77,78 +160,80 @@ func New[I, R any](id string, cases []Case[I, R], task Task[I, R], scorers []Sco
 // Run runs the eval.
 func (e *Eval[I, R]) Run() error {
 	parent := bttrace.NewExperiment(e.id)
+	ctx := bttrace.SetParent(context.Background(), parent)
 
+	var errs []error
 	for _, c := range e.cases {
-		ctx := bttrace.SetParent(context.Background(), parent)
-		ctx, span := e.tracer.Start(ctx, "eval")
-
-		result, err := e.runTask(ctx, c)
+		err := e.runCase(ctx, c)
 		if err != nil {
-			span.End()
-			return err
+			errs = append(errs, err)
 		}
-
-		_, err = e.runScorers(ctx, c, result)
-		if err != nil {
-			span.End()
-			return err
-		}
-
-		// save our span metadata.
-		meta := map[string]any{
-			"braintrust.span_attributes": map[string]any{
-				"type": "eval",
-			},
-			"braintrust.input_json":  c.Input,
-			"braintrust.output_json": result,
-			"braintrust.expected":    c.Expected,
-		}
-
-		for key, value := range meta {
-			if err := setJSONAttr(span, key, value); err != nil {
-				return err
-			}
-		}
-
-		span.End()
 	}
 
-	return nil
+	return errors.Join(errs...)
+}
+
+func (e *Eval[I, R]) runCase(ctx context.Context, c Case[I, R]) error {
+	ctx, span := e.tracer.Start(ctx, "eval")
+	defer span.End()
+
+	result, err := e.runTask(ctx, c)
+	if err != nil {
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
+
+	_, err = e.runScorers(ctx, c, result)
+	if err != nil {
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
+	meta := map[string]any{
+		"braintrust.span_attributes": evalSpanAttrs,
+		"braintrust.input_json":      c.Input,
+		"braintrust.output_json":     result,
+		"braintrust.expected":        c.Expected,
+	}
+
+	return setJSONAttrs(span, meta)
 }
 
 func (e *Eval[I, R]) runScorers(ctx context.Context, c Case[I, R], result R) ([]Score, error) {
 	ctx, span := e.tracer.Start(ctx, "score")
 	defer span.End()
 
-	attrs := map[string]any{
-		"type": "score",
-	}
-
-	if err := setJSONAttr(span, "braintrust.span_attributes", attrs); err != nil {
+	if err := setJSONAttr(span, "braintrust.span_attributes", scoreSpanAttrs); err != nil {
 		return nil, err
 	}
 
 	scores := make([]Score, len(e.scorers))
 	meta := make(map[string]float64, len(e.scorers))
 
+	var errs []error
+
 	for i, scorer := range e.scorers {
-		val, err := scorer.Run(ctx, c, result)
+		val, err := scorer.Run(ctx, c.Input, c.Expected, result)
 		if err != nil {
-			span.RecordError(err)
-			return scores, err // FIXME[matt] probably don't want to crap out here.
+			werr := fmt.Errorf("%w: scorer %q failed: %w", ErrScorer, scorer.Name(), err)
+			span.RecordError(werr)
+			errs = append(errs, werr)
+			continue
 		}
-		scores[i] = Score{
-			Name:  scorer.Name,
-			Score: val,
-		}
-		meta[scorer.Name] = val
+
+		scores[i] = Score{Name: scorer.Name(), Score: val}
+		meta[scorer.Name()] = val
 	}
 
 	if err := setJSONAttr(span, "braintrust.scores", meta); err != nil {
 		return nil, err
 	}
 
-	return scores, nil
+	err := errors.Join(errs...)
+	if err != nil {
+		return scores, fmt.Errorf("%w: %w", ErrScorer, err)
+	}
+
+	return scores, err
 }
 
 func (e *Eval[I, R]) runTask(ctx context.Context, c Case[I, R]) (R, error) {
@@ -157,31 +242,27 @@ func (e *Eval[I, R]) runTask(ctx context.Context, c Case[I, R]) (R, error) {
 
 	result, err := e.task(ctx, c.Input)
 	if err != nil {
-		span.RecordError(err)
-		return result, err
+		taskErr := fmt.Errorf("%w: %w", ErrTaskRun, err)
+		span.RecordError(taskErr)
+		span.SetStatus(codes.Error, taskErr.Error())
+		return result, taskErr
 	}
 
-	if err := setJSONAttr(span, "braintrust.input_json", c.Input); err != nil {
-		return result, err
+	attrs := map[string]any{
+		"braintrust.input_json":      c.Input,
+		"braintrust.output_json":     result,
+		"braintrust.expected":        c.Expected,
+		"braintrust.span_attributes": taskSpanAttrs,
 	}
 
-	if err := setJSONAttr(span, "braintrust.output_json", result); err != nil {
-		return result, err
+	var errs []error
+	for key, value := range attrs {
+		if err := setJSONAttr(span, key, value); err != nil {
+			errs = append(errs, err)
+		}
 	}
 
-	if err := setJSONAttr(span, "braintrust.expected", c.Expected); err != nil {
-		return result, err
-	}
-
-	meta := map[string]any{
-		"type": "task",
-	}
-
-	if err := setJSONAttr(span, "braintrust.span_attributes", meta); err != nil {
-		return result, err
-	}
-
-	return result, nil
+	return result, errors.Join(errs...)
 }
 
 // Task is a function that takes an input and returns a result. It represents the units of work
@@ -194,24 +275,49 @@ type Case[I, R any] struct {
 	Expected R
 }
 
+// Score represents the result of a scorer evaluation.
 type Score struct {
 	Name  string  `json:"name"`
 	Score float64 `json:"score"`
 }
 
-type ScoreFunc[I, R any] func(ctx context.Context, c Case[I, R], result R) (float64, error)
+// ScoreFunc is a function that scores the result of a task against the expected result.
+type ScoreFunc[I, R any] func(ctx context.Context, input I, expected, result R) (float64, error)
 
-// Scorer
-type Scorer[I, R any] struct {
-	Name string
-	Run  ScoreFunc[I, R]
+// Scorer evaluates the quality of results against expected values.
+type Scorer[I, R any] interface {
+	Name() string
+	Run(ctx context.Context, input I, expected, result R) (float64, error)
 }
 
-func NewScorer[I, R any](name string, run ScoreFunc[I, R]) Scorer[I, R] {
-	return Scorer[I, R]{
-		Name: name,
-		Run:  run,
+type scorerImpl[I, R any] struct {
+	name      string
+	scoreFunc ScoreFunc[I, R]
+}
+
+func (s *scorerImpl[I, R]) Name() string {
+	return s.name
+}
+
+func (s *scorerImpl[I, R]) Run(ctx context.Context, input I, expected, result R) (float64, error) {
+	return s.scoreFunc(ctx, input, expected, result)
+}
+
+// NewScorer creates a new scorer with the given name and score function.
+func NewScorer[I, R any](name string, scoreFunc ScoreFunc[I, R]) Scorer[I, R] {
+	return &scorerImpl[I, R]{
+		name:      name,
+		scoreFunc: scoreFunc,
 	}
+}
+
+func setJSONAttrs(span trace.Span, attrs map[string]any) error {
+	for key, value := range attrs {
+		if err := setJSONAttr(span, key, value); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func setJSONAttr(span trace.Span, key string, value any) error {

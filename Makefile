@@ -11,6 +11,7 @@ help:
 	@echo "  lint          - Run golangci-lint"
 	@echo "  fix           - Run golangci-lint with auto-fix"
 	@echo "  mod-tidy      - Tidy and verify Go modules"
+	@echo "  godoc         - Start godoc server on localhost:6060"
 	@echo "  ci            - Run CI pipeline (clean, lint, test, build)"
 
 ci: clean lint mod-verify test build
@@ -51,5 +52,10 @@ mod-tidy:
 
 fix: fmt
 	golangci-lint run --fix
+
+godoc:
+	@echo "Starting godoc server on http://localhost:6060"
+	@echo "Press Ctrl+C to stop"
+	go run golang.org/x/tools/cmd/godoc@latest -http=:6060
 
 

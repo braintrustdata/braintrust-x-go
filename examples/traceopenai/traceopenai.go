@@ -1,3 +1,4 @@
+// This example demonstrates OpenAI tracing with Braintrust.
 package main
 
 import (
@@ -23,7 +24,7 @@ type ChatBot struct {
 	client openai.Client
 }
 
-func NewChatBot(client openai.Client) *ChatBot {
+func newChatBot(client openai.Client) *ChatBot {
 	return &ChatBot{
 		client: client,
 	}
@@ -86,7 +87,7 @@ type Recommender struct {
 	client openai.Client
 }
 
-func NewRecommender(client openai.Client) *Recommender {
+func newRecommender(client openai.Client) *Recommender {
 	return &Recommender{
 		client: client,
 	}
@@ -186,7 +187,7 @@ func main() {
 	fmt.Println("\n🗨️  Chat Completions Examples")
 	fmt.Println("=============================")
 
-	bot := NewChatBot(openaiClient)
+	bot := newChatBot(openaiClient)
 
 	// Example 1: Simple chat completion
 	fmt.Println("\n1. Simple Chat Completion")
@@ -240,7 +241,7 @@ func main() {
 	fmt.Println("\n🍕 Responses API Examples")
 	fmt.Println("=========================")
 
-	recommender := NewRecommender(openaiClient)
+	recommender := newRecommender(openaiClient)
 
 	// Example 4: Simple responses request
 	fmt.Println("\n4. Simple Food Recommendation")

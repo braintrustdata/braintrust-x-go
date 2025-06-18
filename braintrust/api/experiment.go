@@ -1,3 +1,4 @@
+// Package api provides client functionality for interacting with the Braintrust API.
 package api
 
 import (
