@@ -275,8 +275,8 @@ func (e *Eval[I, R]) runTask(ctx context.Context, c Case[I, R]) (R, error) {
 	return result, errors.Join(errs...)
 }
 
-// Task is a function that takes an input and returns a result. It represents the units of work
-// that eval is trying to evaluate, like a model, a prompt, whatever.
+// Task is a function that takes an input and returns a result. It represents the unit of work
+// we are evaluating, usually one or more calls to an LLM.
 type Task[I, R any] func(ctx context.Context, input I) (R, error)
 
 // Case is the input and expected result of a test case.
