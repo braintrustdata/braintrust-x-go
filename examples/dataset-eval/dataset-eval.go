@@ -1,3 +1,4 @@
+// Package main demonstrates a simple dataset evaluation example for Braintrust.
 package main
 
 import (
@@ -103,8 +104,13 @@ func main() {
 		log.Printf("Warning: Failed to fetch events for verification: %v", err)
 	} else {
 		fmt.Printf("📊 Found %d events in dataset:\n", len(fetchResp.Events))
-		for i, event := range fetchResp.Events {
-			fmt.Printf("  %d. Input: %v, Expected: %v\n", i+1, event.Input, event.Expected)
+		for i, rawEvent := range fetchResp.Events {
+			var event api.DatasetEvent
+			if err := json.Unmarshal(rawEvent, &event); err == nil {
+				fmt.Printf("  %d. Input: %v, Expected: %v\n", i+1, event.Input, event.Expected)
+			} else {
+				fmt.Printf("  %d. Failed to unmarshal event: %v\n", i+1, err)
+			}
 		}
 		if fetchResp.Cursor != "" {
 			fmt.Printf("📄 Cursor for next page: %s\n", fetchResp.Cursor)
