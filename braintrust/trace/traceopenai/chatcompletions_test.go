@@ -16,7 +16,7 @@ import (
 
 func TestOpenAIChatCompletions(t *testing.T) {
 	client, exporter, teardown := setUpTest(t)
-	defer teardown()
+	t.Cleanup(teardown)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -81,7 +81,7 @@ func TestOpenAIChatCompletions(t *testing.T) {
 
 func TestOpenAIChatCompletionsStreaming(t *testing.T) {
 	client, exporter, teardown := setUpTest(t)
-	defer teardown()
+	t.Cleanup(teardown)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -136,7 +136,7 @@ func TestOpenAIChatCompletionsStreaming(t *testing.T) {
 
 func TestOpenAIChatCompletionsWithTools(t *testing.T) {
 	client, exporter, teardown := setUpTest(t)
-	defer teardown()
+	t.Cleanup(teardown)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -189,7 +189,7 @@ func TestOpenAIChatCompletionsWithTools(t *testing.T) {
 
 func TestOpenAIChatCompletionsWithSystemMessage(t *testing.T) {
 	client, exporter, teardown := setUpTest(t)
-	defer teardown()
+	t.Cleanup(teardown)
 	assert := assert.New(t)
 	require := require.New(t)
 
