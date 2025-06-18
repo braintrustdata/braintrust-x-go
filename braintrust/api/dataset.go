@@ -263,37 +263,6 @@ func (d *Dataset) fetchNextBatch() error {
 	return nil
 }
 
-// DatasetIterator wraps a Dataset and converts DatasetEvents to typed Cases
-type DatasetIterator[I, R any] struct {
-	dataset   *Dataset
-	converter func(DatasetEvent) (Case[I, R], error)
-}
-
-// Case represents a test case with input and expected output
-type Case[I, R any] struct {
-	Input    I
-	Expected R
-}
-
-// NewDatasetIterator creates a DatasetIterator with a converter function
-func NewDatasetIterator[I, R any](dataset *Dataset, converter func(DatasetEvent) (Case[I, R], error)) *DatasetIterator[I, R] {
-	return &DatasetIterator[I, R]{
-		dataset:   dataset,
-		converter: converter,
-	}
-}
-
-// Next returns the next typed Case, converting from DatasetEvent
-func (di *DatasetIterator[I, R]) Next() (Case[I, R], error) {
-	event, err := di.dataset.Next()
-	if err != nil {
-		var zero Case[I, R]
-		return zero, err
-	}
-
-	return di.converter(event)
-}
-
 // NextAs unmarshals the next event into the given struct type
 func (d *Dataset) NextAs(target interface{}) error {
 	// If we've consumed all events in the current batch and haven't exhausted the dataset, fetch more
