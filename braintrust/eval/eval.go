@@ -71,6 +71,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 
 	"go.opentelemetry.io/otel"
 	attr "go.opentelemetry.io/otel/attribute"
@@ -107,7 +108,7 @@ type Options struct {
 // It can handle:
 // - ProjectName + ExperimentName: creates/gets project, then creates/gets experiment
 // - ProjectID + ExperimentName: uses existing project, creates/gets experiment
-func NewWithOpts[I, R any](opts Options, cases []Case[I, R], task Task[I, R], scorers []Scorer[I, R]) (*Eval[I, R], error) {
+func NewWithOpts[I, R any](opts Options, cases Dataset[I, R], task Task[I, R], scorers []Scorer[I, R]) (*Eval[I, R], error) {
 	var projectID string
 	var err error
 
@@ -140,14 +141,14 @@ func NewWithOpts[I, R any](opts Options, cases []Case[I, R], task Task[I, R], sc
 // Eval is a collection of cases, a task, and a set of scorers.
 type Eval[I, R any] struct {
 	id      string
-	cases   []Case[I, R]
+	cases   Dataset[I, R]
 	task    Task[I, R]
 	scorers []Scorer[I, R]
 	tracer  trace.Tracer
 }
 
 // New creates a new eval.
-func New[I, R any](id string, cases []Case[I, R], task Task[I, R], scorers []Scorer[I, R]) *Eval[I, R] {
+func New[I, R any](id string, cases Dataset[I, R], task Task[I, R], scorers []Scorer[I, R]) *Eval[I, R] {
 	return &Eval[I, R]{
 		id:      id,
 		cases:   cases,
@@ -163,8 +164,17 @@ func (e *Eval[I, R]) Run() error {
 	ctx := bttrace.SetParent(context.Background(), parent)
 
 	var errs []error
-	for _, c := range e.cases {
-		err := e.runCase(ctx, c)
+	for {
+		c, err := e.cases.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+
+		err = e.runCase(ctx, c)
 		if err != nil {
 			errs = append(errs, err)
 		}
@@ -265,8 +275,8 @@ func (e *Eval[I, R]) runTask(ctx context.Context, c Case[I, R]) (R, error) {
 	return result, errors.Join(errs...)
 }
 
-// Task is a function that takes an input and returns a result. It represents the units of work
-// that eval is trying to evaluate, like a model, a prompt, whatever.
+// Task is a function that takes an input and returns a result. It represents the unit of work
+// we are evaluating, usually one or more calls to an LLM.
 type Task[I, R any] func(ctx context.Context, input I) (R, error)
 
 // Case is the input and expected result of a test case.
@@ -327,4 +337,68 @@ func setJSONAttr(span trace.Span, key string, value any) error {
 	}
 	span.SetAttributes(attr.String(key, string(b)))
 	return nil
+}
+
+// Dataset is an interface that provides a way to iterate over a set of evaluation cases.
+type Dataset[I, R any] interface {
+
+	// Next must return the next case in the dataset, or io.EOF if there are no more cases.
+	Next() (Case[I, R], error)
+}
+
+// Cases is an implementation of the Dataset interface for a static slice of cases.
+type Cases[I, R any] struct {
+	cases []Case[I, R]
+	index int
+}
+
+// NewCases creates a new Cases from a slice of cases.
+func NewCases[I, R any](cases []Case[I, R]) *Cases[I, R] {
+	return &Cases[I, R]{
+		cases: cases,
+		index: 0,
+	}
+}
+
+// Next returns the next case in the slice, or io.EOF if there are no more cases.
+func (s *Cases[I, R]) Next() (Case[I, R], error) {
+	if s.index >= len(s.cases) {
+		var zero Case[I, R]
+		return zero, io.EOF
+	}
+	testCase := s.cases[s.index]
+	s.index++
+	return testCase, nil
+}
+
+// QueryDataset creates a Dataset that unmarshals Input and Expected into separate types
+func QueryDataset[InputType, ExpectedType any](datasetID string) Dataset[InputType, ExpectedType] {
+	return &typedDatasetIterator[InputType, ExpectedType]{
+		dataset: api.NewDataset(datasetID),
+	}
+}
+
+// typedDatasetIterator implements Dataset for separate Input/Expected types
+type typedDatasetIterator[InputType, ExpectedType any] struct {
+	dataset *api.Dataset
+}
+
+// Next returns the next case, unmarshaling Input and Expected into separate types
+func (s *typedDatasetIterator[InputType, ExpectedType]) Next() (Case[InputType, ExpectedType], error) {
+	// First, unmarshal the full event to get access to Input and Expected fields
+	var fullEvent struct {
+		Input    InputType    `json:"input"`
+		Expected ExpectedType `json:"expected"`
+	}
+
+	err := s.dataset.NextAs(&fullEvent)
+	if err != nil {
+		var zero Case[InputType, ExpectedType]
+		return zero, err
+	}
+
+	return Case[InputType, ExpectedType]{
+		Input:    fullEvent.Input,
+		Expected: fullEvent.Expected,
+	}, nil
 }
