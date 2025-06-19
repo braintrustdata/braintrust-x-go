@@ -4,15 +4,15 @@
 // updates improve or regress application quality.
 //
 // An evaluation consists of three main components:
-//   - Data: A set of test examples with inputs and expected outputs
-//   - Task: An AI function that takes an input and returns an output
-//   - Scores: Scoring functions that compute performance metrics
+//   - [Cases]: A set of test examples with inputs and expected outputs
+//   - [Task]: The unit of work we are evaluating, usually one or more calls to an LLM
+//   - [Scorer]: A function that scores the result of a task against the expected result
 //
 // # Type Parameters
 //
 // This package uses two generic type parameters throughout its API:
-//   - I: The input type for your task (e.g., string, struct, []byte)
-//   - R: The result/output type from your task (e.g., string, struct, complex types)
+//   - I: The input type for the task (e.g., string, struct, []byte)
+//   - R: The result/output type from the task (e.g., string, struct, complex types)
 //
 // For example:
 //   - eval.Case[string, string] represents a test case with string input and string output
@@ -309,7 +309,10 @@ func setJSONAttr(span trace.Span, key string, value any) error {
 	return nil
 }
 
-// Cases is an iterator of Case[I, R] that is used by Eval to iterate over the cases.
+// Cases is an iterator of test cases that are evaluated by [Eval]. Implementations must return
+// io.EOF when iteration is complete.
+//
+// See [QueryDataset] to download datasets or [NewCases] to easily wrap slices of cases.
 type Cases[I, R any] interface {
 	// Next must return the next case in the dataset, or io.EOF if there are no more cases.
 	// The returned case must be a valid input for the task.
