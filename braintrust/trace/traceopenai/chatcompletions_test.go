@@ -60,7 +60,7 @@ func TestOpenAIChatCompletions(t *testing.T) {
 	// Wait for spans to be exported
 	ts := exporter.FlushOne()
 
-	assertChatSpanValid(t, &ts, timeRange)
+	assertChatSpanValid(t, ts, timeRange)
 
 	// Check that the span name is correct
 	assert.Equal("openai.chat.completions.create", ts.Name())
@@ -161,7 +161,7 @@ func TestOpenAIChatCompletionsStreaming(t *testing.T) {
 	// Wait for spans to be exported
 	ts := exporter.FlushOne()
 
-	assertChatSpanValid(t, &ts, timeRange)
+	assertChatSpanValid(t, ts, timeRange)
 
 	// Check that the span name is correct
 	assert.Equal("openai.chat.completions.create", ts.Name())
@@ -258,7 +258,7 @@ func TestOpenAIChatCompletionsWithTools(t *testing.T) {
 	// Wait for spans to be exported
 	ts := exporter.FlushOne()
 
-	assertChatSpanValid(t, &ts, timeRange)
+	assertChatSpanValid(t, ts, timeRange)
 
 	// Check that tools are in metadata
 	metadata := ts.Metadata()
@@ -326,7 +326,7 @@ func TestOpenAIChatCompletionsWithSystemMessage(t *testing.T) {
 	// Wait for spans to be exported
 	ts := exporter.FlushOne()
 
-	assertChatSpanValid(t, &ts, timeRange)
+	assertChatSpanValid(t, ts, timeRange)
 
 	// Check input contains both messages
 	input := ts.Attr("braintrust.input").String()
@@ -393,7 +393,7 @@ func TestOpenAIChatCompletionsStreamingToolCalls(t *testing.T) {
 	// Wait for spans to be exported
 	ts := exporter.FlushOne()
 
-	assertChatSpanValid(t, &ts, timeRange)
+	assertChatSpanValid(t, ts, timeRange)
 
 	// Check that the span name is correct
 	assert.Equal("openai.chat.completions.create", ts.Name())
@@ -1059,7 +1059,7 @@ func StrContains(s string) Matcher { return StringContaining{s} }
 func NumGT(n float64) Matcher      { return NumberGreaterThan{n} }
 
 // assertChatSpanValid asserts all the common properties of a chat completion span are valid.
-func assertChatSpanValid(t *testing.T, span *oteltest.Span, timeRange oteltest.TimeRange) {
+func assertChatSpanValid(t *testing.T, span oteltest.Span, timeRange oteltest.TimeRange) {
 	t.Helper()
 	assert := assert.New(t)
 

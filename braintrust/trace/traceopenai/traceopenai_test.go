@@ -95,7 +95,7 @@ func TestOpenAIResponsesRequiredParams(t *testing.T) {
 	assert.Contains(resp.OutputText(), "17")
 
 	ts := exporter.FlushOne()
-	assertSpanValid(t, &ts, timeRange)
+	assertSpanValid(t, ts, timeRange)
 
 	_ = ts.Input()
 	output := ts.Attr("braintrust.output").String()
@@ -134,7 +134,7 @@ func TestOpenAIResponsesKitchenSink(t *testing.T) {
 	// Wait for spans to be exported
 	ts := exporter.FlushOne()
 
-	assertSpanValid(t, &ts, timeRange)
+	assertSpanValid(t, ts, timeRange)
 
 	// Check input field
 	input := ts.Attr("braintrust.input").String()
@@ -209,7 +209,7 @@ func TestOpenAIResponsesStreaming(t *testing.T) {
 
 	ts := exporter.FlushOne()
 
-	assertSpanValid(t, &ts, timeRange)
+	assertSpanValid(t, ts, timeRange)
 
 	output := ts.Attr("braintrust.output").String()
 	for _, i := range []string{"1", "2", "3", "5", "8", "13"} {
@@ -247,7 +247,7 @@ func TestOpenAIResponsesWithListInput(t *testing.T) {
 
 	ts := exporter.FlushOne()
 
-	assertSpanValid(t, &ts, timeRange)
+	assertSpanValid(t, ts, timeRange)
 
 	input := ts.Attr("braintrust.input").String()
 	assert.Contains(input, "3+125")
@@ -283,7 +283,7 @@ func getResponseText(t *testing.T, resp any) string {
 }
 
 // assertSpanValid asserts all the common properties of a span are valid.
-func assertSpanValid(t *testing.T, span *oteltest.Span, timeRange oteltest.TimeRange) {
+func assertSpanValid(t *testing.T, span oteltest.Span, timeRange oteltest.TimeRange) {
 	t.Helper()
 	assert := assert.New(t)
 
