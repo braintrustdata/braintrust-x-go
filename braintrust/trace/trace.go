@@ -20,9 +20,10 @@
 //	// ... do work ...
 //	span.End()
 //
-// For existing OpenTelemetry setups, add our SpanProcessor to your tracer provider:
+// For existing OpenTelemetry setups, you must add our SpanProcessor to your tracer provider.
 //
-//	processor := trace.NewSpanProcessor(trace.NewExperiment("your-experiment-id"))
+//	defaultProjectID := "your-project-id"
+//	processor := trace.NewSpanProcessor(defaultProjectID)
 //	tp := sdktrace.NewTracerProvider(
 //		sdktrace.WithSpanProcessor(processor),
 //		// ... your other processors
@@ -78,19 +79,9 @@ func Quickstart(opts ...braintrust.Option) (teardown func(), err error) {
 	otelOpts := []otlptracehttp.Option{
 		otlptracehttp.WithEndpoint(url),
 		otlptracehttp.WithURLPath("/otel/v1/traces"),
-	}
-
-	// FIXME[remi]: Remove once parent can be retrieved in the backend from the spans
-	parentHeader := "project_id:" + config.DefaultProjectID
-	if parentHeader != "" {
-		otelOpts = append(otelOpts, otlptracehttp.WithHeaders(map[string]string{
-			"x-bt-parent":   parentHeader,
+		otlptracehttp.WithHeaders(map[string]string{
 			"Authorization": "Bearer " + apiKey,
-		}))
-	} else {
-		otelOpts = append(otelOpts, otlptracehttp.WithHeaders(map[string]string{
-			"Authorization": "Bearer " + apiKey,
-		}))
+		}),
 	}
 
 	if protocol == "http" {
@@ -106,16 +97,17 @@ func Quickstart(opts ...braintrust.Option) (teardown func(), err error) {
 		return nil, err
 	}
 
-	// Configure options
-	tracerOpts := []trace.TracerProviderOption{
-		trace.WithBatcher(exporter),
+	// If we have a default project ID, set it on the span processor.
+	spanProcessorOpt := noopSpanProcessorOption()
+	if config.DefaultProjectID != "" {
+		spanProcessorOpt = WithDefaultProjectID(config.DefaultProjectID)
+	} else {
+		diag.Debugf("No default project ID set. Untagged spans will be dropped")
 	}
 
-	if config.DefaultProjectID == "" {
-		diag.Warnf("No default project ID set. Untagged spans will be dropped")
-	} else {
-		parent := NewProject(config.DefaultProjectID)
-		tracerOpts = append(tracerOpts, trace.WithSpanProcessor(NewSpanProcessor(parent)))
+	tracerOpts := []trace.TracerProviderOption{
+		trace.WithBatcher(exporter),
+		trace.WithSpanProcessor(NewSpanProcessor(spanProcessorOpt)),
 	}
 
 	// Add console debug exporter if BRAINTRUST_ENABLE_TRACE_DEBUG_LOG is set
@@ -155,36 +147,21 @@ type contextKey string
 var parentContextKey contextKey = ParentOtelAttrKey
 
 // SetParent will set the parent to the given Parent for any span created from the returned context.
-//
 // Example:
 //
-//	experiment := trace.NewExperiment("my-experiment-123")
-//	ctx = trace.SetParent(ctx, experiment)
+//	projectID := "123-456-789"
+//	project := trace.NewProject(projectID)
+//	ctx = trace.SetParent(ctx, project)
 //
-//	// All spans created from this context will be assigned to the experiment
-//	tracer := otel.Tracer("my-app")
+//	// All spans created from this context will be assigned to project 123-456-789
 //	_, span := tracer.Start(ctx, "database-query")
 //	defer span.End()
 func SetParent(ctx context.Context, parent Parent) context.Context {
 	return context.WithValue(ctx, parentContextKey, parent)
 }
 
-// SetParentOnSpan sets the Braintrust parent attribute on the given span.
-// The parent identifies which project or experiment the span belongs to.
-//
-// Example:
-//
-//	tracer := otel.Tracer("my-app")
-//	_, span := tracer.Start(ctx, "api-call")
-//	defer span.End()
-//
-//	experiment := trace.NewExperiment("my-experiment-456")
-//	trace.SetParentOnSpan(span, experiment)
-func SetParentOnSpan(span trace.ReadWriteSpan, parent Parent) {
-	span.SetAttributes(attribute.String(ParentOtelAttrKey, parent.String()))
-}
-
-func getParent(ctx context.Context) (bool, Parent) {
+// GetParent returns the parent from the context and a boolean indicating if it was set.
+func GetParent(ctx context.Context) (bool, Parent) {
 	parent, ok := ctx.Value(parentContextKey).(Parent)
 	return ok, parent
 }
@@ -235,17 +212,36 @@ type SpanProcessor interface {
 }
 
 type spanProcessor struct {
-	defaultParent Parent
-	defaultAttr   attribute.KeyValue
+	defaultProjectID string
+	defaultAttr      attribute.KeyValue
 }
 
-// NewSpanProcessor creates a new span processor that will assign any unlabelled spans to the default parent.
-func NewSpanProcessor(defaultParent Parent) SpanProcessor {
-	// FIXME[matt]: option to drop unlabelled spans?
-	return &spanProcessor{
-		defaultParent: defaultParent,
-		defaultAttr:   attribute.String(ParentOtelAttrKey, defaultParent.String()),
+type SpanProcessorOption func(*spanProcessor)
+
+func noopSpanProcessorOption() SpanProcessorOption {
+	return func(p *spanProcessor) {}
+}
+
+// WithDefaultProjectID sets the default project ID for spans created during the session.
+func WithDefaultProjectID(projectID string) SpanProcessorOption {
+	diag.Debugf("Setting default project ID: %s", projectID)
+	return func(p *spanProcessor) {
+		p.defaultProjectID = projectID
 	}
+}
+
+// NewSpanProcessor creates a new span processor. All spans must be tagged with a parent (e.g. an experiment_id or project_id).
+func NewSpanProcessor(opts ...SpanProcessorOption) SpanProcessor {
+	p := &spanProcessor{}
+	for _, opt := range opts {
+		opt(p)
+	}
+
+	if p.defaultProjectID != "" {
+		p.defaultAttr = attribute.String(ParentOtelAttrKey, NewProject(p.defaultProjectID).String())
+	}
+
+	return p
 }
 
 // OnStart is called when a span is started and assigns parent attributes.
@@ -259,17 +255,19 @@ func (p *spanProcessor) OnStart(ctx context.Context, span trace.ReadWriteSpan) {
 		}
 	}
 
-	ok, parent := getParent(ctx)
+	// if the context has a parent, use it.
+	ok, parent := GetParent(ctx)
 	if ok {
-		SetParentOnSpan(span, parent)
-		// if the context has a parent, use it.
+		setParentOnSpan(span, parent)
 		diag.Debugf("SpanProcessor.OnStart: setting parent from context: %s", parent)
 		return
 	}
 
 	// otherwise use the default parent
-	span.SetAttributes(p.defaultAttr)
-	diag.Debugf("SpanProcessor.OnStart: setting default parent: %s", p.defaultParent)
+	if p.defaultProjectID != "" {
+		span.SetAttributes(p.defaultAttr)
+		diag.Debugf("SpanProcessor.OnStart: setting default parent: %s", p.defaultProjectID)
+	}
 }
 
 // OnEnd is called when a span ends.
@@ -282,3 +280,7 @@ func (*spanProcessor) Shutdown(_ context.Context) error { return nil }
 func (*spanProcessor) ForceFlush(_ context.Context) error { return nil }
 
 var _ trace.SpanProcessor = &spanProcessor{}
+
+func setParentOnSpan(span trace.ReadWriteSpan, parent Parent) {
+	span.SetAttributes(attribute.String(ParentOtelAttrKey, parent.String()))
+}

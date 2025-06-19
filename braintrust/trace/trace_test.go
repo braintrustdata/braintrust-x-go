@@ -14,7 +14,7 @@ import (
 func TestSpanProcessor(t *testing.T) {
 	assert := assert.New(t)
 
-	processor := NewSpanProcessor(Project{id: "12345"})
+	processor := NewSpanProcessor(WithDefaultProjectID("12345"))
 	tracer, exporter := oteltest.Setup(t, sdktrace.WithSpanProcessor(processor))
 
 	// Assert we use the default parent if none is set.
@@ -40,4 +40,18 @@ func TestSpanProcessor(t *testing.T) {
 	span4.End()
 	span = exporter.FlushOne()
 	span.AssertAttrEquals(ParentOtelAttrKey, "project_id:88888")
+}
+func TestSpanProcessorNoDefaultProjectID(t *testing.T) {
+	assert := assert.New(t)
+
+	processor := NewSpanProcessor()
+	tracer, exporter := oteltest.Setup(t, sdktrace.WithSpanProcessor(processor))
+
+	// Assert we don't set a parent if none is set.
+	_, span1 := tracer.Start(t.Context(), "test")
+	span1.End()
+	span := exporter.FlushOne()
+
+	assert.Equal(span.Name(), "test")
+	assert.False(span.HasAttr(ParentOtelAttrKey))
 }

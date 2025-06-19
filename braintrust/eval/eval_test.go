@@ -8,9 +8,11 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
 	"github.com/braintrust/braintrust-x-go/braintrust/autoevals"
 	"github.com/braintrust/braintrust-x-go/braintrust/internal/oteltest"
+	"github.com/braintrust/braintrust-x-go/braintrust/trace"
 )
 
 func TestEval_TaskErrors(t *testing.T) {
@@ -38,7 +40,7 @@ func TestEval_TaskErrors(t *testing.T) {
 		autoevals.NewEquals[int, int](),
 	}
 
-	eval := New("experiment_id:123", NewCases(cases), task, scorers)
+	eval := New("123", NewCases(cases), task, scorers)
 	timer := oteltest.NewTimer()
 	err := eval.Run()
 	timeRange := timer.Tick()
@@ -56,7 +58,9 @@ func TestEval_TaskErrors(t *testing.T) {
 
 	// First span is the failed task - it has an exception event
 	assert.JSONEq(`{
-		"attributes": {},
+		"attributes": {
+			"braintrust.parent": "experiment_id:123"
+		},
 		"events": [
 			{
 				"attributes": {
@@ -76,7 +80,9 @@ func TestEval_TaskErrors(t *testing.T) {
 
 	// Second span is the eval span for the first failed case - should have Error status
 	assert.JSONEq(`{
-		"attributes": {},
+		"attributes": {
+			"braintrust.parent": "experiment_id:123"
+		},
 		"events": [],
 		"name": "eval",
 		"spanKind": "internal",
@@ -92,6 +98,7 @@ func TestEval_TaskErrors(t *testing.T) {
 			"braintrust.expected": "4",
 			"braintrust.input_json": "2",
 			"braintrust.output_json": "2",
+			"braintrust.parent": "experiment_id:123",
 			"braintrust.span_attributes": "{\"type\":\"task\"}"
 		},
 		"events": [],
@@ -106,6 +113,7 @@ func TestEval_TaskErrors(t *testing.T) {
 	// Fourth span is the score for the second case
 	assert.JSONEq(`{
 		"attributes": {
+			"braintrust.parent": "experiment_id:123",
 			"braintrust.scores": "{\"Equals\":0}",
 			"braintrust.span_attributes": "{\"type\":\"score\"}"
 		},
@@ -124,6 +132,7 @@ func TestEval_TaskErrors(t *testing.T) {
 			"braintrust.expected": "4",
 			"braintrust.input_json": "2",
 			"braintrust.output_json": "2",
+			"braintrust.parent": "experiment_id:123",
 			"braintrust.span_attributes": "{\"type\":\"eval\"}"
 		},
 		"events": [],
@@ -166,7 +175,7 @@ func TestEval_ScorerErrors(t *testing.T) {
 		}),
 	}
 
-	eval := New("experiment_id:123", NewCases(cases), task, scorers)
+	eval := New("123", NewCases(cases), task, scorers)
 	timer := oteltest.NewTimer()
 	err := eval.Run()
 	timeRange := timer.Tick()
@@ -188,6 +197,7 @@ func TestEval_ScorerErrors(t *testing.T) {
 			"braintrust.expected": "1",
 			"braintrust.input_json": "1",
 			"braintrust.output_json": "1",
+			"braintrust.parent": "experiment_id:123",
 			"braintrust.span_attributes": "{\"type\":\"task\"}"
 		},
 		"events": [],
@@ -201,6 +211,7 @@ func TestEval_ScorerErrors(t *testing.T) {
 
 	assert.JSONEq(`{
 		"attributes": {
+			"braintrust.parent": "experiment_id:123",
 			"braintrust.scores": "{\"Equals\":1,\"failing_scorer\":1}",
 			"braintrust.span_attributes": "{\"type\":\"score\"}"
 		},
@@ -218,6 +229,7 @@ func TestEval_ScorerErrors(t *testing.T) {
 			"braintrust.expected": "1",
 			"braintrust.input_json": "1",
 			"braintrust.output_json": "1",
+			"braintrust.parent": "experiment_id:123",
 			"braintrust.span_attributes": "{\"type\":\"eval\"}"
 		},
 		"events": [],
@@ -235,6 +247,7 @@ func TestEval_ScorerErrors(t *testing.T) {
 			"braintrust.expected": "4",
 			"braintrust.input_json": "2",
 			"braintrust.output_json": "4",
+			"braintrust.parent": "experiment_id:123",
 			"braintrust.span_attributes": "{\"type\":\"task\"}"
 		},
 		"events": [],
@@ -249,6 +262,7 @@ func TestEval_ScorerErrors(t *testing.T) {
 	// Score span should have exception event for the failing scorer
 	assert.JSONEq(`{
 		"attributes": {
+			"braintrust.parent": "experiment_id:123",
 			"braintrust.scores": "{\"Equals\":1}",
 			"braintrust.span_attributes": "{\"type\":\"score\"}"
 		},
@@ -271,7 +285,9 @@ func TestEval_ScorerErrors(t *testing.T) {
 
 	// Final eval span should have Error status due to scorer failure
 	assert.JSONEq(`{
-		"attributes": {},
+		"attributes": {
+			"braintrust.parent": "experiment_id:123"
+		},
 		"events": [],
 		"name": "eval",
 		"spanKind": "internal",
@@ -289,7 +305,7 @@ func TestHardcodedEval(t *testing.T) {
 	_, exporter := oteltest.Setup(t)
 
 	// test task
-	id := "experiment_id:123"
+	id := "123"
 
 	brokenSquare := func(ctx context.Context, x int) (int, error) {
 		square := x * x
@@ -329,6 +345,7 @@ func TestHardcodedEval(t *testing.T) {
 			"braintrust.expected": "1",
 			"braintrust.input_json": "1",
 			"braintrust.output_json": "1",
+			"braintrust.parent": "experiment_id:123",
 			"braintrust.span_attributes": "{\"type\":\"task\"}"
 		},
 		"events": [],
@@ -342,6 +359,7 @@ func TestHardcodedEval(t *testing.T) {
 
 	assert.JSONEq(`{
 		"attributes": {
+			"braintrust.parent": "experiment_id:123",
 			"braintrust.scores": "{\"equals\":1}",
 			"braintrust.span_attributes": "{\"type\":\"score\"}"
 		},
@@ -359,6 +377,7 @@ func TestHardcodedEval(t *testing.T) {
 			"braintrust.expected": "1",
 			"braintrust.input_json": "1",
 			"braintrust.output_json": "1",
+			"braintrust.parent": "experiment_id:123",
 			"braintrust.span_attributes": "{\"type\":\"eval\"}"
 		},
 		"events": [],
@@ -376,6 +395,7 @@ func TestHardcodedEval(t *testing.T) {
 			"braintrust.expected": "4",
 			"braintrust.input_json": "2",
 			"braintrust.output_json": "5",
+			"braintrust.parent": "experiment_id:123",
 			"braintrust.span_attributes": "{\"type\":\"task\"}"
 		},
 		"events": [],
@@ -389,6 +409,7 @@ func TestHardcodedEval(t *testing.T) {
 
 	assert.JSONEq(`{
 		"attributes": {
+			"braintrust.parent": "experiment_id:123",
 			"braintrust.scores": "{\"equals\":0}",
 			"braintrust.span_attributes": "{\"type\":\"score\"}"
 		},
@@ -406,6 +427,7 @@ func TestHardcodedEval(t *testing.T) {
 			"braintrust.expected": "4",
 			"braintrust.input_json": "2",
 			"braintrust.output_json": "5",
+			"braintrust.parent": "experiment_id:123",
 			"braintrust.span_attributes": "{\"type\":\"eval\"}"
 		},
 		"events": [],
@@ -641,4 +663,61 @@ func TestEval_EmptyExperimentID(t *testing.T) {
 
 	// Verify timer was used (even though no spans were created)
 	_ = timeRange
+}
+
+func TestEval_BraintrustParentWithAndWithoutDefaultProject(t *testing.T) {
+
+	tests := []struct {
+		name          string
+		withProcessor bool
+		projectID     string
+	}{
+		{"with default project", true, "test-project-123"},
+		{"without default project", true, ""},
+		{"without processor", false, ""},
+	}
+
+	// ideally our customers always use our span processor which will handle
+	// setting the bt parent on every span. but sometimes they won't. this test
+	// validates that at least in experiments we set the parent on the eval spans,
+	// since it's idempotent.
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := []sdktrace.TracerProviderOption{}
+			if tt.withProcessor {
+				spanProcessorOpts := []trace.SpanProcessorOption{}
+				if tt.projectID != "" {
+					spanProcessorOpts = append(spanProcessorOpts, trace.WithDefaultProjectID(tt.projectID))
+				}
+				processor := trace.NewSpanProcessor(spanProcessorOpts...)
+				opts = append(opts, sdktrace.WithSpanProcessor(processor))
+			}
+			_, exporter := oteltest.Setup(t, opts...)
+
+			task := func(ctx context.Context, x int) (int, error) {
+				return x * 2, nil
+			}
+
+			scorers := []Scorer[int, int]{
+				autoevals.NewEquals[int, int](),
+			}
+
+			cases := []Case[int, int]{
+				{Input: 1, Expected: 2},
+			}
+
+			eval := New("test-exp-456", NewCases(cases), task, scorers)
+			err := eval.Run()
+			require.NoError(t, err)
+
+			spans := exporter.Flush()
+			assert.Equal(t, 3, len(spans)) // task, score, eval
+
+			// Verify all spans have braintrust.parent attribute
+			for _, span := range spans {
+				span.AssertAttrEquals("braintrust.parent", "experiment_id:test-exp-456")
+			}
+		})
+	}
 }

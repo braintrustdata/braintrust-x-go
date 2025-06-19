@@ -122,15 +122,26 @@ type Eval[I, R any] struct {
 	task         Task[I, R]
 	scorers      []Scorer[I, R]
 	tracer       trace.Tracer
+	parent       bttrace.Parent
+	startSpanOpt trace.SpanStartOption
 }
 
 // New creates a new eval.
 func New[I, R any](experimentID string, cases Cases[I, R], task Task[I, R], scorers []Scorer[I, R]) *Eval[I, R] {
+	// by default we set the parent on every span to the experiment ID. This _should_ be done by the SpanProcessor
+	// but just in case a user hassn't set it up properly, we'll do it in side of the experiments as well. If they
+	// have set it up, the span processor won't override it.
+	parent := bttrace.NewExperiment(experimentID)
+	parentAttr := attr.String(bttrace.ParentOtelAttrKey, parent.String())
+	startSpanOpt := trace.WithAttributes(parentAttr)
+
 	return &Eval[I, R]{
 		experimentID: experimentID,
 		cases:        cases,
 		task:         task,
 		scorers:      scorers,
+		startSpanOpt: startSpanOpt,
+		parent:       parent,
 		tracer:       otel.GetTracerProvider().Tracer("braintrust.eval"),
 	}
 }
@@ -141,8 +152,7 @@ func (e *Eval[I, R]) Run() error {
 		return fmt.Errorf("%w: experiment ID is required", ErrEval)
 	}
 
-	parent := bttrace.NewExperiment(e.experimentID)
-	ctx := bttrace.SetParent(context.Background(), parent)
+	ctx := bttrace.SetParent(context.Background(), e.parent)
 
 	var errs []error
 	for {
@@ -168,7 +178,7 @@ func (e *Eval[I, R]) runNextCase(ctx context.Context) (done bool, err error) {
 	}
 
 	// if we have a case or get an error, we'll create a span.
-	ctx, span := e.tracer.Start(ctx, "eval")
+	ctx, span := e.tracer.Start(ctx, "eval", e.startSpanOpt)
 	defer span.End()
 
 	// if our case iterator returns an error, we'll wrap it in a more
@@ -206,7 +216,7 @@ func (e *Eval[I, R]) runCase(ctx context.Context, span trace.Span, c Case[I, R])
 }
 
 func (e *Eval[I, R]) runScorers(ctx context.Context, c Case[I, R], result R) ([]Score, error) {
-	ctx, span := e.tracer.Start(ctx, "score")
+	ctx, span := e.tracer.Start(ctx, "score", e.startSpanOpt)
 	defer span.End()
 
 	if err := setJSONAttr(span, "braintrust.span_attributes", scoreSpanAttrs); err != nil {
@@ -240,7 +250,7 @@ func (e *Eval[I, R]) runScorers(ctx context.Context, c Case[I, R], result R) ([]
 }
 
 func (e *Eval[I, R]) runTask(ctx context.Context, c Case[I, R]) (R, error) {
-	ctx, span := e.tracer.Start(ctx, "task")
+	ctx, span := e.tracer.Start(ctx, "task", e.startSpanOpt)
 	defer span.End()
 
 	result, err := e.task(ctx, c.Input)
