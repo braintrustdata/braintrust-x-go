@@ -151,6 +151,11 @@ func (s *Span) Attr(key string) Attr {
 	return attrs[0]
 }
 
+// HasAttr returns true if the span has at least one attribute with the given key.
+func (s *Span) HasAttr(key string) bool {
+	return len(s.Attrs(key)) > 0
+}
+
 // Summary returns the core data of the span, including attributes, events, and status.
 // It omits non-deterministic fields such as timestamps and span IDs. If two spans trace
 // the same code path with identical data, their Summary outputs should be equal,
@@ -266,19 +271,45 @@ func (a Attr) AssertEquals(expected any) {
 // Braintrust-specific span methods
 
 // Input returns the Braintrust input from the span attributes.
+// Supports both "braintrust.input" (OpenAI tracing) and "braintrust.input_json" (eval tracing).
 func (s *Span) Input() any {
 	s.t.Helper()
 	var input any
-	s.unmarshal("braintrust.input", &input)
-	return input
+
+	// Try both attribute name formats
+	inputKeys := []string{"braintrust.input", "braintrust.input_json"}
+	for _, key := range inputKeys {
+		if s.HasAttr(key) {
+			raw := s.Attr(key).String()
+			err := json.Unmarshal([]byte(raw), &input)
+			require.NoError(s.t, err)
+			return input
+		}
+	}
+
+	s.t.Fatalf("No input attribute found. Tried: %v", inputKeys)
+	return nil
 }
 
 // Output returns the Braintrust output from the span attributes.
+// Supports both "braintrust.output" (OpenAI tracing) and "braintrust.output_json" (eval tracing).
 func (s *Span) Output() any {
 	s.t.Helper()
 	var output any
-	s.unmarshal("braintrust.output", &output)
-	return output
+
+	// Try both attribute name formats
+	outputKeys := []string{"braintrust.output", "braintrust.output_json"}
+	for _, key := range outputKeys {
+		if s.HasAttr(key) {
+			raw := s.Attr(key).String()
+			err := json.Unmarshal([]byte(raw), &output)
+			require.NoError(s.t, err)
+			return output
+		}
+	}
+
+	s.t.Fatalf("No output attribute found. Tried: %v", outputKeys)
+	return nil
 }
 
 // Metadata returns the Braintrust metadata from the span attributes.

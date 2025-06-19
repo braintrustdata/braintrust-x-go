@@ -3,6 +3,8 @@ package diag
 
 import (
 	"log"
+	"os"
+	"strings"
 	"sync"
 )
 
@@ -104,3 +106,10 @@ func (warnLogger) Warnf(format string, args ...any) {
 }
 
 var _ Logger = warnLogger{}
+
+// init checks for BRAINTRUST_DEBUG environment variable and sets debug logger if true
+func init() {
+	if strings.ToLower(os.Getenv("BRAINTRUST_DEBUG")) == "true" {
+		SetDebugLogger()
+	}
+}

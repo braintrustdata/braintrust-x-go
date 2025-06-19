@@ -61,7 +61,7 @@ func TestEval_TaskErrors(t *testing.T) {
 			{
 				"attributes": {
 					"exception.message": "task run error: oops",
-					"exception.type": "*fmt.wrapErrors"
+					"exception.type": "ErrTaskRun"
 				},
 				"name": "exception"
 			}
@@ -256,7 +256,7 @@ func TestEval_ScorerErrors(t *testing.T) {
 			{
 				"attributes": {
 					"exception.message": "scorer error: scorer \"failing_scorer\" failed: scorer failed for input 2",
-					"exception.type": "*fmt.wrapErrors"
+					"exception.type": "ErrScorer"
 				},
 				"name": "exception"
 			}
@@ -264,8 +264,8 @@ func TestEval_ScorerErrors(t *testing.T) {
 		"name": "score",
 		"spanKind": "internal",
 		"status": {
-			"code": "Unset",
-			"description": ""
+			"code": "Error",
+			"description": "scorer error: scorer \"failing_scorer\" failed: scorer failed for input 2"
 		}
 	}`, spans[4].Snapshot())
 
@@ -277,7 +277,7 @@ func TestEval_ScorerErrors(t *testing.T) {
 		"spanKind": "internal",
 		"status": {
 			"code": "Error",
-			"description": "scorer error: scorer error: scorer \"failing_scorer\" failed: scorer failed for input 2"
+			"description": "scorer error: scorer \"failing_scorer\" failed: scorer failed for input 2"
 		}
 	}`, spans[5].Snapshot())
 }
@@ -493,6 +493,94 @@ func TestEvalWithCustomGenerator(t *testing.T) {
 	require.Equal(6, len(spans)) // 2 cases * 3 spans each
 }
 
+func TestEvalWithCasesIteratorError(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	_, exporter := oteltest.Setup(t)
+
+	// Create a generator that returns: case1, error, case2, EOF
+	generator := &errCases{
+		sequence: []errCase{
+			{c: Case[string, string]{Input: "first", Expected: "first"}},
+			{err: errors.New("iterator error between cases")},
+			{c: Case[string, string]{Input: "second", Expected: "second"}},
+		},
+		index: 0,
+	}
+
+	task := func(ctx context.Context, input string) (string, error) {
+		return input, nil
+	}
+
+	scorers := []Scorer[string, string]{autoevals.NewEquals[string, string]()}
+
+	eval := New("test-error-generator", generator, task, scorers)
+	err := eval.Run()
+
+	// Should return the error from the Cases iterator
+	require.Error(err)
+	assert.Contains(err.Error(), "iterator error between cases")
+
+	// Should have processed both successful cases plus one error span
+	spans := exporter.Flush()
+	assert.Equal(7, len(spans)) // 2 cases * 3 spans each + 1 iterator error span
+
+	// Verify the spans are for the correct cases
+	// First case spans (first, first)
+	assert.Equal("task", spans[0].Name())
+	assert.Equal("first", spans[0].Input())
+	assert.Equal("first", spans[0].Output())
+
+	assert.Equal("score", spans[1].Name())
+	assert.Contains(spans[1].Attr("braintrust.span_attributes").String(), "score")
+
+	assert.Equal("eval", spans[2].Name())
+	assert.Equal("first", spans[2].Input())
+	assert.Equal("first", spans[2].Output())
+
+	// Iterator error span - should be marked as error and have no input/output
+	assert.Equal("eval", spans[3].Name())
+	assert.Equal("Error", spans[3].Status().Code.String())
+	assert.Contains(spans[3].Status().Description, "case iterator error")
+	// Error span should not have input/output attributes since the iterator failed
+	assert.False(spans[3].HasAttr("braintrust.input_json"))
+	assert.False(spans[3].HasAttr("braintrust.output_json"))
+
+	// Second case spans (second, second)
+	assert.Equal("task", spans[4].Name())
+	assert.Equal("second", spans[4].Input())
+	assert.Equal("second", spans[4].Output())
+
+	assert.Equal("score", spans[5].Name())
+	assert.Contains(spans[5].Attr("braintrust.span_attributes").String(), "score")
+
+	assert.Equal("eval", spans[6].Name())
+	assert.Equal("second", spans[6].Input())
+	assert.Equal("second", spans[6].Output())
+}
+
+type errCase struct {
+	c   Case[string, string]
+	err error
+}
+
+type errCases struct {
+	sequence []errCase
+	index    int
+}
+
+func (e *errCases) Next() (Case[string, string], error) {
+	if e.index >= len(e.sequence) {
+		return Case[string, string]{}, io.EOF
+	}
+
+	step := e.sequence[e.index]
+	e.index++
+
+	return step.c, step.err
+}
+
 func TestResolveExperimentID_Validation(t *testing.T) {
 	// Test empty experiment name
 	_, err := ResolveExperimentID("", "test-project")
@@ -515,4 +603,42 @@ func TestResolveProjectExperimentID_Validation(t *testing.T) {
 	_, err = ResolveProjectExperimentID("test-exp", "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "project name is required")
+}
+
+func TestEval_EmptyExperimentID(t *testing.T) {
+	// Test that an empty experiment ID produces an error span
+	assert, require := assert.New(t), require.New(t)
+	assert.NotNil(require)
+
+	_, exporter := oteltest.Setup(t)
+
+	// Simple task and scorer
+	task := func(ctx context.Context, x int) (int, error) {
+		return x * 2, nil
+	}
+
+	scorers := []Scorer[int, int]{
+		autoevals.NewEquals[int, int](),
+	}
+
+	cases := []Case[int, int]{
+		{Input: 1, Expected: 2},
+	}
+
+	// Create eval with empty experiment ID
+	eval := New("", NewCases(cases), task, scorers)
+	timer := oteltest.NewTimer()
+	err := eval.Run()
+	timeRange := timer.Tick()
+
+	// Should return ErrEval error
+	assert.ErrorIs(err, ErrEval)
+	assert.Contains(err.Error(), "experiment ID is required")
+
+	spans := exporter.Flush()
+	// Should have no spans since the eval fails immediately
+	assert.Equal(0, len(spans))
+
+	// Verify timer was used (even though no spans were created)
+	_ = timeRange
 }

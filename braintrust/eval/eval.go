@@ -14,6 +14,8 @@
 //   - I: The input type for the task (e.g., string, struct, []byte)
 //   - R: The result/output type from the task (e.g., string, struct, complex types)
 //
+// All of the input and result types must be JSON-encodable.
+//
 // For example:
 //   - eval.Case[string, string] represents a test case with string input and string output
 //   - eval.Task[MyInput, MyOutput] represents a task that takes MyInput and returns MyOutput
@@ -92,11 +94,17 @@ import (
 )
 
 var (
+	// ErrEval is a generic error returned when an eval fails to execute.
+	ErrEval = errors.New("eval error")
+
 	// ErrScorer is returned when a scorer fails to execute.
 	ErrScorer = errors.New("scorer error")
 
 	// ErrTaskRun is returned when a task fails to execute.
 	ErrTaskRun = errors.New("task run error")
+
+	// ErrCaseIterator is returned when a case iterator fails to execute.
+	ErrCaseIterator = errors.New("case iterator error")
 )
 
 var (
@@ -129,21 +137,19 @@ func New[I, R any](experimentID string, cases Cases[I, R], task Task[I, R], scor
 
 // Run runs the eval.
 func (e *Eval[I, R]) Run() error {
+	if e.experimentID == "" {
+		return fmt.Errorf("%w: experiment ID is required", ErrEval)
+	}
+
 	parent := bttrace.NewExperiment(e.experimentID)
 	ctx := bttrace.SetParent(context.Background(), parent)
 
 	var errs []error
 	for {
-		c, err := e.cases.Next()
-		if err == io.EOF {
+		done, err := e.runNextCase(ctx)
+		if done {
 			break
 		}
-		if err != nil {
-			errs = append(errs, err)
-			continue
-		}
-
-		err = e.runCase(ctx, c)
 		if err != nil {
 			errs = append(errs, err)
 		}
@@ -152,10 +158,32 @@ func (e *Eval[I, R]) Run() error {
 	return errors.Join(errs...)
 }
 
-func (e *Eval[I, R]) runCase(ctx context.Context, c Case[I, R]) error {
+// runNextCase runs the next case in the iterator. It returns true if the iterator is
+// exhausted and false otherwise, and any error that occurred while running the case.
+func (e *Eval[I, R]) runNextCase(ctx context.Context) (done bool, err error) {
+	c, err := e.cases.Next()
+	done = err == io.EOF
+	if done {
+		return done, nil
+	}
+
+	// if we have a case or get an error, we'll create a span.
 	ctx, span := e.tracer.Start(ctx, "eval")
 	defer span.End()
 
+	// if our case iterator returns an error, we'll wrap it in a more
+	// specific error and short circuit.
+	if err != nil {
+		werr := fmt.Errorf("%w: %w", ErrCaseIterator, err)
+		recordSpanError(span, werr)
+		return done, werr
+	}
+
+	// otherwise let's run the case (using the existing span)
+	return done, e.runCase(ctx, span, c)
+}
+
+func (e *Eval[I, R]) runCase(ctx context.Context, span trace.Span, c Case[I, R]) error {
 	result, err := e.runTask(ctx, c)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
@@ -194,11 +222,10 @@ func (e *Eval[I, R]) runScorers(ctx context.Context, c Case[I, R], result R) ([]
 		val, err := scorer.Run(ctx, c.Input, c.Expected, result)
 		if err != nil {
 			werr := fmt.Errorf("%w: scorer %q failed: %w", ErrScorer, scorer.Name(), err)
-			span.RecordError(werr)
+			recordSpanError(span, werr)
 			errs = append(errs, werr)
 			continue
 		}
-		// FIXME: validate score is between 0 and 1
 
 		scores[i] = Score{Name: scorer.Name(), Score: val}
 		meta[scorer.Name()] = val
@@ -208,11 +235,7 @@ func (e *Eval[I, R]) runScorers(ctx context.Context, c Case[I, R], result R) ([]
 		return nil, err
 	}
 
-	err := errors.Join(errs...)
-	if err != nil {
-		return scores, fmt.Errorf("%w: %w", ErrScorer, err)
-	}
-
+	err := errors.Join(errs...) // will be nil if there are no errors
 	return scores, err
 }
 
@@ -223,8 +246,7 @@ func (e *Eval[I, R]) runTask(ctx context.Context, c Case[I, R]) (R, error) {
 	result, err := e.task(ctx, c.Input)
 	if err != nil {
 		taskErr := fmt.Errorf("%w: %w", ErrTaskRun, err)
-		span.RecordError(taskErr)
-		span.SetStatus(codes.Error, taskErr.Error())
+		recordSpanError(span, taskErr)
 		return result, taskErr
 	}
 
@@ -308,6 +330,32 @@ func setJSONAttr(span trace.Span, key string, value any) error {
 	}
 	span.SetAttributes(attr.String(key, string(b)))
 	return nil
+}
+
+func recordSpanError(span trace.Span, err error) {
+	// hardcode the error type when we know what it is. there may be better ways to do this
+	// but by default otel would show *fmt.wrapErrors as the type, which isn't super nice to
+	// look at. this function balances us returning errors which work with errors.Is() and
+	// showing the actual error type in the braintrust ui.
+	var errType string
+	switch {
+	case errors.Is(err, ErrScorer):
+		errType = "ErrScorer"
+	case errors.Is(err, ErrTaskRun):
+		errType = "ErrTaskRun"
+	case errors.Is(err, ErrCaseIterator):
+		errType = "ErrCaseIterator"
+	case errors.Is(err, ErrEval):
+		errType = "ErrEval"
+	default:
+		errType = fmt.Sprintf("%T", err)
+	}
+
+	span.AddEvent("exception", trace.WithAttributes(
+		attr.String("exception.type", errType),
+		attr.String("exception.message", err.Error()),
+	))
+	span.SetStatus(codes.Error, err.Error())
 }
 
 // Cases is an iterator of test cases that are evaluated by [Eval]. Implementations must return
