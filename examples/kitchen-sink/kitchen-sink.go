@@ -100,7 +100,7 @@ func runMathEval() {
 			ProjectName:    "Go Kitchen Sink Examples",
 			ExperimentName: "Math Evaluation - Basic Functionality",
 		},
-		cases, mathTask, scorers)
+		eval.NewCases(cases), mathTask, scorers)
 	if err != nil {
 		log.Fatalf("❌ Failed to create math evaluation: %v", err)
 	}
@@ -227,7 +227,7 @@ func runTextProcessingEval(client openai.Client) {
 			ProjectName:    "Go Kitchen Sink Examples",
 			ExperimentName: "Text Processing - OpenAI Integration",
 		},
-		cases, sentimentTask, scorers)
+		eval.NewCases(cases), sentimentTask, scorers)
 	if err != nil {
 		log.Fatalf("❌ Failed to create text evaluation: %v", err)
 	}
@@ -388,7 +388,7 @@ func runMixedScenarioEval(client openai.Client) {
 			ProjectName:    "Go Kitchen Sink Examples",
 			ExperimentName: "Mixed Scenarios - Complex Interactions",
 		},
-		cases, questionAnswerTask, scorers)
+		eval.NewCases(cases), questionAnswerTask, scorers)
 	if err != nil {
 		log.Fatalf("❌ Failed to create mixed scenario evaluation: %v", err)
 	}

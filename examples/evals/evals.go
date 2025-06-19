@@ -48,12 +48,12 @@ func main() {
 			ProjectName:    "go-eval-project",
 			ExperimentName: "go-eval-x",
 		},
-		[]eval.Case[string, string]{
+		eval.NewCases([]eval.Case[string, string]{
 			{Input: "strawberry", Expected: "fruit"},
 			{Input: "asparagus", Expected: "vegetable"},
 			{Input: "apple", Expected: "fruit"},
 			{Input: "banana", Expected: "fruit"},
-		},
+		}),
 		getFoodType,
 		[]eval.Scorer[string, string]{
 			eval.NewScorer("fruit_scorer", func(_ context.Context, _, _, result string) (float64, error) {

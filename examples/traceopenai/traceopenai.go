@@ -10,6 +10,7 @@ import (
 	"github.com/openai/openai-go/option"
 	"github.com/openai/openai-go/responses"
 
+	"github.com/braintrust/braintrust-x-go/braintrust"
 	"github.com/braintrust/braintrust-x-go/braintrust/api"
 	"github.com/braintrust/braintrust-x-go/braintrust/trace"
 	"github.com/braintrust/braintrust-x-go/braintrust/trace/traceopenai"
@@ -278,8 +279,16 @@ func main() {
 	fmt.Println("🧠 Braintrust OpenAI Tracing Examples")
 	fmt.Println("=====================================")
 
-	// Initialize braintrust tracing
-	teardown, err := trace.Quickstart()
+	// initialize braintrust tracing with a specific project
+	projectName := "traceopenai-example-remi-test-2"
+	project, err := api.RegisterProject(projectName)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	opt := braintrust.WithDefaultProjectID(project.ID)
+
+	teardown, err := trace.Quickstart(opt)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -292,12 +301,7 @@ func main() {
 
 	ctx := context.Background()
 
-	// Register project and experiment via API
-	project, err := api.RegisterProject("bt-go")
-	if err != nil {
-		log.Fatal(err)
-	}
-
+	// Register experiment
 	experiment, err := api.RegisterExperiment("openai-examples", project.ID)
 	if err != nil {
 		log.Fatal(err)

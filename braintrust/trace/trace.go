@@ -35,7 +35,6 @@ package trace
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 
 	"go.opentelemetry.io/otel"
@@ -52,14 +51,21 @@ import (
 // Quickstart configures OpenTelemetry tracing for Braintrust and provides
 // an easy way of getting up and running if you are new to OpenTelemetry. It
 // returns a teardown function that should be called before your program exits.
-func Quickstart() (teardown func(), err error) {
+//
+// Example:
+//
+//	// Use default project
+//	teardown, err := trace.Quickstart()
+//
+//	// Use specific project
+//	teardown, err := trace.Quickstart(trace.WithDefaultProjectID("my-project"))
+func Quickstart(opts ...braintrust.Option) (teardown func(), err error) {
 
-	diag.Debugf("Initializing OpenTelemetry tracer with experiment_id: %s", os.Getenv("BRAINTRUST_EXPERIMENT_ID"))
-
-	config := braintrust.GetConfig()
+	config := braintrust.GetConfig(opts...)
 	url := config.APIURL
 	apiKey := config.APIKey
-	parentHeader := config.Parent
+
+	diag.Debugf("Initializing OpenTelemetry tracer with config: %s", config.String())
 
 	// split url and protocol
 	parts := strings.Split(url, "://")
@@ -69,51 +75,59 @@ func Quickstart() (teardown func(), err error) {
 	protocol := parts[0]
 	url = parts[1]
 
-	opts := []otlptracehttp.Option{
+	otelOpts := []otlptracehttp.Option{
 		otlptracehttp.WithEndpoint(url),
 		otlptracehttp.WithURLPath("/otel/v1/traces"),
 	}
-	if protocol == "http" {
-		opts = append(opts, otlptracehttp.WithInsecure())
-	}
 
+	// FIXME[remi]: Remove once parent can be retrieved in the backend from the spans
+	parentHeader := "project_id:" + config.DefaultProjectID
 	if parentHeader != "" {
-		opts = append(opts, otlptracehttp.WithHeaders(map[string]string{
+		otelOpts = append(otelOpts, otlptracehttp.WithHeaders(map[string]string{
 			"x-bt-parent":   parentHeader,
 			"Authorization": "Bearer " + apiKey,
 		}))
 	} else {
-		opts = append(opts, otlptracehttp.WithHeaders(map[string]string{
+		otelOpts = append(otelOpts, otlptracehttp.WithHeaders(map[string]string{
 			"Authorization": "Bearer " + apiKey,
 		}))
+	}
+
+	if protocol == "http" {
+		otelOpts = append(otelOpts, otlptracehttp.WithInsecure())
 	}
 
 	// Create Braintrust OTLP exporter
 	exporter, err := otlptrace.New(
 		context.Background(),
-		otlptracehttp.NewClient(opts...),
+		otlptracehttp.NewClient(otelOpts...),
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	// FIXME[matt] this should be a parameter
-	defaultParent := NewExperiment("MATT_FAKE_EXPERIMENT_ID")
-
-	// Create tracer provider options
+	// Configure options
 	tracerOpts := []trace.TracerProviderOption{
-		trace.WithSpanProcessor(NewSpanProcessor(defaultParent)),
 		trace.WithBatcher(exporter),
 	}
 
-	// Add console debug exporter if BRAINTRUST_TRACE_DEBUG_LOG is set
-	if config.TraceDebugLog {
+	if config.DefaultProjectID == "" {
+		diag.Warnf("No default project ID set. Untagged spans will be dropped")
+	} else {
+		parent := NewProject(config.DefaultProjectID)
+		tracerOpts = append(tracerOpts, trace.WithSpanProcessor(NewSpanProcessor(parent)))
+	}
+
+	// Add console debug exporter if BRAINTRUST_ENABLE_TRACE_DEBUG_LOG is set
+	if config.EnableTraceDebugLog {
 		consoleExporter, err := stdouttrace.New(stdouttrace.WithPrettyPrint())
 		if err != nil {
-			return nil, fmt.Errorf("failed to create console exporter: %w", err)
+			diag.Warnf("failed to create console exporter: %v", err)
+		} else {
+			tracerOpts = append(tracerOpts, trace.WithBatcher(consoleExporter))
+			diag.Debugf("OTEL console debug enabled")
 		}
-		tracerOpts = append(tracerOpts, trace.WithBatcher(consoleExporter))
-		diag.Debugf("OTEL console debug enabled")
+
 	}
 
 	// Create a tracer provider with all exporters
@@ -194,6 +208,12 @@ var _ Parent = Project{}
 // Experiment is a parent that represents an experiment.
 type Experiment struct {
 	ID string
+}
+
+// NewProject creates a new project parent with the given ID.
+// The resulting parent will be formatted as "project_id:{id}".
+func NewProject(id string) Project {
+	return Project{id: id}
 }
 
 // NewExperiment creates a new experiment parent with the given ID.

@@ -342,7 +342,7 @@ Respond with only a number 0-10.`,
 			ProjectName:    "Email Marketing Optimization",
 			ExperimentName: "Subject Line A/B Testing v1",
 		},
-		testCases, generateSubjectLine, scorers)
+		eval.NewCases(testCases), generateSubjectLine, scorers)
 
 	if err != nil {
 		log.Fatalf("❌ Failed to create evaluation: %v", err)
