@@ -277,7 +277,7 @@ func TestEval_ScorerErrors(t *testing.T) {
 		"spanKind": "internal",
 		"status": {
 			"code": "Error",
-			"description": "scorer error: scorer error: scorer \"failing_scorer\" failed: scorer failed for input 2"
+			"description": "scorer error: scorer \"failing_scorer\" failed: scorer failed for input 2"
 		}
 	}`, spans[5].Snapshot())
 }

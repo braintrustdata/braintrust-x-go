@@ -94,6 +94,9 @@ import (
 )
 
 var (
+	// ErrEval is a generic error returned when an eval fails to execute.
+	ErrEval = errors.New("eval error")
+
 	// ErrScorer is returned when a scorer fails to execute.
 	ErrScorer = errors.New("scorer error")
 
@@ -134,6 +137,10 @@ func New[I, R any](experimentID string, cases Cases[I, R], task Task[I, R], scor
 
 // Run runs the eval.
 func (e *Eval[I, R]) Run() error {
+	if e.experimentID == "" {
+		return fmt.Errorf("%w: experiment ID is required", ErrEval)
+	}
+
 	parent := bttrace.NewExperiment(e.experimentID)
 	ctx := bttrace.SetParent(context.Background(), parent)
 
@@ -167,7 +174,7 @@ func (e *Eval[I, R]) runNextCase(ctx context.Context) (done bool, err error) {
 	// if our case iterator returns an error, we'll wrap it in a more
 	// specific error and short circuit.
 	if err != nil {
-		werr := fmt.Errorf("%w: %w", ErrCaseIterator, err)
+		werr := fmt.Errorf("%s: %w", ErrCaseIterator, err)
 		span.SetStatus(codes.Error, werr.Error())
 		span.RecordError(werr)
 		return done, werr
@@ -229,11 +236,7 @@ func (e *Eval[I, R]) runScorers(ctx context.Context, c Case[I, R], result R) ([]
 		return nil, err
 	}
 
-	err := errors.Join(errs...)
-	if err != nil {
-		return scores, fmt.Errorf("%w: %w", ErrScorer, err)
-	}
-
+	err := errors.Join(errs...) // will be nil if there are no errors
 	return scores, err
 }
 

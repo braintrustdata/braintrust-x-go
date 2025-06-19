@@ -9,6 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Run a single test: `go test -v -run=TestName ./path/to/package`
 - Run tests with race detector: `go test -race ./...`
 - Always run `make ci` to verify your changes
+- Run `make fmt` to format code
 
 ## Code Style Guidelines
 

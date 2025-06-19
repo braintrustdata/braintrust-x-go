@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"math"
 	"strings"
@@ -15,6 +16,8 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 
+	"github.com/braintrust/braintrust-x-go/braintrust"
+	"github.com/braintrust/braintrust-x-go/braintrust/api"
 	"github.com/braintrust/braintrust-x-go/braintrust/autoevals"
 	"github.com/braintrust/braintrust-x-go/braintrust/eval"
 	"github.com/braintrust/braintrust-x-go/braintrust/trace"
@@ -32,8 +35,14 @@ func main() {
 		option.WithMiddleware(traceopenai.Middleware),
 	)
 
-	// Start distributed tracing
-	teardown, err := trace.Quickstart()
+	// Get or create the project first to set as default
+	project, err := api.RegisterProject("Go Kitchen Sink Examples")
+	if err != nil {
+		log.Fatalf("❌ Error registering project: %v", err)
+	}
+
+	// Start distributed tracing with default project ID
+	teardown, err := trace.Quickstart(braintrust.WithDefaultProjectID(project.ID))
 	if err != nil {
 		log.Fatalf("❌ Error starting trace: %v", err)
 	}
@@ -43,6 +52,7 @@ func main() {
 	runMathEval()
 	runTextProcessingEval(client)
 	runMixedScenarioEval(client)
+	runIteratorErrorEval()
 
 	log.Println("✅ Kitchen Sink Example completed successfully!")
 }
@@ -391,6 +401,84 @@ func runMixedScenarioEval(client openai.Client) {
 	} else {
 		log.Println("✅ Mixed scenario evaluation completed successfully")
 	}
+}
+
+// runIteratorErrorEval demonstrates iterator failure scenarios
+func runIteratorErrorEval() {
+	log.Println("\n🔄 Running Iterator Error Evaluation (Cases Iterator Failures)")
+	log.Println("--------------------------------------------------------------")
+
+	// Simple task that just returns the input
+	simpleTask := func(_ context.Context, input string) (string, error) {
+		return input, nil
+	}
+
+	// Single simple scorer
+	scorers := []eval.Scorer[string, string]{
+		autoevals.NewEquals[string, string](),
+	}
+
+	// Create iterator that will throw errors during iteration
+	errorIterator := newErrorCasesIterator()
+
+	experimentID, err := eval.ResolveProjectExperimentID("Iterator Errors - Cases Iterator Failures", "Go Kitchen Sink Examples")
+	if err != nil {
+		log.Fatalf("❌ Failed to resolve experiment: %v", err)
+	}
+
+	evaluation := eval.New(experimentID, errorIterator, simpleTask, scorers)
+
+	err = evaluation.Run()
+	if err != nil {
+		log.Printf("⚠️  Iterator error evaluation completed with errors (expected): %v", err)
+		log.Println("   📊 Check the Braintrust dashboard to see how iterator errors are recorded in spans")
+	} else {
+		log.Println("✅ Iterator error evaluation completed (no iterator errors occurred)")
+	}
+}
+
+// errorCasesIterator implements eval.Cases[string, string] but throws errors during iteration
+type errorCasesIterator struct {
+	sequence []iteratorStep
+	index    int
+}
+
+type iteratorStep struct {
+	c   *eval.Case[string, string]
+	err error
+}
+
+func newErrorCasesIterator() *errorCasesIterator {
+	return &errorCasesIterator{
+		sequence: []iteratorStep{
+			// Start with a successful case
+			{c: &eval.Case[string, string]{Input: "hello", Expected: "hello"}},
+
+			// Iterator error
+			{err: errors.New("iterator error: database connection lost")},
+
+			// Another successful case after error
+			{c: &eval.Case[string, string]{Input: "world", Expected: "world"}},
+		},
+		index: 0,
+	}
+}
+
+func (e *errorCasesIterator) Next() (eval.Case[string, string], error) {
+	if e.index >= len(e.sequence) {
+		return eval.Case[string, string]{}, io.EOF
+	}
+
+	step := e.sequence[e.index]
+	e.index++
+
+	if step.err != nil {
+		// Return the error - this simulates the iterator failing
+		return eval.Case[string, string]{}, step.err
+	}
+
+	// Return the successful case
+	return *step.c, nil
 }
 
 // Helper function

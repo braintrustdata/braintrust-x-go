@@ -23,12 +23,12 @@ type Experiment struct {
 	ProjectID string `json:"project_id"`
 }
 
-// RegisterExperiment creates a new experiment via the Braintrust API
+// RegisterExperiment creates a new experiment via the Braintrust API.
 func RegisterExperiment(name string, projectID string) (*Experiment, error) {
 	req := ExperimentRequest{
 		ProjectID: projectID,
 		Name:      name,
-		EnsureNew: false,
+		EnsureNew: true, // Always create new experiments
 	}
 
 	jsonData, err := json.Marshal(req)
@@ -52,7 +52,7 @@ func RegisterExperiment(name string, projectID string) (*Experiment, error) {
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
