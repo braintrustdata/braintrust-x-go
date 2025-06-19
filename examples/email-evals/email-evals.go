@@ -337,16 +337,12 @@ Respond with only a number 0-10.`,
 		}),
 	}
 
-	evaluation, err := eval.NewWithOpts(
-		eval.Options{
-			ProjectName:    "Email Marketing Optimization",
-			ExperimentName: "Subject Line A/B Testing v1",
-		},
-		eval.NewCases(testCases), generateSubjectLine, scorers)
-
+	experimentID, err := eval.ResolveProjectExperimentID("Subject Line A/B Testing v1", "Email Marketing Optimization")
 	if err != nil {
-		log.Fatalf("❌ Failed to create evaluation: %v", err)
+		log.Fatalf("❌ Failed to resolve experiment: %v", err)
 	}
+
+	evaluation := eval.New(experimentID, eval.NewCases(testCases), generateSubjectLine, scorers)
 
 	log.Println("🚀 Running email subject line evaluation...")
 	err = evaluation.Run()

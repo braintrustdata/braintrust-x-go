@@ -39,14 +39,15 @@
 //	}
 //
 //	// Create an evaluation
-//	evaluation, err := eval.NewWithOpts(
-//		eval.Options{
-//			ProjectName:    "my-project",
-//			ExperimentName: "my-experiment",
-//		},
-//		[]eval.Case[string, string]{
+//	experimentID, err := eval.ResolveProjectExperimentID("my-experiment", "my-project")
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+//
+//	evaluation := eval.New(experimentID,
+//		eval.NewCases([]eval.Case[string, string]{
 //			{Input: "Hello", Expected: "greeting"},
-//		},
+//		}),
 //		myTask,
 //		[]eval.Scorer[string, string]{
 //			eval.NewScorer("accuracy", myScorer),

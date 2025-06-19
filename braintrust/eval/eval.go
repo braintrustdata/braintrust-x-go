@@ -4,9 +4,20 @@
 // updates improve or regress application quality.
 //
 // An evaluation consists of three main components:
-//   - Data: A set of test examples with inputs and expected outputs
-//   - Task: An AI function that takes an input and returns an output
-//   - Scores: Scoring functions that compute performance metrics
+//   - [Cases]: A set of test examples with inputs and expected outputs
+//   - [Task]: The unit of work we are evaluating, usually one or more calls to an LLM
+//   - [Scorer]: A function that scores the result of a task against the expected result
+//
+// # Type Parameters
+//
+// This package uses two generic type parameters throughout its API:
+//   - I: The input type for the task (e.g., string, struct, []byte)
+//   - R: The result/output type from the task (e.g., string, struct, complex types)
+//
+// For example:
+//   - eval.Case[string, string] represents a test case with string input and string output
+//   - eval.Task[MyInput, MyOutput] represents a task that takes MyInput and returns MyOutput
+//   - eval.Cases[string, bool] represents an iterator over cases with string inputs and boolean outputs
 //
 // Example usage:
 //
@@ -39,24 +50,22 @@
 //	}
 //
 //	// Create and run the evaluation
-//	evaluation, err := eval.NewWithOpts(
-//		eval.Options{
-//			ProjectName:    "my-ai-project",
-//			ExperimentName: "greeting-experiment-v1",
-//		},
-//		[]eval.Case[string, string]{
+//	experimentID, err := eval.ResolveProjectExperimentID("greeting-experiment-v1", "my-ai-project")
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+//
+//	evaluation := eval.New(experimentID,
+//		eval.NewCases([]eval.Case[string, string]{
 //			{Input: "World", Expected: "Hello World"},
 //			{Input: "Alice", Expected: "Hello Alice"},
 //			{Input: "Bob", Expected: "Hello Bob"},
-//		},
+//		}),
 //		greetingTask,
 //		[]eval.Scorer[string, string]{
 //			eval.NewScorer("exact_match", exactMatch),
 //		},
 //	)
-//	if err != nil {
-//		log.Fatal(err)
-//	}
 //
 //	summary, err := evaluation.Run(context.Background())
 //	if err != nil {
@@ -97,70 +106,30 @@ var (
 	scoreSpanAttrs = map[string]any{"type": "score"}
 )
 
-// Options holds configuration for creating an eval
-type Options struct {
-	ProjectName    string
-	ProjectID      string
-	ExperimentName string
-}
-
-// NewWithOpts creates a new eval using options to resolve project and experiment.
-// It can handle:
-// - ProjectName + ExperimentName: creates/gets project, then creates/gets experiment
-// - ProjectID + ExperimentName: uses existing project, creates/gets experiment
-func NewWithOpts[I, R any](opts Options, cases Dataset[I, R], task Task[I, R], scorers []Scorer[I, R]) (*Eval[I, R], error) {
-	var projectID string
-	var err error
-
-	// Resolve project ID
-	if opts.ProjectID != "" {
-		projectID = opts.ProjectID
-	} else if opts.ProjectName != "" {
-		project, err := api.RegisterProject(opts.ProjectName)
-		if err != nil {
-			return nil, fmt.Errorf("failed to register project %q: %w", opts.ProjectName, err)
-		}
-		projectID = project.ID
-	} else {
-		return nil, fmt.Errorf("must provide either ProjectName or ProjectID")
-	}
-
-	// Resolve experiment ID
-	if opts.ExperimentName == "" {
-		return nil, fmt.Errorf("ExperimentName is required")
-	}
-
-	experiment, err := api.RegisterExperiment(opts.ExperimentName, projectID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to register experiment %q: %w", opts.ExperimentName, err)
-	}
-
-	return New(experiment.ID, cases, task, scorers), nil
-}
-
-// Eval is a collection of cases, a task, and a set of scorers.
+// Eval is a collection of cases, a task, and a set of scorers. It has two generic types;
+// I is the input type, and R is the result type.
 type Eval[I, R any] struct {
-	id      string
-	cases   Dataset[I, R]
-	task    Task[I, R]
-	scorers []Scorer[I, R]
-	tracer  trace.Tracer
+	experimentID string
+	cases        Cases[I, R]
+	task         Task[I, R]
+	scorers      []Scorer[I, R]
+	tracer       trace.Tracer
 }
 
 // New creates a new eval.
-func New[I, R any](id string, cases Dataset[I, R], task Task[I, R], scorers []Scorer[I, R]) *Eval[I, R] {
+func New[I, R any](experimentID string, cases Cases[I, R], task Task[I, R], scorers []Scorer[I, R]) *Eval[I, R] {
 	return &Eval[I, R]{
-		id:      id,
-		cases:   cases,
-		task:    task,
-		scorers: scorers,
-		tracer:  otel.GetTracerProvider().Tracer("braintrust.eval"),
+		experimentID: experimentID,
+		cases:        cases,
+		task:         task,
+		scorers:      scorers,
+		tracer:       otel.GetTracerProvider().Tracer("braintrust.eval"),
 	}
 }
 
 // Run runs the eval.
 func (e *Eval[I, R]) Run() error {
-	parent := bttrace.NewExperiment(e.id)
+	parent := bttrace.NewExperiment(e.experimentID)
 	ctx := bttrace.SetParent(context.Background(), parent)
 
 	var errs []error
@@ -229,6 +198,7 @@ func (e *Eval[I, R]) runScorers(ctx context.Context, c Case[I, R], result R) ([]
 			errs = append(errs, werr)
 			continue
 		}
+		// FIXME: validate score is between 0 and 1
 
 		scores[i] = Score{Name: scorer.Name(), Score: val}
 		meta[scorer.Name()] = val
@@ -291,7 +261,8 @@ type Score struct {
 	Score float64 `json:"score"`
 }
 
-// ScoreFunc is a function that scores the result of a task against the expected result.
+// ScoreFunc is a function that scores the result of a task against the expected result. The returned
+// score must be between 0 and 1.
 type ScoreFunc[I, R any] func(ctx context.Context, input I, expected, result R) (float64, error)
 
 // Scorer evaluates the quality of results against expected values.
@@ -339,29 +310,30 @@ func setJSONAttr(span trace.Span, key string, value any) error {
 	return nil
 }
 
-// Dataset is an interface that provides a way to iterate over a set of evaluation cases.
-type Dataset[I, R any] interface {
-
+// Cases is an iterator of test cases that are evaluated by [Eval]. Implementations must return
+// io.EOF when iteration is complete.
+//
+// See [QueryDataset] to download datasets or [NewCases] to easily wrap slices of cases.
+type Cases[I, R any] interface {
 	// Next must return the next case in the dataset, or io.EOF if there are no more cases.
+	// The returned case must be a valid input for the task.
 	Next() (Case[I, R], error)
 }
 
-// Cases is an implementation of the Dataset interface for a static slice of cases.
-type Cases[I, R any] struct {
-	cases []Case[I, R]
-	index int
-}
-
-// NewCases creates a new Cases from a slice of cases.
-func NewCases[I, R any](cases []Case[I, R]) *Cases[I, R] {
-	return &Cases[I, R]{
+// NewCases creates a Cases iterator from a slice of cases.
+func NewCases[I, R any](cases []Case[I, R]) Cases[I, R] {
+	return &casesImpl[I, R]{
 		cases: cases,
 		index: 0,
 	}
 }
 
-// Next returns the next case in the slice, or io.EOF if there are no more cases.
-func (s *Cases[I, R]) Next() (Case[I, R], error) {
+type casesImpl[I, R any] struct {
+	cases []Case[I, R]
+	index int
+}
+
+func (s *casesImpl[I, R]) Next() (Case[I, R], error) {
 	if s.index >= len(s.cases) {
 		var zero Case[I, R]
 		return zero, io.EOF
@@ -371,21 +343,49 @@ func (s *Cases[I, R]) Next() (Case[I, R], error) {
 	return testCase, nil
 }
 
-// QueryDataset creates a Dataset that unmarshals Input and Expected into separate types
-func QueryDataset[InputType, ExpectedType any](datasetID string) Dataset[InputType, ExpectedType] {
+// ResolveExperimentID resolves an experiment ID from a name and project ID.
+func ResolveExperimentID(name string, projectID string) (string, error) {
+	if name == "" {
+		return "", fmt.Errorf("experiment name is required")
+	}
+	if projectID == "" {
+		return "", fmt.Errorf("project ID is required")
+	}
+	experiment, err := api.RegisterExperiment(name, projectID)
+	if err != nil {
+		return "", fmt.Errorf("failed to register experiment %q in project %q: %w", name, projectID, err)
+	}
+	return experiment.ID, nil
+}
+
+// ResolveProjectExperimentID resolves an experiment ID from a name and project name.
+func ResolveProjectExperimentID(name string, projectName string) (string, error) {
+	if name == "" {
+		return "", fmt.Errorf("experiment name is required")
+	}
+	if projectName == "" {
+		return "", fmt.Errorf("project name is required")
+	}
+	project, err := api.RegisterProject(projectName)
+	if err != nil {
+		return "", fmt.Errorf("failed to register project %q: %w", projectName, err)
+	}
+	return ResolveExperimentID(name, project.ID)
+}
+
+// QueryDataset queries a dataset from the Braintrust server and returns a Cases iterator that unmarshals
+// the dataset JSON into the given input and expected types.
+func QueryDataset[InputType, ExpectedType any](datasetID string) Cases[InputType, ExpectedType] {
 	return &typedDatasetIterator[InputType, ExpectedType]{
 		dataset: api.NewDataset(datasetID),
 	}
 }
 
-// typedDatasetIterator implements Dataset for separate Input/Expected types
 type typedDatasetIterator[InputType, ExpectedType any] struct {
 	dataset *api.Dataset
 }
 
-// Next returns the next case, unmarshaling Input and Expected into separate types
 func (s *typedDatasetIterator[InputType, ExpectedType]) Next() (Case[InputType, ExpectedType], error) {
-	// First, unmarshal the full event to get access to Input and Expected fields
 	var fullEvent struct {
 		Input    InputType    `json:"input"`
 		Expected ExpectedType `json:"expected"`

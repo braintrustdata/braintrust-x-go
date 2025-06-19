@@ -28,7 +28,7 @@ func RegisterExperiment(name string, projectID string) (*Experiment, error) {
 	req := ExperimentRequest{
 		ProjectID: projectID,
 		Name:      name,
-		EnsureNew: true,
+		EnsureNew: false,
 	}
 
 	jsonData, err := json.Marshal(req)

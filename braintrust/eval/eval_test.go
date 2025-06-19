@@ -492,3 +492,27 @@ func TestEvalWithCustomGenerator(t *testing.T) {
 	spans := exporter.Flush()
 	require.Equal(6, len(spans)) // 2 cases * 3 spans each
 }
+
+func TestResolveExperimentID_Validation(t *testing.T) {
+	// Test empty experiment name
+	_, err := ResolveExperimentID("", "test-project")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "experiment name is required")
+
+	// Test empty project ID
+	_, err = ResolveExperimentID("test-exp", "")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "project ID is required")
+}
+
+func TestResolveProjectExperimentID_Validation(t *testing.T) {
+	// Test empty experiment name
+	_, err := ResolveProjectExperimentID("", "test-project")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "experiment name is required")
+
+	// Test empty project name
+	_, err = ResolveProjectExperimentID("test-exp", "")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "project name is required")
+}
