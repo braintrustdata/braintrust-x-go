@@ -14,9 +14,9 @@ linters:
 
   enable:
     - bodyclose
+    - forcetypeassert
     - usetesting      # nice-to-have not critical
     - thelper         # nice-to-have not critical
-    - forcetypeassert # nice to have not critical
     - revive          # critical for ensuring public functions/packages have docs.
 
 
