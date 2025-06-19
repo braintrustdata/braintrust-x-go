@@ -14,6 +14,8 @@
 //   - I: The input type for the task (e.g., string, struct, []byte)
 //   - R: The result/output type from the task (e.g., string, struct, complex types)
 //
+// All of the input and result types must be JSON-encodable.
+//
 // For example:
 //   - eval.Case[string, string] represents a test case with string input and string output
 //   - eval.Task[MyInput, MyOutput] represents a task that takes MyInput and returns MyOutput
@@ -97,6 +99,9 @@ var (
 
 	// ErrTaskRun is returned when a task fails to execute.
 	ErrTaskRun = errors.New("task run error")
+
+	// ErrCaseIterator is returned when a case iterator fails to execute.
+	ErrCaseIterator = errors.New("case iterator error")
 )
 
 var (
@@ -134,16 +139,10 @@ func (e *Eval[I, R]) Run() error {
 
 	var errs []error
 	for {
-		c, err := e.cases.Next()
-		if err == io.EOF {
+		done, err := e.runNextCase(ctx)
+		if done {
 			break
 		}
-		if err != nil {
-			errs = append(errs, err)
-			continue
-		}
-
-		err = e.runCase(ctx, c)
 		if err != nil {
 			errs = append(errs, err)
 		}
@@ -152,10 +151,33 @@ func (e *Eval[I, R]) Run() error {
 	return errors.Join(errs...)
 }
 
-func (e *Eval[I, R]) runCase(ctx context.Context, c Case[I, R]) error {
+// runNextCase runs the next case in the iterator. It returns true if the iterator is
+// exhausted and false otherwise, and any error that occurred while running the case.
+func (e *Eval[I, R]) runNextCase(ctx context.Context) (done bool, err error) {
+	c, err := e.cases.Next()
+	done = err == io.EOF
+	if done {
+		return done, nil
+	}
+
+	// if we have a case or get an error, we'll create a span.
 	ctx, span := e.tracer.Start(ctx, "eval")
 	defer span.End()
 
+	// if our case iterator returns an error, we'll wrap it in a more
+	// specific error and short circuit.
+	if err != nil {
+		werr := fmt.Errorf("%w: %w", ErrCaseIterator, err)
+		span.SetStatus(codes.Error, werr.Error())
+		span.RecordError(werr)
+		return done, werr
+	}
+
+	// otherwise let's run the case (using the existing span)
+	return done, e.runCase(ctx, span, c)
+}
+
+func (e *Eval[I, R]) runCase(ctx context.Context, span trace.Span, c Case[I, R]) error {
 	result, err := e.runTask(ctx, c)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
@@ -198,7 +220,6 @@ func (e *Eval[I, R]) runScorers(ctx context.Context, c Case[I, R], result R) ([]
 			errs = append(errs, werr)
 			continue
 		}
-		// FIXME: validate score is between 0 and 1
 
 		scores[i] = Score{Name: scorer.Name(), Score: val}
 		meta[scorer.Name()] = val
