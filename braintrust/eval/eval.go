@@ -138,7 +138,13 @@ func New[I, R any](experimentID string, cases Cases[I, R], task Task[I, R], scor
 // Run runs the eval.
 func (e *Eval[I, R]) Run() error {
 	if e.experimentID == "" {
-		return fmt.Errorf("%w: experiment ID is required", ErrEval)
+		// Create a span to record the validation error
+		ctx, span := e.tracer.Start(context.Background(), "eval")
+		defer span.End()
+
+		err := fmt.Errorf("%w: experiment ID is required", ErrEval)
+		recordSpanError(span, err)
+		return err
 	}
 
 	parent := bttrace.NewExperiment(e.experimentID)
@@ -174,9 +180,8 @@ func (e *Eval[I, R]) runNextCase(ctx context.Context) (done bool, err error) {
 	// if our case iterator returns an error, we'll wrap it in a more
 	// specific error and short circuit.
 	if err != nil {
-		werr := fmt.Errorf("%s: %w", ErrCaseIterator, err)
-		span.SetStatus(codes.Error, werr.Error())
-		span.RecordError(werr)
+		werr := fmt.Errorf("%w: %w", ErrCaseIterator, err)
+		recordSpanError(span, werr)
 		return done, werr
 	}
 
@@ -223,7 +228,7 @@ func (e *Eval[I, R]) runScorers(ctx context.Context, c Case[I, R], result R) ([]
 		val, err := scorer.Run(ctx, c.Input, c.Expected, result)
 		if err != nil {
 			werr := fmt.Errorf("%w: scorer %q failed: %w", ErrScorer, scorer.Name(), err)
-			span.RecordError(werr)
+			recordSpanError(span, werr)
 			errs = append(errs, werr)
 			continue
 		}
@@ -247,8 +252,7 @@ func (e *Eval[I, R]) runTask(ctx context.Context, c Case[I, R]) (R, error) {
 	result, err := e.task(ctx, c.Input)
 	if err != nil {
 		taskErr := fmt.Errorf("%w: %w", ErrTaskRun, err)
-		span.RecordError(taskErr)
-		span.SetStatus(codes.Error, taskErr.Error())
+		recordSpanError(span, taskErr)
 		return result, taskErr
 	}
 
@@ -332,6 +336,32 @@ func setJSONAttr(span trace.Span, key string, value any) error {
 	}
 	span.SetAttributes(attr.String(key, string(b)))
 	return nil
+}
+
+func recordSpanError(span trace.Span, err error) {
+	// hardcode the error type when we know what it is. there may be better ways to do this
+	// but by default otel would show *fmt.wrapErrors as the type, which isn't super nice to
+	// look at. this function balances us returning errors which work with errors.Is() and
+	// showing the actual error type in the braintrust ui.
+	var errType string
+	switch {
+	case errors.Is(err, ErrScorer):
+		errType = "ErrScorer"
+	case errors.Is(err, ErrTaskRun):
+		errType = "ErrTaskRun"
+	case errors.Is(err, ErrCaseIterator):
+		errType = "ErrCaseIterator"
+	case errors.Is(err, ErrEval):
+		errType = "ErrEval"
+	default:
+		errType = fmt.Sprintf("%T", err)
+	}
+
+	span.AddEvent("exception", trace.WithAttributes(
+		attr.String("exception.type", errType),
+		attr.String("exception.message", err.Error()),
+	))
+	span.SetStatus(codes.Error, err.Error())
 }
 
 // Cases is an iterator of test cases that are evaluated by [Eval]. Implementations must return

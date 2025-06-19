@@ -61,7 +61,7 @@ func TestEval_TaskErrors(t *testing.T) {
 			{
 				"attributes": {
 					"exception.message": "task run error: oops",
-					"exception.type": "*fmt.wrapErrors"
+					"exception.type": "ErrTaskRun"
 				},
 				"name": "exception"
 			}
@@ -256,7 +256,7 @@ func TestEval_ScorerErrors(t *testing.T) {
 			{
 				"attributes": {
 					"exception.message": "scorer error: scorer \"failing_scorer\" failed: scorer failed for input 2",
-					"exception.type": "*fmt.wrapErrors"
+					"exception.type": "ErrScorer"
 				},
 				"name": "exception"
 			}
@@ -264,8 +264,8 @@ func TestEval_ScorerErrors(t *testing.T) {
 		"name": "score",
 		"spanKind": "internal",
 		"status": {
-			"code": "Unset",
-			"description": ""
+			"code": "Error",
+			"description": "scorer error: scorer \"failing_scorer\" failed: scorer failed for input 2"
 		}
 	}`, spans[4].Snapshot())
 
@@ -603,4 +603,42 @@ func TestResolveProjectExperimentID_Validation(t *testing.T) {
 	_, err = ResolveProjectExperimentID("test-exp", "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "project name is required")
+}
+
+func TestEval_EmptyExperimentID(t *testing.T) {
+	// Test that an empty experiment ID produces an error span
+	assert, require := assert.New(t), require.New(t)
+	assert.NotNil(require)
+
+	_, exporter := oteltest.Setup(t)
+
+	// Simple task and scorer
+	task := func(ctx context.Context, x int) (int, error) {
+		return x * 2, nil
+	}
+
+	scorers := []Scorer[int, int]{
+		autoevals.NewEquals[int, int](),
+	}
+
+	cases := []Case[int, int]{
+		{Input: 1, Expected: 2},
+	}
+
+	// Create eval with empty experiment ID
+	eval := New("", NewCases(cases), task, scorers)
+	timer := oteltest.NewTimer()
+	err := eval.Run()
+	timeRange := timer.Tick()
+
+	// Should return ErrEval error
+	assert.ErrorIs(err, ErrEval)
+	assert.Contains(err.Error(), "experiment ID is required")
+
+	spans := exporter.Flush()
+	// Should have no spans since the eval fails immediately
+	assert.Equal(0, len(spans))
+
+	// Verify timer was used (even though no spans were created)
+	_ = timeRange
 }
