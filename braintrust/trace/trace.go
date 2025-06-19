@@ -78,10 +78,21 @@ func Quickstart(opts ...braintrust.Option) (teardown func(), err error) {
 	otelOpts := []otlptracehttp.Option{
 		otlptracehttp.WithEndpoint(url),
 		otlptracehttp.WithURLPath("/otel/v1/traces"),
-		otlptracehttp.WithHeaders(map[string]string{
-			"Authorization": "Bearer " + apiKey,
-		}),
 	}
+
+	// FIXME[remi]: Remove once parent can be retrieved in the backend from the spans
+	parentHeader := "project_id:" + config.DefaultProjectID
+	if parentHeader != "" {
+		otelOpts = append(otelOpts, otlptracehttp.WithHeaders(map[string]string{
+			"x-bt-parent":   parentHeader,
+			"Authorization": "Bearer " + apiKey,
+		}))
+	} else {
+		otelOpts = append(otelOpts, otlptracehttp.WithHeaders(map[string]string{
+			"Authorization": "Bearer " + apiKey,
+		}))
+	}
+
 	if protocol == "http" {
 		otelOpts = append(otelOpts, otlptracehttp.WithInsecure())
 	}

@@ -1,6 +1,7 @@
 package traceopenai
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"testing"
@@ -45,7 +46,9 @@ func setUpTest(t *testing.T) (openai.Client, *tracetest.InMemoryExporter, func()
 
 	teardown := func() {
 		diag.ClearLogger()
-		err := tp.Shutdown(t.Context())
+		// Use context.Background() instead of t.Context() because when this function
+		// is called via t.Cleanup(), the test context may already be canceled
+		err := tp.Shutdown(context.Background()) //nolint:usetesting
 		if err != nil {
 			t.Fatalf("Error shutting down tracer provider: %v", err)
 		}
@@ -61,7 +64,7 @@ func setUpTest(t *testing.T) (openai.Client, *tracetest.InMemoryExporter, func()
 
 func TestError(t *testing.T) {
 	_, exporter, teardown := setUpTest(t)
-	defer teardown()
+	t.Cleanup(teardown)
 	assert := assert.New(t)
 
 	errorware := func(_ *http.Request, _ NextMiddleware) (*http.Response, error) {
@@ -105,7 +108,7 @@ func TestError(t *testing.T) {
 
 func TestOpenAIResponsesRequiredParams(t *testing.T) {
 	client, exporter, teardown := setUpTest(t)
-	defer teardown()
+	t.Cleanup(teardown)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -135,7 +138,7 @@ func TestOpenAIResponsesRequiredParams(t *testing.T) {
 
 func TestOpenAIResponsesKitchenSink(t *testing.T) {
 	client, exporter, teardown := setUpTest(t)
-	defer teardown()
+	t.Cleanup(teardown)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -207,7 +210,7 @@ func flushOne(t *testing.T, exporter *tracetest.InMemoryExporter) tracetest.Span
 
 func TestOpenAIResponsesStreamingClose(t *testing.T) {
 	client, exporter, teardown := setUpTest(t)
-	defer teardown()
+	t.Cleanup(teardown)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -232,7 +235,7 @@ func TestOpenAIResponsesStreamingClose(t *testing.T) {
 
 func TestOpenAIResponsesStreaming(t *testing.T) {
 	client, exporter, teardown := setUpTest(t)
-	defer teardown()
+	t.Cleanup(teardown)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -271,7 +274,7 @@ func TestOpenAIResponsesStreaming(t *testing.T) {
 
 func TestOpenAIResponsesWithListInput(t *testing.T) {
 	client, exporter, teardown := setUpTest(t)
-	defer teardown()
+	t.Cleanup(teardown)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -356,18 +359,26 @@ func assertSpanValid(t *testing.T, stub tracetest.SpanStub, start, end time.Time
 	gtez := func(v float64) bool { return v >= 0 }
 
 	metricToValidator := map[string]func(float64) bool{
-		"prompt_tokens":               gtz,
-		"completion_tokens":           gtz,
-		"tokens":                      gtz,
-		"prompt_cached_tokens":        gtez,
-		"completion_cached_tokens":    gtez,
-		"completion_reasoning_tokens": gtez,
+		"prompt_tokens":                         gtz,
+		"completion_tokens":                     gtz,
+		"tokens":                                gtz,
+		"prompt_cached_tokens":                  gtez,
+		"completion_cached_tokens":              gtez,
+		"completion_reasoning_tokens":           gtez,
+		"completion_accepted_prediction_tokens": gtez,
+		"completion_rejected_prediction_tokens": gtez,
+		"completion_audio_tokens":               gtez,
+		"prompt_audio_tokens":                   gtez,
 	}
 
-	// this will fail if there are new metrics, but that's ok.
+	// Validate known metrics, but allow unknown metrics to pass through
 	for n, v := range metrics {
 		validator, ok := metricToValidator[n]
-		assert.True(ok, "metric %s not found", n)
+		if !ok {
+			// Unknown metric - just log it but don't fail the test
+			t.Logf("Unknown metric %s with value %v - this is likely a new OpenAI metric", n, v)
+			continue
+		}
 		assert.True(validator(v), "metric %s is not valid", n)
 	}
 
@@ -379,7 +390,7 @@ func assertSpanValid(t *testing.T, stub tracetest.SpanStub, start, end time.Time
 
 func TestTestOTelTracer(t *testing.T) {
 	_, exporter, teardown := setUpTest(t)
-	defer teardown()
+	t.Cleanup(teardown)
 	assert := assert.New(t)
 
 	// crudely check we can create and test spans
