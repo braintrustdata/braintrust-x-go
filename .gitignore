@@ -26,4 +26,19 @@ go.work.sum
 braintrust-x-go
 kitchen-sink
 
+# Example binaries (in their directories)
+examples/dataset-eval/dataset-eval
+examples/email-evals/email-evals
+examples/evals/evals
+examples/kitchen-sink/kitchen-sink
+examples/struct-dataset-eval/struct-dataset-eval
+examples/traceopenai/traceopenai
+
+# Example binaries (if built in root directory)
+/dataset-eval
+/email-evals
+/evals
+/struct-dataset-eval
+/traceopenai
+
 **/.claude/settings.local.json

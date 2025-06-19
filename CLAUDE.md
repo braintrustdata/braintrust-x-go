@@ -18,3 +18,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Documentation: All exported types/functions need comments; follow godoc formatting
 - Testing: Use testify for assertions; create helpers for test setup/teardown; mock dependencies
 - Naming: Use descriptive names; prefer shorter names for local variables
+
+## Security Guidelines
+
+- Don't commit code
