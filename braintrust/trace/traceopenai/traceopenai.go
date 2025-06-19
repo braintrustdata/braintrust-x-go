@@ -68,6 +68,8 @@ func Middleware(req *http.Request, next NextMiddleware) (*http.Response, error) 
 		switch req.URL.Path {
 		case "/v1/responses":
 			reqTracer = newResponsesTracer()
+		case "/v1/chat/completions":
+			reqTracer = newChatCompletionsTracer()
 		}
 	}
 

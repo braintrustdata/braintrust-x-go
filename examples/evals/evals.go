@@ -43,11 +43,12 @@ func main() {
 		return resp.OutputText(), nil
 	}
 
-	eval1, err := eval.NewWithOpts(
-		eval.Options{
-			ProjectName:    "go-eval-project",
-			ExperimentName: "go-eval-x",
-		},
+	experimentID, err := eval.ResolveProjectExperimentID("go-eval-x", "go-eval-project")
+	if err != nil {
+		log.Fatalf("Failed to resolve experiment: %v", err)
+	}
+
+	eval1 := eval.New(experimentID,
 		eval.NewCases([]eval.Case[string, string]{
 			{Input: "strawberry", Expected: "fruit"},
 			{Input: "asparagus", Expected: "vegetable"},
@@ -70,9 +71,6 @@ func main() {
 			}),
 		},
 	)
-	if err != nil {
-		log.Fatalf("Error creating eval: %v", err)
-	}
 	err = eval1.Run()
 	if err != nil {
 		log.Fatalf("Error running eval: %v", err)

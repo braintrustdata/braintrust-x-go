@@ -41,8 +41,6 @@ type Experiment struct {
 	ProjectID string `json:"project_id"`
 }
 
-// RegisterExperiment creates a new experiment via the Braintrust API
-
 // MANU_COMMENT: Should we use struct args for these functions? I worry that if
 // the set of args grows large like it is in python then a giant positional
 // arglist will become unwieldy. I guess you're doing that in the dataset API.
@@ -56,11 +54,13 @@ type Experiment struct {
 // something immediately and resolve the experiment against the control plane
 // only in the background logger. That makes all of these inits non-blocking.
 // Should we do the same in go?
+
+// RegisterExperiment creates a new experiment via the Braintrust API.
 func RegisterExperiment(name string, projectID string) (*Experiment, error) {
 	req := ExperimentRequest{
 		ProjectID: projectID,
 		Name:      name,
-		EnsureNew: true,
+		EnsureNew: true, // Always create new experiments
 	}
 
 	jsonData, err := json.Marshal(req)
@@ -84,7 +84,7 @@ func RegisterExperiment(name string, projectID string) (*Experiment, error) {
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 

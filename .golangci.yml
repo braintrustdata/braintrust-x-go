@@ -11,12 +11,19 @@ linters:
         - text: "package-comments:"
           linters: [revive]
           path: braintrust/internal
+        - text: "package-comments:"
+          linters: [revive]
+          path: examples/
+
+
 
   enable:
     - bodyclose
-    - usetesting  # nice-to-have not critical
-    - thelper     # nice-to-have not critical
-    - revive      # critical for ensuring public functions/packages have docs.
+    - forcetypeassert # catches potential panics
+    - usetesting      # nice-to-have not critical
+    - thelper         # nice-to-have not critical
+    - revive          # critical for ensuring public functions/packages have docs.
+
 
 formatters:
   enable:

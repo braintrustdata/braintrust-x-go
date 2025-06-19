@@ -143,3 +143,36 @@ func TestBufferedReaderCallbackOnlyOnce(t *testing.T) {
 	assert.NoError(err)
 	assert.Equal(1, callCount)
 }
+
+func TestToInt64(t *testing.T) {
+	assert := assert.New(t)
+
+	// Test various numeric types
+	tests := []struct {
+		name     string
+		input    interface{}
+		expected int64
+		success  bool
+	}{
+		{"float64", float64(123.45), int64(123), true},
+		{"int64", int64(42), int64(42), true},
+		{"int", int(100), int64(100), true},
+		{"float32", float32(67.89), int64(67), true},
+		{"uint64", uint64(999), int64(999), true},
+		{"uint", uint(456), int64(456), true},
+		{"uint32", uint32(789), int64(789), true},
+		{"string", "not a number", int64(0), false},
+		{"nil", nil, int64(0), false},
+		{"bool", true, int64(0), false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			success, result := toInt64(test.input)
+			assert.Equal(test.success, success, "Expected success to be %v for input %v", test.success, test.input)
+			if test.success {
+				assert.Equal(test.expected, result, "Expected result to be %v for input %v", test.expected, test.input)
+			}
+		})
+	}
+}

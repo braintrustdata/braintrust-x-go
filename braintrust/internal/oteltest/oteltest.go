@@ -98,6 +98,22 @@ func (s *Span) Name() string {
 	return s.Stub.Name
 }
 
+// Status returns the span's status.
+func (s *Span) Status() sdktrace.Status {
+	return s.Stub.Status
+}
+
+// Events returns the span's events.
+func (s *Span) Events() []sdktrace.Event {
+	return s.Stub.Events
+}
+
+// AssertNameIs asserts that the span's name equals the expected name.
+func (s *Span) AssertNameIs(expected string) {
+	s.t.Helper()
+	assert.Equal(s.t, expected, s.Stub.Name)
+}
+
 func (s *Span) AssertInTimeRange(tr TimeRange) {
 	s.t.Helper()
 	stub := s.Stub
@@ -133,6 +149,11 @@ func (s *Span) Attr(key string) Attr {
 	attrs := s.Attrs(key)
 	require.Len(s.t, attrs, 1)
 	return attrs[0]
+}
+
+// HasAttr returns true if the span has at least one attribute with the given key.
+func (s *Span) HasAttr(key string) bool {
+	return len(s.Attrs(key)) > 0
 }
 
 // Summary returns the core data of the span, including attributes, events, and status.
@@ -245,6 +266,75 @@ func (a Attr) AssertEquals(expected any) {
 	default:
 		assert.Failf(a.t, "unsupported type", "expected type %T is not supported", expected)
 	}
+}
+
+// Braintrust-specific span methods
+
+// Input returns the Braintrust input from the span attributes.
+// Supports both "braintrust.input" (OpenAI tracing) and "braintrust.input_json" (eval tracing).
+func (s *Span) Input() any {
+	s.t.Helper()
+	var input any
+
+	// Try both attribute name formats
+	inputKeys := []string{"braintrust.input", "braintrust.input_json"}
+	for _, key := range inputKeys {
+		if s.HasAttr(key) {
+			raw := s.Attr(key).String()
+			err := json.Unmarshal([]byte(raw), &input)
+			require.NoError(s.t, err)
+			return input
+		}
+	}
+
+	s.t.Fatalf("No input attribute found. Tried: %v", inputKeys)
+	return nil
+}
+
+// Output returns the Braintrust output from the span attributes.
+// Supports both "braintrust.output" (OpenAI tracing) and "braintrust.output_json" (eval tracing).
+func (s *Span) Output() any {
+	s.t.Helper()
+	var output any
+
+	// Try both attribute name formats
+	outputKeys := []string{"braintrust.output", "braintrust.output_json"}
+	for _, key := range outputKeys {
+		if s.HasAttr(key) {
+			raw := s.Attr(key).String()
+			err := json.Unmarshal([]byte(raw), &output)
+			require.NoError(s.t, err)
+			return output
+		}
+	}
+
+	s.t.Fatalf("No output attribute found. Tried: %v", outputKeys)
+	return nil
+}
+
+// Metadata returns the Braintrust metadata from the span attributes.
+func (s *Span) Metadata() map[string]any {
+	s.t.Helper()
+	var metadata map[string]any
+	s.unmarshal("braintrust.metadata", &metadata)
+	return metadata
+}
+
+// Metrics returns the Braintrust metrics from the span attributes.
+func (s *Span) Metrics() map[string]float64 {
+	s.t.Helper()
+	var metrics map[string]float64
+	s.unmarshal("braintrust.metrics", &metrics)
+	return metrics
+}
+
+// unmarshal is a helper method to unmarshal JSON attributes.
+func (s *Span) unmarshal(key string, into any) {
+	s.t.Helper()
+	attr := s.Attr(key)
+	raw := attr.String()
+	err := json.Unmarshal([]byte(raw), into)
+	require.NoError(s.t, err)
 }
 
 type Timer struct {
