@@ -198,6 +198,7 @@ func (e *Eval[I, R]) runScorers(ctx context.Context, c Case[I, R], result R) ([]
 			errs = append(errs, werr)
 			continue
 		}
+		// FIXME: validate score is between 0 and 1
 
 		scores[i] = Score{Name: scorer.Name(), Score: val}
 		meta[scorer.Name()] = val
@@ -261,7 +262,7 @@ type Score struct {
 }
 
 // ScoreFunc is a function that scores the result of a task against the expected result. The returned
-// score is a float64 between 0 and 1.
+// score must be between 0 and 1.
 type ScoreFunc[I, R any] func(ctx context.Context, input I, expected, result R) (float64, error)
 
 // Scorer evaluates the quality of results against expected values.
@@ -385,7 +386,6 @@ type typedDatasetIterator[InputType, ExpectedType any] struct {
 }
 
 func (s *typedDatasetIterator[InputType, ExpectedType]) Next() (Case[InputType, ExpectedType], error) {
-	// First, unmarshal the full event to get access to Input and Expected fields
 	var fullEvent struct {
 		Input    InputType    `json:"input"`
 		Expected ExpectedType `json:"expected"`
