@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	"github.com/braintrust/braintrust-x-go/braintrust/trace/internal"
 )
 
 func TestBufferedReaderBasic(t *testing.T) {
@@ -21,7 +23,7 @@ func TestBufferedReaderBasic(t *testing.T) {
 		captured = bytes.NewBuffer(data)
 	}
 
-	reader := newBufferedReader(io.NopCloser(&in), onDone)
+	reader := internal.NewBufferedReader(io.NopCloser(&in), onDone)
 
 	// Read the data
 	output, err := io.ReadAll(reader)
@@ -44,7 +46,7 @@ func TestBufferedReaderChunkedReads(t *testing.T) {
 		captured = bytes.NewBuffer(data)
 	}
 
-	reader := newBufferedReader(pr, onDone)
+	reader := internal.NewBufferedReader(pr, onDone)
 
 	// Write and read in chunks
 	chunks := []string{
@@ -93,7 +95,7 @@ func TestBufferedReaderClose(t *testing.T) {
 		assert.Equal("partial data", string(data))
 	}
 
-	reader := newBufferedReader(pr, onDone)
+	reader := internal.NewBufferedReader(pr, onDone)
 
 	// Write partial data
 	go func() {
@@ -114,9 +116,6 @@ func TestBufferedReaderClose(t *testing.T) {
 
 	// Verify the callback was triggered on close
 	assert.True(callbackCalled)
-
-	// Verify reader marks itself as closed
-	assert.True(reader.closed)
 }
 
 func TestBufferedReaderCallbackOnlyOnce(t *testing.T) {
@@ -131,7 +130,7 @@ func TestBufferedReaderCallbackOnlyOnce(t *testing.T) {
 		callCount++
 	}
 
-	reader := newBufferedReader(io.NopCloser(&in), onDone)
+	reader := internal.NewBufferedReader(io.NopCloser(&in), onDone)
 
 	// Read to EOF to trigger callback
 	_, err := io.ReadAll(reader)
@@ -168,7 +167,7 @@ func TestToInt64(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			success, result := toInt64(test.input)
+			success, result := internal.ToInt64(test.input)
 			assert.Equal(test.success, success, "Expected success to be %v for input %v", test.success, test.input)
 			if test.success {
 				assert.Equal(test.expected, result, "Expected result to be %v for input %v", test.expected, test.input)

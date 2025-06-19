@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/braintrust/braintrust-x-go/braintrust/trace/internal"
 )
 
 // chatCompletionsTracer is a tracer for the openai v1/chat/completions POST endpoint.
@@ -81,12 +83,12 @@ func (ct *chatCompletionsTracer) StartSpan(ctx context.Context, t time.Time, req
 	}
 
 	if messages, ok := raw["messages"]; ok {
-		if err := setJSONAttr(span, "braintrust.input", messages); err != nil {
+		if err := internal.SetJSONAttr(span, "braintrust.input", messages); err != nil {
 			return ctx, span, err
 		}
 	}
 
-	if err := setJSONAttr(span, "braintrust.metadata", ct.metadata); err != nil {
+	if err := internal.SetJSONAttr(span, "braintrust.metadata", ct.metadata); err != nil {
 		return ctx, span, err
 	}
 
@@ -133,15 +135,15 @@ func (ct *chatCompletionsTracer) parseStreamingResponse(span trace.Span, body io
 	// Post-process streaming results to match Python SDK behavior
 	output := ct.postprocessStreamingResults(allResults)
 	if output != nil {
-		if err := setJSONAttr(span, "braintrust.output", output); err != nil {
+		if err := internal.SetJSONAttr(span, "braintrust.output", output); err != nil {
 			return err
 		}
 	}
 
 	// Handle usage metrics
 	if usage, ok := ct.metadata["usage"].(map[string]any); ok {
-		metrics := parseUsageTokens(usage)
-		if err := setJSONAttr(span, "braintrust.metrics", metrics); err != nil {
+		metrics := internal.ParseUsageTokens(usage)
+		if err := internal.SetJSONAttr(span, "braintrust.metrics", metrics); err != nil {
 			return err
 		}
 	}
@@ -281,19 +283,19 @@ func (ct *chatCompletionsTracer) handleChatCompletionResponse(span trace.Span, r
 		}
 	}
 
-	if err := setJSONAttr(span, "braintrust.metadata", ct.metadata); err != nil {
+	if err := internal.SetJSONAttr(span, "braintrust.metadata", ct.metadata); err != nil {
 		return err
 	}
 
 	if usage, ok := rawMsg["usage"].(map[string]any); ok {
-		metrics := parseUsageTokens(usage)
-		if err := setJSONAttr(span, "braintrust.metrics", metrics); err != nil {
+		metrics := internal.ParseUsageTokens(usage)
+		if err := internal.SetJSONAttr(span, "braintrust.metrics", metrics); err != nil {
 			return err
 		}
 	}
 
 	if choices, ok := rawMsg["choices"]; ok {
-		if err := setJSONAttr(span, "braintrust.output", choices); err != nil {
+		if err := internal.SetJSONAttr(span, "braintrust.output", choices); err != nil {
 			return err
 		}
 	}

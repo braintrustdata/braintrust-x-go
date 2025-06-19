@@ -6,13 +6,14 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"strings"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/braintrust/braintrust-x-go/braintrust/trace/internal"
 )
 
 // responsesTracer is a tracer for the openai v1/responses POST endpoint.
@@ -173,33 +174,24 @@ func (rt *responsesTracer) handleResponseCompletedMessage(span trace.Span, rawMs
 		}
 	}
 
-	if err := setJSONAttr(span, "braintrust.metadata", rt.metadata); err != nil {
+	if err := internal.SetJSONAttr(span, "braintrust.metadata", rt.metadata); err != nil {
 		return err
 	}
 
 	if usage, ok := rawMsg["usage"].(map[string]any); ok {
-		metrics := parseUsageTokens(usage)
-		if err := setJSONAttr(span, "braintrust.metrics", metrics); err != nil {
+		metrics := internal.ParseUsageTokens(usage)
+		if err := internal.SetJSONAttr(span, "braintrust.metrics", metrics); err != nil {
 			return err
 		}
 	}
 
 	if output, ok := rawMsg["output"]; ok {
-		if err := setJSONAttr(span, "braintrust.output", output); err != nil {
+		if err := internal.SetJSONAttr(span, "braintrust.output", output); err != nil {
 			return err
 		}
 	}
 
 	span.SetAttributes(attrs...)
 
-	return nil
-}
-
-func setJSONAttr(span trace.Span, key string, value any) error {
-	jsonStr, err := json.Marshal(value)
-	if err != nil {
-		return fmt.Errorf("failed to marshal attribute %s: %w", key, err)
-	}
-	span.SetAttributes(attribute.String(key, string(jsonStr)))
 	return nil
 }
