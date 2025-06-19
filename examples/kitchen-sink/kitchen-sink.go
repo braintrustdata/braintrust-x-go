@@ -1,4 +1,6 @@
-// This example is used to test the UI and all the features it supports (OpenAI, errors, custom tracing, etc).
+// Kitchen sink throws a bunch of scenarios that exercise all the conditions of the UI (custom tracing, errors, openai, etc)
+// and is useful to spot check the UI.
+
 package main
 
 import (
@@ -444,21 +446,16 @@ type errorCasesIterator struct {
 }
 
 type iteratorStep struct {
-	c   *eval.Case[string, string]
+	c   eval.Case[string, string]
 	err error
 }
 
 func newErrorCasesIterator() *errorCasesIterator {
 	return &errorCasesIterator{
 		sequence: []iteratorStep{
-			// Start with a successful case
-			{c: &eval.Case[string, string]{Input: "hello", Expected: "hello"}},
-
-			// Iterator error
+			{c: eval.Case[string, string]{Input: "hello", Expected: "hello"}},
 			{err: errors.New("iterator error: database connection lost")},
-
-			// Another successful case after error
-			{c: &eval.Case[string, string]{Input: "world", Expected: "world"}},
+			{c: eval.Case[string, string]{Input: "world", Expected: "world"}},
 		},
 		index: 0,
 	}
@@ -472,13 +469,7 @@ func (e *errorCasesIterator) Next() (eval.Case[string, string], error) {
 	step := e.sequence[e.index]
 	e.index++
 
-	if step.err != nil {
-		// Return the error - this simulates the iterator failing
-		return eval.Case[string, string]{}, step.err
-	}
-
-	// Return the successful case
-	return *step.c, nil
+	return step.c, step.err
 }
 
 // Helper function
