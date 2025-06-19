@@ -11,6 +11,11 @@ linters:
         - text: "package-comments:"
           linters: [revive]
           path: braintrust/internal
+        - text: "package-comments:"
+          linters: [revive]
+          path: examples/
+
+
 
   enable:
     - bodyclose
