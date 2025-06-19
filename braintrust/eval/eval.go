@@ -109,27 +109,27 @@ var (
 // Eval is a collection of cases, a task, and a set of scorers. It has two generic types;
 // I is the input type, and R is the result type.
 type Eval[I, R any] struct {
-	id      string
-	cases   Cases[I, R]
-	task    Task[I, R]
-	scorers []Scorer[I, R]
-	tracer  trace.Tracer
+	experimentID string
+	cases        Cases[I, R]
+	task         Task[I, R]
+	scorers      []Scorer[I, R]
+	tracer       trace.Tracer
 }
 
 // New creates a new eval.
 func New[I, R any](experimentID string, cases Cases[I, R], task Task[I, R], scorers []Scorer[I, R]) *Eval[I, R] {
 	return &Eval[I, R]{
-		id:      experimentID,
-		cases:   cases,
-		task:    task,
-		scorers: scorers,
-		tracer:  otel.GetTracerProvider().Tracer("braintrust.eval"),
+		experimentID: experimentID,
+		cases:        cases,
+		task:         task,
+		scorers:      scorers,
+		tracer:       otel.GetTracerProvider().Tracer("braintrust.eval"),
 	}
 }
 
 // Run runs the eval.
 func (e *Eval[I, R]) Run() error {
-	parent := bttrace.NewExperiment(e.id)
+	parent := bttrace.NewExperiment(e.experimentID)
 	ctx := bttrace.SetParent(context.Background(), parent)
 
 	var errs []error
@@ -344,15 +344,24 @@ func ResolveExperimentID(name string, projectID string) (string, error) {
 	if name == "" {
 		return "", fmt.Errorf("experiment name is required")
 	}
+	if projectID == "" {
+		return "", fmt.Errorf("project ID is required")
+	}
 	experiment, err := api.RegisterExperiment(name, projectID)
 	if err != nil {
-		return "", fmt.Errorf("failed to register experiment %q: %w", name, err)
+		return "", fmt.Errorf("failed to register experiment %q in project %q: %w", name, projectID, err)
 	}
 	return experiment.ID, nil
 }
 
 // ResolveProjectExperimentID resolves an experiment ID from a name and project name.
 func ResolveProjectExperimentID(name string, projectName string) (string, error) {
+	if name == "" {
+		return "", fmt.Errorf("experiment name is required")
+	}
+	if projectName == "" {
+		return "", fmt.Errorf("project name is required")
+	}
 	project, err := api.RegisterProject(projectName)
 	if err != nil {
 		return "", fmt.Errorf("failed to register project %q: %w", projectName, err)
