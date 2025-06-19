@@ -138,13 +138,7 @@ func New[I, R any](experimentID string, cases Cases[I, R], task Task[I, R], scor
 // Run runs the eval.
 func (e *Eval[I, R]) Run() error {
 	if e.experimentID == "" {
-		// Create a span to record the validation error
-		ctx, span := e.tracer.Start(context.Background(), "eval")
-		defer span.End()
-
-		err := fmt.Errorf("%w: experiment ID is required", ErrEval)
-		recordSpanError(span, err)
-		return err
+		return fmt.Errorf("%w: experiment ID is required", ErrEval)
 	}
 
 	parent := bttrace.NewExperiment(e.experimentID)
