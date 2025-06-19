@@ -128,9 +128,9 @@ type Eval[I, R any] struct {
 
 // New creates a new eval.
 func New[I, R any](experimentID string, cases Cases[I, R], task Task[I, R], scorers []Scorer[I, R]) *Eval[I, R] {
-	// by default we set the parent on every span to the experiment ID. This _should_ be done by the SpanProcessor
-	// but just in case a user hassn't set it up properly, we'll do it in side of the experiments as well. If they
-	// have set it up, the span processor won't override it.
+
+	// Every span created from this eval will have the experiment ID as the parent. This _should_ be done by the SpanProcessor
+	// but just in case a user hasn't set it up, we'll do it again here just in case as it should be idempotent.
 	parent := bttrace.NewExperiment(experimentID)
 	parentAttr := attr.String(bttrace.ParentOtelAttrKey, parent.String())
 	startSpanOpt := trace.WithAttributes(parentAttr)

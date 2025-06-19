@@ -216,6 +216,7 @@ type spanProcessor struct {
 	defaultAttr      attribute.KeyValue
 }
 
+// SpanProcessorOption is an option that can be passed to NewSpanProcessor.
 type SpanProcessorOption func(*spanProcessor)
 
 func noopSpanProcessorOption() SpanProcessorOption {
