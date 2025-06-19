@@ -1,11 +1,9 @@
 package traceopenai
 
 import (
-	"context"
 	"errors"
 	"net/http"
 	"testing"
-	"time"
 
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
@@ -15,56 +13,28 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/sdk/trace"
-	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
-	"github.com/braintrust/braintrust-x-go/braintrust/diag"
-	"github.com/braintrust/braintrust-x-go/braintrust/internal"
-	"github.com/braintrust/braintrust-x-go/braintrust/internal/testspan"
+	"github.com/braintrust/braintrust-x-go/braintrust/internal/oteltest"
 )
 
 const testModel = "gpt-4o-mini"
 
 // setUpTest is a helper function that sets up a new tracer provider for each test.
-// It returns an openai client, an exporter, and a teardown function.
-func setUpTest(t *testing.T) (openai.Client, *tracetest.InMemoryExporter, func()) {
+// It returns an openai client and an exporter.
+func setUpTest(t *testing.T) (openai.Client, *oteltest.Exporter) {
 	t.Helper()
 
-	// fail tests if we log warnings.
-	internal.FailTestsOnWarnings(t)
-
-	// setup otel to be fully synchronous
-	exporter := tracetest.NewInMemoryExporter()
-	processor := trace.NewSimpleSpanProcessor(exporter)
-	tp := trace.NewTracerProvider(
-		trace.WithSampler(trace.AlwaysSample()),
-		trace.WithSpanProcessor(processor), // flushes immediately
-	)
-
-	original := otel.GetTracerProvider()
-	otel.SetTracerProvider(tp)
-
-	teardown := func() {
-		diag.ClearLogger()
-		// Use context.Background() instead of t.Context() because when this function
-		// is called via t.Cleanup(), the test context may already be canceled
-		err := tp.Shutdown(context.Background()) //nolint:usetesting
-		if err != nil {
-			t.Fatalf("Error shutting down tracer provider: %v", err)
-		}
-		otel.SetTracerProvider(original)
-	}
+	_, exporter := oteltest.Setup(t)
 
 	client := openai.NewClient(
 		option.WithMiddleware(Middleware),
 	)
 
-	return client, exporter, teardown
+	return client, exporter
 }
 
 func TestError(t *testing.T) {
-	_, exporter, teardown := setUpTest(t)
-	t.Cleanup(teardown)
+	_, exporter := setUpTest(t)
 	assert := assert.New(t)
 
 	errorware := func(_ *http.Request, _ NextMiddleware) (*http.Response, error) {
@@ -84,15 +54,15 @@ func TestError(t *testing.T) {
 	require.Error(t, err)
 	assert.Nil(resp)
 
-	spans := flushSpans(exporter)
+	spans := exporter.Flush()
 	assert.Len(spans, 1)
 	span := spans[0]
 
-	assert.Equal("openai.responses.create", span.Name)
-	assert.Equal(codes.Error, span.Status.Code)
-	assert.Contains(span.Status.Description, "ye-olde-test-error")
+	assert.Equal("openai.responses.create", span.Name())
+	assert.Equal(codes.Error, span.Status().Code)
+	assert.Contains(span.Status().Description, "ye-olde-test-error")
 
-	events := span.Events
+	events := span.Events()
 	assert.Len(events, 1)
 
 	// Find the exception.message attribute that contains our error message
@@ -107,38 +77,35 @@ func TestError(t *testing.T) {
 }
 
 func TestOpenAIResponsesRequiredParams(t *testing.T) {
-	client, exporter, teardown := setUpTest(t)
-	t.Cleanup(teardown)
+	client, exporter := setUpTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
-	start := time.Now()
+	timer := oteltest.NewTimer()
 	params := responses.ResponseNewParams{
 		Input: responses.ResponseNewParamsInputUnion{OfString: openai.String("What is 13+4?")},
 		Model: testModel,
 	}
 
 	resp, err := client.Responses.New(t.Context(), params)
-	end := time.Now()
+	timeRange := timer.Tick()
 	require.NoError(err)
 	require.NotNil(resp)
 
 	assert.Contains(resp.OutputText(), "17")
 
-	span := flushOne(t, exporter)
-	assertSpanValid(t, span, start, end)
-
-	ts := testspan.New(t, span)
+	ts := exporter.FlushOne()
+	assertSpanValid(t, &ts, timeRange)
 
 	_ = ts.Input()
-	assert.Contains(ts.AttrString("braintrust.output"), "17")
+	output := ts.Attr("braintrust.output").String()
+	assert.Contains(output, "17")
 	_ = ts.Output()
 
 }
 
 func TestOpenAIResponsesKitchenSink(t *testing.T) {
-	client, exporter, teardown := setUpTest(t)
-	t.Cleanup(teardown)
+	client, exporter := setUpTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -158,21 +125,19 @@ func TestOpenAIResponsesKitchenSink(t *testing.T) {
 		User:              openai.String("test user"),
 	}
 
-	start := time.Now()
+	timer := oteltest.NewTimer()
 	resp, err := client.Responses.New(t.Context(), params)
-	end := time.Now()
+	timeRange := timer.Tick()
 	require.NoError(err)
 	require.NotNil(resp)
 
 	// Wait for spans to be exported
-	span := flushOne(t, exporter)
+	ts := exporter.FlushOne()
 
-	assertSpanValid(t, span, start, end)
-
-	ts := testspan.New(t, span)
+	assertSpanValid(t, &ts, timeRange)
 
 	// Check input field
-	input := ts.AttrString("braintrust.input")
+	input := ts.Attr("braintrust.input").String()
 	assert.Contains(input, "13+4")
 
 	// Check output field
@@ -193,24 +158,8 @@ func TestOpenAIResponsesKitchenSink(t *testing.T) {
 	assert.Equal(100.0, metadata["max_output_tokens"])
 }
 
-func flushSpans(exporter *tracetest.InMemoryExporter) []tracetest.SpanStub {
-	// Wait a moment for spans to be exported
-	// Get spans without resetting the exporter
-	spans := exporter.GetSpans()
-	exporter.Reset()
-	return spans
-}
-
-func flushOne(t *testing.T, exporter *tracetest.InMemoryExporter) tracetest.SpanStub {
-	t.Helper()
-	spans := flushSpans(exporter)
-	require.Len(t, spans, 1)
-	return spans[0]
-}
-
 func TestOpenAIResponsesStreamingClose(t *testing.T) {
-	client, exporter, teardown := setUpTest(t)
-	t.Cleanup(teardown)
+	client, exporter := setUpTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -225,24 +174,23 @@ func TestOpenAIResponsesStreamingClose(t *testing.T) {
 	err := stream.Close()
 
 	require.NoError(err)
-	span := flushOne(t, exporter)
+	span := exporter.FlushOne()
 
-	assert.Equal("openai.responses.create", span.Name)
-	assert.Equal(codes.Unset, span.Status.Code)
-	assert.Equal("", span.Status.Description)
+	assert.Equal("openai.responses.create", span.Name())
+	assert.Equal(codes.Unset, span.Status().Code)
+	assert.Equal("", span.Status().Description)
 	// FIXME we haven't iterated the body yet, so not much we can assert
 }
 
 func TestOpenAIResponsesStreaming(t *testing.T) {
-	client, exporter, teardown := setUpTest(t)
-	t.Cleanup(teardown)
+	client, exporter := setUpTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
 	ctx := t.Context()
 	question := "Can you return me a list of the first 15 fibonacci numbers?"
 
-	start := time.Now()
+	timer := oteltest.NewTimer()
 	stream := client.Responses.NewStreaming(ctx, responses.ResponseNewParams{
 		Input: responses.ResponseNewParamsInputUnion{OfString: openai.String(question)},
 		Model: openai.ChatModelGPT4,
@@ -257,15 +205,13 @@ func TestOpenAIResponsesStreaming(t *testing.T) {
 		}
 	}
 	require.NoError(stream.Err())
-	end := time.Now()
+	timeRange := timer.Tick()
 
-	span := flushOne(t, exporter)
+	ts := exporter.FlushOne()
 
-	assertSpanValid(t, span, start, end)
+	assertSpanValid(t, &ts, timeRange)
 
-	ts := testspan.New(t, span)
-
-	output := ts.AttrString("braintrust.output")
+	output := ts.Attr("braintrust.output").String()
 	for _, i := range []string{"1", "2", "3", "5", "8", "13"} {
 		assert.Contains(completeText, i)
 		assert.Contains(output, i)
@@ -273,8 +219,7 @@ func TestOpenAIResponsesStreaming(t *testing.T) {
 }
 
 func TestOpenAIResponsesWithListInput(t *testing.T) {
-	client, exporter, teardown := setUpTest(t)
-	t.Cleanup(teardown)
+	client, exporter := setUpTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -294,19 +239,17 @@ func TestOpenAIResponsesWithListInput(t *testing.T) {
 	}
 
 	// Call the API
-	start := time.Now()
+	timer := oteltest.NewTimer()
 	resp, err := client.Responses.New(t.Context(), params)
-	end := time.Now()
+	timeRange := timer.Tick()
 	require.NoError(err)
 	require.NotNil(resp)
 
-	span := flushOne(t, exporter)
+	ts := exporter.FlushOne()
 
-	assertSpanValid(t, span, start, end)
+	assertSpanValid(t, &ts, timeRange)
 
-	ts := testspan.New(t, span)
-
-	input := ts.AttrString("braintrust.input")
+	input := ts.Attr("braintrust.input").String()
 	assert.Contains(input, "3+125")
 	assert.Contains(input, "2+2")
 
@@ -340,12 +283,11 @@ func getResponseText(t *testing.T, resp any) string {
 }
 
 // assertSpanValid asserts all the common properties of a span are valid.
-func assertSpanValid(t *testing.T, stub tracetest.SpanStub, start, end time.Time) {
+func assertSpanValid(t *testing.T, span *oteltest.Span, timeRange oteltest.TimeRange) {
 	t.Helper()
 	assert := assert.New(t)
 
-	span := testspan.New(t, stub)
-	span.AssertTimingIsValid(start, end)
+	span.AssertInTimeRange(timeRange)
 	span.AssertNameIs("openai.responses.create")
 	assert.Equal(codes.Unset, span.Stub.Status.Code)
 
@@ -389,20 +331,19 @@ func assertSpanValid(t *testing.T, stub tracetest.SpanStub, start, end time.Time
 }
 
 func TestTestOTelTracer(t *testing.T) {
-	_, exporter, teardown := setUpTest(t)
-	t.Cleanup(teardown)
+	_, exporter := setUpTest(t)
 	assert := assert.New(t)
 
 	// crudely check we can create and test spans
-	spans := flushSpans(exporter)
+	spans := exporter.Flush()
 	assert.Empty(spans)
 
 	tracer := otel.Tracer("test")
 	_, span := tracer.Start(t.Context(), "test")
 	span.End()
 
-	spans = flushSpans(exporter)
+	spans = exporter.Flush()
 	assert.NotEmpty(spans)
-	spans = flushSpans(exporter)
+	spans = exporter.Flush()
 	assert.Empty(spans)
 }

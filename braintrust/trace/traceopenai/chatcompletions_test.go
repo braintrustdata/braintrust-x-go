@@ -6,20 +6,17 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/openai/openai-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
-	"github.com/braintrust/braintrust-x-go/braintrust/internal/testspan"
+	"github.com/braintrust/braintrust-x-go/braintrust/internal/oteltest"
 )
 
 func TestOpenAIChatCompletions(t *testing.T) {
-	client, exporter, teardown := setUpTest(t)
-	t.Cleanup(teardown)
+	client, exporter := setUpTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -31,9 +28,9 @@ func TestOpenAIChatCompletions(t *testing.T) {
 		Model: testModel,
 	}
 
-	start := time.Now()
+	timer := oteltest.NewTimer()
 	resp, err := client.Chat.Completions.New(t.Context(), params)
-	end := time.Now()
+	timeRange := timer.Tick()
 	require.NoError(err)
 	require.NotNil(resp)
 
@@ -61,17 +58,15 @@ func TestOpenAIChatCompletions(t *testing.T) {
 		"total tokens should equal prompt + completion tokens")
 
 	// Wait for spans to be exported
-	span := flushOne(t, exporter)
+	ts := exporter.FlushOne()
 
-	assertChatSpanValid(t, span, start, end)
-
-	ts := testspan.New(t, span)
+	assertChatSpanValid(t, &ts, timeRange)
 
 	// Check that the span name is correct
-	assert.Equal("openai.chat.completions.create", span.Name)
+	assert.Equal("openai.chat.completions.create", ts.Name())
 
 	// Check input field
-	input := ts.AttrString("braintrust.input")
+	input := ts.Attr("braintrust.input").String()
 	assert.Contains(input, "What is 2+2?")
 
 	// Check output field
@@ -105,8 +100,7 @@ func TestOpenAIChatCompletions(t *testing.T) {
 }
 
 func TestOpenAIChatCompletionsStreaming(t *testing.T) {
-	client, exporter, teardown := setUpTest(t)
-	t.Cleanup(teardown)
+	client, exporter := setUpTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -121,7 +115,7 @@ func TestOpenAIChatCompletionsStreaming(t *testing.T) {
 		},
 	}
 
-	start := time.Now()
+	timer := oteltest.NewTimer()
 	stream := client.Chat.Completions.NewStreaming(t.Context(), params)
 
 	var fullContent string
@@ -146,7 +140,7 @@ func TestOpenAIChatCompletionsStreaming(t *testing.T) {
 			assert.NotNil(choice.Delta, "choice should have delta")
 		}
 	}
-	end := time.Now()
+	timeRange := timer.Tick()
 
 	require.NoError(stream.Err())
 	require.True(hasValidChunks, "should have received valid chunks")
@@ -165,17 +159,15 @@ func TestOpenAIChatCompletionsStreaming(t *testing.T) {
 	}
 
 	// Wait for spans to be exported
-	span := flushOne(t, exporter)
+	ts := exporter.FlushOne()
 
-	assertChatSpanValid(t, span, start, end)
-
-	ts := testspan.New(t, span)
+	assertChatSpanValid(t, &ts, timeRange)
 
 	// Check that the span name is correct
-	assert.Equal("openai.chat.completions.create", span.Name)
+	assert.Equal("openai.chat.completions.create", ts.Name())
 
 	// Check input field
-	input := ts.AttrString("braintrust.input")
+	input := ts.Attr("braintrust.input").String()
 	assert.Contains(input, "Count from 1 to 3")
 
 	// Check output field
@@ -188,8 +180,7 @@ func TestOpenAIChatCompletionsStreaming(t *testing.T) {
 }
 
 func TestOpenAIChatCompletionsWithTools(t *testing.T) {
-	client, exporter, teardown := setUpTest(t)
-	t.Cleanup(teardown)
+	client, exporter := setUpTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -220,9 +211,9 @@ func TestOpenAIChatCompletionsWithTools(t *testing.T) {
 		},
 	}
 
-	start := time.Now()
+	timer := oteltest.NewTimer()
 	resp, err := client.Chat.Completions.New(t.Context(), params)
-	end := time.Now()
+	timeRange := timer.Tick()
 	require.NoError(err)
 	require.NotNil(resp)
 
@@ -265,11 +256,9 @@ func TestOpenAIChatCompletionsWithTools(t *testing.T) {
 	assert.Greater(resp.Usage.TotalTokens, int64(0), "should have total tokens")
 
 	// Wait for spans to be exported
-	span := flushOne(t, exporter)
+	ts := exporter.FlushOne()
 
-	assertChatSpanValid(t, span, start, end)
-
-	ts := testspan.New(t, span)
+	assertChatSpanValid(t, &ts, timeRange)
 
 	// Check that tools are in metadata
 	metadata := ts.Metadata()
@@ -279,8 +268,7 @@ func TestOpenAIChatCompletionsWithTools(t *testing.T) {
 }
 
 func TestOpenAIChatCompletionsWithSystemMessage(t *testing.T) {
-	client, exporter, teardown := setUpTest(t)
-	t.Cleanup(teardown)
+	client, exporter := setUpTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -295,9 +283,9 @@ func TestOpenAIChatCompletionsWithSystemMessage(t *testing.T) {
 		MaxTokens:   openai.Int(100),
 	}
 
-	start := time.Now()
+	timer := oteltest.NewTimer()
 	resp, err := client.Chat.Completions.New(t.Context(), params)
-	end := time.Now()
+	timeRange := timer.Tick()
 	require.NoError(err)
 	require.NotNil(resp)
 
@@ -336,14 +324,12 @@ func TestOpenAIChatCompletionsWithSystemMessage(t *testing.T) {
 	assert.LessOrEqual(resp.Usage.CompletionTokens, int64(100), "should respect max_tokens limit")
 
 	// Wait for spans to be exported
-	span := flushOne(t, exporter)
+	ts := exporter.FlushOne()
 
-	assertChatSpanValid(t, span, start, end)
-
-	ts := testspan.New(t, span)
+	assertChatSpanValid(t, &ts, timeRange)
 
 	// Check input contains both messages
-	input := ts.AttrString("braintrust.input")
+	input := ts.Attr("braintrust.input").String()
 	assert.Contains(input, "pirate")
 	assert.Contains(input, "Hello, how are you?")
 
@@ -354,8 +340,7 @@ func TestOpenAIChatCompletionsWithSystemMessage(t *testing.T) {
 }
 
 func TestOpenAIChatCompletionsStreamingToolCalls(t *testing.T) {
-	client, exporter, teardown := setUpTest(t)
-	t.Cleanup(teardown)
+	client, exporter := setUpTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -389,7 +374,7 @@ func TestOpenAIChatCompletionsStreamingToolCalls(t *testing.T) {
 		},
 	}
 
-	start := time.Now()
+	timer := oteltest.NewTimer()
 	stream := client.Chat.Completions.NewStreaming(t.Context(), params)
 
 	for stream.Next() {
@@ -401,19 +386,17 @@ func TestOpenAIChatCompletionsStreamingToolCalls(t *testing.T) {
 			_ = choice.Delta.ToolCalls
 		}
 	}
-	end := time.Now()
+	timeRange := timer.Tick()
 
 	require.NoError(stream.Err())
 
 	// Wait for spans to be exported
-	span := flushOne(t, exporter)
+	ts := exporter.FlushOne()
 
-	assertChatSpanValid(t, span, start, end)
-
-	ts := testspan.New(t, span)
+	assertChatSpanValid(t, &ts, timeRange)
 
 	// Check that the span name is correct
-	assert.Equal("openai.chat.completions.create", span.Name)
+	assert.Equal("openai.chat.completions.create", ts.Name())
 
 	// Check output field - should be properly structured
 	output := ts.Output()
@@ -725,8 +708,7 @@ func TestStreamingToolCallsPostprocessing(t *testing.T) {
 }
 
 func TestChatCompletionsStructuredAssertions(t *testing.T) {
-	client, exporter, teardown := setUpTest(t)
-	t.Cleanup(teardown)
+	client, exporter := setUpTest(t)
 	require := require.New(t)
 
 	// Test simple chat completion with structured assertions
@@ -744,13 +726,12 @@ func TestChatCompletionsStructuredAssertions(t *testing.T) {
 	require.NotNil(resp)
 
 	// Wait for spans to be exported
-	span := flushOne(t, exporter)
-	ts := testspan.New(t, span)
+	ts := exporter.FlushOne()
 
 	// Convert span to structured format for assertion
 	spanData := map[string]interface{}{
 		"span_attributes": map[string]interface{}{
-			"name": span.Name,
+			"name": ts.Name(),
 			"type": "llm",
 		},
 		"input":    ts.Input(),
@@ -794,8 +775,7 @@ func TestChatCompletionsStructuredAssertions(t *testing.T) {
 }
 
 func TestToolCallsStructuredAssertions(t *testing.T) {
-	client, exporter, teardown := setUpTest(t)
-	t.Cleanup(teardown)
+	client, exporter := setUpTest(t)
 	require := require.New(t)
 
 	// Test streaming tool calls with structured assertions
@@ -835,13 +815,12 @@ func TestToolCallsStructuredAssertions(t *testing.T) {
 	require.NoError(stream.Err())
 
 	// Wait for spans to be exported
-	span := flushOne(t, exporter)
-	ts := testspan.New(t, span)
+	ts := exporter.FlushOne()
 
 	// Convert span to structured format for assertion
 	spanData := map[string]interface{}{
 		"span_attributes": map[string]interface{}{
-			"name": span.Name,
+			"name": ts.Name(),
 			"type": "llm",
 		},
 		"input":    ts.Input(),
@@ -1080,14 +1059,13 @@ func StrContains(s string) Matcher { return StringContaining{s} }
 func NumGT(n float64) Matcher      { return NumberGreaterThan{n} }
 
 // assertChatSpanValid asserts all the common properties of a chat completion span are valid.
-func assertChatSpanValid(t *testing.T, stub tracetest.SpanStub, start, end time.Time) {
+func assertChatSpanValid(t *testing.T, span *oteltest.Span, timeRange oteltest.TimeRange) {
 	t.Helper()
 	assert := assert.New(t)
 
-	span := testspan.New(t, stub)
-	span.AssertTimingIsValid(start, end)
+	span.AssertInTimeRange(timeRange)
 	span.AssertNameIs("openai.chat.completions.create")
-	assert.Equal(codes.Unset, span.Stub.Status.Code)
+	assert.Equal(codes.Unset, span.Status().Code)
 
 	metadata := span.Metadata()
 	assert.Equal("openai", metadata["provider"])

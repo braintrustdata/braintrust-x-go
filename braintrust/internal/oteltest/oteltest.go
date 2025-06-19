@@ -98,6 +98,22 @@ func (s *Span) Name() string {
 	return s.Stub.Name
 }
 
+// Status returns the span's status.
+func (s *Span) Status() sdktrace.Status {
+	return s.Stub.Status
+}
+
+// Events returns the span's events.
+func (s *Span) Events() []sdktrace.Event {
+	return s.Stub.Events
+}
+
+// AssertNameIs asserts that the span's name equals the expected name.
+func (s *Span) AssertNameIs(expected string) {
+	s.t.Helper()
+	assert.Equal(s.t, expected, s.Stub.Name)
+}
+
 func (s *Span) AssertInTimeRange(tr TimeRange) {
 	s.t.Helper()
 	stub := s.Stub
@@ -245,6 +261,49 @@ func (a Attr) AssertEquals(expected any) {
 	default:
 		assert.Failf(a.t, "unsupported type", "expected type %T is not supported", expected)
 	}
+}
+
+// Braintrust-specific span methods
+
+// Input returns the Braintrust input from the span attributes.
+func (s *Span) Input() any {
+	s.t.Helper()
+	var input any
+	s.unmarshal("braintrust.input", &input)
+	return input
+}
+
+// Output returns the Braintrust output from the span attributes.
+func (s *Span) Output() any {
+	s.t.Helper()
+	var output any
+	s.unmarshal("braintrust.output", &output)
+	return output
+}
+
+// Metadata returns the Braintrust metadata from the span attributes.
+func (s *Span) Metadata() map[string]any {
+	s.t.Helper()
+	var metadata map[string]any
+	s.unmarshal("braintrust.metadata", &metadata)
+	return metadata
+}
+
+// Metrics returns the Braintrust metrics from the span attributes.
+func (s *Span) Metrics() map[string]float64 {
+	s.t.Helper()
+	var metrics map[string]float64
+	s.unmarshal("braintrust.metrics", &metrics)
+	return metrics
+}
+
+// unmarshal is a helper method to unmarshal JSON attributes.
+func (s *Span) unmarshal(key string, into any) {
+	s.t.Helper()
+	attr := s.Attr(key)
+	raw := attr.String()
+	err := json.Unmarshal([]byte(raw), into)
+	require.NoError(s.t, err)
 }
 
 type Timer struct {
