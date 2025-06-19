@@ -159,18 +159,12 @@ func main() {
 	}
 
 	// Create and run the evaluation
-	evaluation, err := eval.NewWithOpts(
-		eval.Options{
-			ProjectID:      project.ID,
-			ExperimentName: "Capitalization Task Demo",
-		},
-		cases,
-		task,
-		scorers,
-	)
+	experimentID, err := eval.ResolveExperimentID("Capitalization Task Demo", project.ID)
 	if err != nil {
-		log.Fatalf("Failed to create evaluation: %v", err)
+		log.Fatalf("Failed to resolve experiment: %v", err)
 	}
+
+	evaluation := eval.New(experimentID, cases, task, scorers)
 
 	fmt.Println("\n🚀 Running evaluation with struct-based dataset...")
 	err = evaluation.Run()

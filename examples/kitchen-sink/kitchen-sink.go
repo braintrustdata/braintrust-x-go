@@ -95,15 +95,12 @@ func runMathEval() {
 		{Input: 13, Expected: 3.6}, // ❌ Task fails (superstition error)
 	}
 
-	evaluation, err := eval.NewWithOpts(
-		eval.Options{
-			ProjectName:    "Go Kitchen Sink Examples",
-			ExperimentName: "Math Evaluation - Basic Functionality",
-		},
-		eval.NewCases(cases), mathTask, scorers)
+	experimentID, err := eval.ResolveProjectExperimentID("Math Evaluation - Basic Functionality", "Go Kitchen Sink Examples")
 	if err != nil {
-		log.Fatalf("❌ Failed to create math evaluation: %v", err)
+		log.Fatalf("❌ Failed to resolve experiment: %v", err)
 	}
+
+	evaluation := eval.New(experimentID, eval.NewCases(cases), mathTask, scorers)
 
 	err = evaluation.Run()
 	if err != nil {
@@ -222,15 +219,12 @@ func runTextProcessingEval(client openai.Client) {
 		{Input: "Good product PARTIAL_SCORER_FAIL", Expected: "positive"}, // ⚠️  Task works, sentiment_agreement scorer fails
 	}
 
-	evaluation, err := eval.NewWithOpts(
-		eval.Options{
-			ProjectName:    "Go Kitchen Sink Examples",
-			ExperimentName: "Text Processing - OpenAI Integration",
-		},
-		eval.NewCases(cases), sentimentTask, scorers)
+	experimentID, err := eval.ResolveProjectExperimentID("Text Processing - OpenAI Integration", "Go Kitchen Sink Examples")
 	if err != nil {
-		log.Fatalf("❌ Failed to create text evaluation: %v", err)
+		log.Fatalf("❌ Failed to resolve experiment: %v", err)
 	}
+
+	evaluation := eval.New(experimentID, eval.NewCases(cases), sentimentTask, scorers)
 
 	err = evaluation.Run()
 	if err != nil {
@@ -383,15 +377,12 @@ func runMixedScenarioEval(client openai.Client) {
 		}, // ❌ Task fails (postprocessing)
 	}
 
-	evaluation, err := eval.NewWithOpts(
-		eval.Options{
-			ProjectName:    "Go Kitchen Sink Examples",
-			ExperimentName: "Mixed Scenarios - Complex Interactions",
-		},
-		eval.NewCases(cases), questionAnswerTask, scorers)
+	experimentID, err := eval.ResolveProjectExperimentID("Mixed Scenarios - Complex Interactions", "Go Kitchen Sink Examples")
 	if err != nil {
-		log.Fatalf("❌ Failed to create mixed scenario evaluation: %v", err)
+		log.Fatalf("❌ Failed to resolve experiment: %v", err)
 	}
+
+	evaluation := eval.New(experimentID, eval.NewCases(cases), questionAnswerTask, scorers)
 
 	err = evaluation.Run()
 

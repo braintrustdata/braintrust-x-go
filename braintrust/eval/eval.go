@@ -50,24 +50,22 @@
 //	}
 //
 //	// Create and run the evaluation
-//	evaluation, err := eval.NewWithOpts(
-//		eval.Options{
-//			ProjectName:    "my-ai-project",
-//			ExperimentName: "greeting-experiment-v1",
-//		},
-//		[]eval.Case[string, string]{
+//	experimentID, err := eval.ResolveProjectExperimentID("greeting-experiment-v1", "my-ai-project")
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+//
+//	evaluation := eval.New(experimentID,
+//		eval.NewCases([]eval.Case[string, string]{
 //			{Input: "World", Expected: "Hello World"},
 //			{Input: "Alice", Expected: "Hello Alice"},
 //			{Input: "Bob", Expected: "Hello Bob"},
-//		},
+//		}),
 //		greetingTask,
 //		[]eval.Scorer[string, string]{
 //			eval.NewScorer("exact_match", exactMatch),
 //		},
 //	)
-//	if err != nil {
-//		log.Fatal(err)
-//	}
 //
 //	summary, err := evaluation.Run(context.Background())
 //	if err != nil {
@@ -107,47 +105,6 @@ var (
 	taskSpanAttrs  = map[string]any{"type": "task"}
 	scoreSpanAttrs = map[string]any{"type": "score"}
 )
-
-// Options holds configuration for creating an eval
-type Options struct {
-	ProjectName    string
-	ProjectID      string
-	ExperimentName string
-}
-
-// NewWithOpts creates a new eval using options to resolve project and experiment.
-// It can handle:
-// - ProjectName + ExperimentName: creates/gets project, then creates/gets experiment
-// - ProjectID + ExperimentName: uses existing project, creates/gets experiment
-func NewWithOpts[I, R any](opts Options, cases Cases[I, R], task Task[I, R], scorers []Scorer[I, R]) (*Eval[I, R], error) {
-	var projectID string
-	var err error
-
-	// Resolve project ID
-	if opts.ProjectID != "" {
-		projectID = opts.ProjectID
-	} else if opts.ProjectName != "" {
-		project, err := api.RegisterProject(opts.ProjectName)
-		if err != nil {
-			return nil, fmt.Errorf("failed to register project %q: %w", opts.ProjectName, err)
-		}
-		projectID = project.ID
-	} else {
-		return nil, fmt.Errorf("must provide either ProjectName or ProjectID")
-	}
-
-	// Resolve experiment ID
-	if opts.ExperimentName == "" {
-		return nil, fmt.Errorf("ExperimentName is required")
-	}
-
-	experiment, err := api.RegisterExperiment(opts.ExperimentName, projectID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to register experiment %q: %w", opts.ExperimentName, err)
-	}
-
-	return New(experiment.ID, cases, task, scorers), nil
-}
 
 // Eval is a collection of cases, a task, and a set of scorers. It has two generic types;
 // I is the input type, and R is the result type.
@@ -380,6 +337,27 @@ func (s *casesImpl[I, R]) Next() (Case[I, R], error) {
 	testCase := s.cases[s.index]
 	s.index++
 	return testCase, nil
+}
+
+// ResolveExperimentID resolves an experiment ID from a name and project ID.
+func ResolveExperimentID(name string, projectID string) (string, error) {
+	if name == "" {
+		return "", fmt.Errorf("experiment name is required")
+	}
+	experiment, err := api.RegisterExperiment(name, projectID)
+	if err != nil {
+		return "", fmt.Errorf("failed to register experiment %q: %w", name, err)
+	}
+	return experiment.ID, nil
+}
+
+// ResolveProjectExperimentID resolves an experiment ID from a name and project name.
+func ResolveProjectExperimentID(name string, projectName string) (string, error) {
+	project, err := api.RegisterProject(projectName)
+	if err != nil {
+		return "", fmt.Errorf("failed to register project %q: %w", projectName, err)
+	}
+	return ResolveExperimentID(name, project.ID)
 }
 
 // QueryDataset queries a dataset from the Braintrust server and returns a Cases iterator that unmarshals
