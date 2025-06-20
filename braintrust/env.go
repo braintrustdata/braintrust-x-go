@@ -22,6 +22,9 @@ type Config struct {
 	APIURL              string
 	AppURL              string
 	DefaultProjectID    string
+	// MANU_COMMENT: Should this be something like "EnableTraceConsoleLog" or
+	// something? DebugLog makes it sound like we're configuring the logging
+	// level to debug.
 	EnableTraceDebugLog bool
 }
 

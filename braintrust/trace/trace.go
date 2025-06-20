@@ -24,6 +24,8 @@
 //
 //	defaultProjectID := "your-project-id"
 //	processor := trace.NewSpanProcessor(defaultProjectID)
+//	// MANU_COMMENT: Should we include the imports in this example so folks know
+//	// what `sdktrace` refers to?
 //	tp := sdktrace.NewTracerProvider(
 //		sdktrace.WithSpanProcessor(processor),
 //		// ... your other processors
@@ -143,6 +145,9 @@ const ParentOtelAttrKey = "braintrust.parent"
 
 type contextKey string
 
+// What does "cannot possibly collide" mean? Is it actually impossible, or more
+// of a "users should not set keys namespaced with braintrust.*"?
+//
 // a context key that cannot possibly collide with any other keys
 var parentContextKey contextKey = ParentOtelAttrKey
 

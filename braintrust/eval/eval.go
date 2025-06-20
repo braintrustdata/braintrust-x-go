@@ -51,6 +51,10 @@
 //		return 0.0, nil // No match
 //	}
 //
+//	// Can we make the experiment ID resolution an argument of
+//	// `eval.New`? Maybe we don't have to make it lazily resolve right now, but
+//	// it might be nice to allow for lazy resolution interface-wise.
+//
 //	// Create and run the evaluation
 //	experimentID, err := eval.ResolveProjectExperimentID("greeting-experiment-v1", "my-ai-project")
 //	if err != nil {
@@ -132,6 +136,10 @@ func New[I, R any](experimentID string, cases Cases[I, R], task Task[I, R], scor
 	// Every span created from this eval will have the experiment ID as the parent. This _should_ be done by the SpanProcessor
 	// but just in case a user hasn't set it up, we'll do it again here just in case as it should be idempotent.
 	parent := bttrace.NewExperiment(experimentID)
+	// Curious why we need to do this if we're calling `bttrace.SetParent` on
+	// the context before running the eval. My reading of `trace.go::SetParent`
+	// is that all spans created from that subsequent context will contain the
+	// parent attribute.
 	parentAttr := attr.String(bttrace.ParentOtelAttrKey, parent.String())
 	startSpanOpt := trace.WithAttributes(parentAttr)
 
@@ -156,6 +164,8 @@ func (e *Eval[I, R]) Run() error {
 
 	var errs []error
 	for {
+		// Is this something we could `go`-routine-ify later to run these in
+		// parallel? Or would that be bad for some reason.
 		done, err := e.runNextCase(ctx)
 		if done {
 			break
@@ -229,6 +239,7 @@ func (e *Eval[I, R]) runScorers(ctx context.Context, c Case[I, R], result R) ([]
 	var errs []error
 
 	for i, scorer := range e.scorers {
+		// Should we have a sub-span for each scorer?
 		val, err := scorer.Run(ctx, c.Input, c.Expected, result)
 		if err != nil {
 			werr := fmt.Errorf("%w: scorer %q failed: %w", ErrScorer, scorer.Name(), err)
@@ -343,6 +354,10 @@ func setJSONAttr(span trace.Span, key string, value any) error {
 }
 
 func recordSpanError(span trace.Span, err error) {
+	// In general errors.Is could return true for multiple of these error types?
+	// Or do we know that's impossible for some reason. Maybe since it's a
+	// heuristic it doesn't matter much and we just pick one.
+	//
 	// hardcode the error type when we know what it is. there may be better ways to do this
 	// but by default otel would show *fmt.wrapErrors as the type, which isn't super nice to
 	// look at. this function balances us returning errors which work with errors.Is() and
@@ -401,6 +416,11 @@ func (s *casesImpl[I, R]) Next() (Case[I, R], error) {
 	return testCase, nil
 }
 
+// I wonder if we should go with struct-args for the experiment resolution. E.g.
+// see how many experiment-initialization options we provide in the python/TS
+// Eval frameworks. And we could error if the user provides both projectID and
+// projectName. Also naming-wise, ResolveProjectExperimentID is a bit confusing.
+
 // ResolveExperimentID resolves an experiment ID from a name and project ID.
 func ResolveExperimentID(name string, projectID string) (string, error) {
 	if name == "" {
@@ -445,6 +465,9 @@ type typedDatasetIterator[InputType, ExpectedType any] struct {
 
 func (s *typedDatasetIterator[InputType, ExpectedType]) Next() (Case[InputType, ExpectedType], error) {
 	var fullEvent struct {
+		// Should these omitzero in case the dataset case doesn't have these
+		// fields? Not sure it's necessarily an error to have such a dataset
+		// case.
 		Input    InputType    `json:"input"`
 		Expected ExpectedType `json:"expected"`
 	}
