@@ -252,29 +252,32 @@ func (e *Eval[I, R]) runScorers(ctx context.Context, c Case[I, R], result R) ([]
 func (e *Eval[I, R]) runTask(ctx context.Context, c Case[I, R]) (R, error) {
 	ctx, span := e.tracer.Start(ctx, "task", e.startSpanOpt)
 	defer span.End()
+	attrs := map[string]any{
+		"braintrust.input_json":      c.Input,
+		"braintrust.expected":        c.Expected,
+		"braintrust.span_attributes": taskSpanAttrs,
+	}
+
+	var encodeErrs []error
+	for key, value := range attrs {
+		if err := setJSONAttr(span, key, value); err != nil {
+			encodeErrs = append(encodeErrs, err)
+		}
+	}
 
 	result, err := e.task(ctx, c.Input)
 	if err != nil {
+		// if the task fails, don't worry about the encode errors....
 		taskErr := fmt.Errorf("%w: %w", ErrTaskRun, err)
 		recordSpanError(span, taskErr)
 		return result, taskErr
 	}
 
-	attrs := map[string]any{
-		"braintrust.input_json":      c.Input,
-		"braintrust.output_json":     result,
-		"braintrust.expected":        c.Expected,
-		"braintrust.span_attributes": taskSpanAttrs,
+	if err := setJSONAttr(span, "braintrust.output_json", result); err != nil {
+		encodeErrs = append(encodeErrs, err)
 	}
 
-	var errs []error
-	for key, value := range attrs {
-		if err := setJSONAttr(span, key, value); err != nil {
-			errs = append(errs, err)
-		}
-	}
-
-	return result, errors.Join(errs...)
+	return result, errors.Join(encodeErrs...)
 }
 
 // Task is a function that takes an input and returns a result. It represents the unit of work

@@ -59,7 +59,10 @@ func TestEval_TaskErrors(t *testing.T) {
 	// First span is the failed task - it has an exception event
 	assert.JSONEq(`{
 		"attributes": {
-			"braintrust.parent": "experiment_id:123"
+			"braintrust.parent": "experiment_id:123",
+			"braintrust.expected": "2",
+			"braintrust.input_json": "1",
+			"braintrust.span_attributes": "{\"type\":\"task\"}"
 		},
 		"events": [
 			{
