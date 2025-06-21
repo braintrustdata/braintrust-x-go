@@ -68,4 +68,4 @@ examples:
 	cd examples/traceopenai && go run .
 	@echo "All examples completed!"
 
-pre: fmt ci # a command to rn before commiting 
+pre: fmt ci # a command to run before committing code

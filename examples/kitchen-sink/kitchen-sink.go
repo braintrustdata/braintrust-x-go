@@ -98,7 +98,7 @@ func runMathEval() {
 	}
 
 	// Test cases with various scenarios
-	tags := []string{"tag1, tag2"}
+	tags := []string{"tag1", "tag2"}
 
 	cases := []eval.Case[int, float64]{
 		{Input: 4, Expected: 2.0, Tags: tags},
