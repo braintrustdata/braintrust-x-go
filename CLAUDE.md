@@ -10,6 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Run tests with race detector: `go test -race ./...`
 - Always run `make ci` to verify your changes
 - Run `make fmt` to format code
+- Run `make fmt` after making changes
 
 ## Code Style Guidelines
 

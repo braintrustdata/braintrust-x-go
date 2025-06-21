@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"testing"
 	"time"
 
@@ -76,6 +75,12 @@ func (e *Exporter) Flush() []Span {
 	}
 
 	return spans
+}
+
+// testingT is a minimal interface for testing that can be implemented by testing.T and mocked for tests
+type testingT interface {
+	Helper()
+	Errorf(format string, args ...interface{})
 }
 
 // FlushOne returns the first span buffered in memory and fails if there is not
@@ -369,21 +374,41 @@ type Event struct {
 	Attrs map[string]any
 }
 
-// TestSpan is a summary of an otel span that is a little bit easier
-// to write in tests. It only contains "deterministic" fields that
-// we want to compare in tests (e.g it skips timestamps, span IDs, etc)
+// TestSpan is a span that is easier to write and compare to real otel spans
+// in tests. Any missing attributes will be set to sane OTel defaults, like
+// Unset status and empty events and attributes.
 type TestSpan struct {
 	Name              string
 	Attrs             map[string]any
-	StatusCode        string
+	JSONAttrs         map[string]any // Values will be JSON-serialized and merged into Attrs
+	StatusCode        codes.Code
 	StatusDescription string
 	Events            []Event
+	SpanKind          oteltrace.SpanKind
 	TimeRange         TimeRange // Optional: if non-zero, validates span timing is within this range
 }
 
-func NewSpan(name string, opts TestSpan) *Span {
-	attrs := make([]attr.KeyValue, 0, len(opts.Attrs))
+func NewSpan(t *testing.T, name string, opts TestSpan) Span {
+	t.Helper()
+
+	// Merge regular attrs and JSON attrs
+	srcAttrs := make(map[string]any)
+	// Add regular attributes
 	for k, v := range opts.Attrs {
+		srcAttrs[k] = v
+	}
+
+	// Add JSON attributes (serialize values to JSON strings)
+	for k, v := range opts.JSONAttrs {
+		js, err := json.Marshal(v)
+		if err != nil {
+			t.Fatalf("failed to marshal JSONAttrs[%q]: %v", k, err)
+		}
+		srcAttrs[k] = string(js)
+	}
+
+	attrs := make([]attr.KeyValue, 0, len(srcAttrs))
+	for k, v := range srcAttrs {
 		attrs = append(attrs, convertToAttribute(k, v))
 	}
 
@@ -401,34 +426,20 @@ func NewSpan(name string, opts TestSpan) *Span {
 		})
 	}
 
-	// Parse status code - default to Unset if empty
-	var statusCode codes.Code
-	if opts.StatusCode == "" {
-		statusCode = codes.Unset
-	} else {
-		switch opts.StatusCode {
-		case "OK":
-			statusCode = codes.Ok
-		case "ERROR":
-			statusCode = codes.Error
-		case "Unset":
-			statusCode = codes.Unset
-		default:
-			if code, err := strconv.Atoi(opts.StatusCode); err == nil {
-				statusCode = codes.Code(code)
-			} else {
-				statusCode = codes.Unset
-			}
-		}
+	spanKind := opts.SpanKind
+	if spanKind == 0 { // SpanKindUnspecified
+		spanKind = oteltrace.SpanKindInternal
 	}
 
-	return &Span{
+	return Span{
+		t: t,
 		Stub: tracetest.SpanStub{
 			Name:       name,
 			Attributes: attrs,
 			Events:     events,
+			SpanKind:   spanKind,
 			Status: sdktrace.Status{
-				Code:        statusCode,
+				Code:        opts.StatusCode,
 				Description: opts.StatusDescription,
 			},
 		},
@@ -471,80 +482,76 @@ func convertToAttribute(key string, value any) attr.KeyValue {
 	}
 }
 
-// AssertEqual compares this span with an expected TestSpan using individual assertions for clear error messages
+// AssertEqual compares this span with an expected TestSpan. This test ignores
+// non-deterministic fields like timestamps and span IDs and only compares the
+// meaningful fields like name, status, attributes, and events.
 func (s *Span) AssertEqual(expected TestSpan) {
 	s.t.Helper()
+	expectedSpan := NewSpan(s.t, expected.Name, expected)
+	assertSpanStubEqual(s.t, expectedSpan.Stub, s.Stub)
+}
 
-	// Compare name
-	assert.Equal(s.t, expected.Name, s.Stub.Name, "span name")
+func assertSpanStubEqual(t testingT, s1, s2 tracetest.SpanStub) {
+	t.Helper()
 
-	// Parse and compare status code
-	var expectedStatusCode codes.Code
-	if expected.StatusCode == "" {
-		expectedStatusCode = codes.Unset
-	} else {
-		switch expected.StatusCode {
-		case "OK":
-			expectedStatusCode = codes.Ok
-		case "ERROR":
-			expectedStatusCode = codes.Error
-		case "Unset":
-			expectedStatusCode = codes.Unset
-		default:
-			if code, err := strconv.Atoi(expected.StatusCode); err == nil {
-				expectedStatusCode = codes.Code(code)
-			} else {
-				expectedStatusCode = codes.Unset
+	if s1.Name != s2.Name {
+		t.Errorf("span name mismatch: expected %q, got %q", s1.Name, s2.Name)
+	}
+
+	if s1.Status != s2.Status {
+		t.Errorf("span status mismatch: expected %+v, got %+v", s1.Status, s2.Status)
+	}
+
+	if s1.SpanKind != s2.SpanKind {
+		t.Errorf("span kind mismatch: expected %v, got %v", s1.SpanKind, s2.SpanKind)
+	}
+
+	assertAttrsEqual(t, s1.Attributes, s2.Attributes, "")
+
+	for i, event1 := range s1.Events {
+		if i < len(s2.Events) {
+			event2 := s2.Events[i]
+			if event1.Name != event2.Name {
+				t.Errorf("event[%d] name mismatch: expected %q, got %q", i, event1.Name, event2.Name)
 			}
+			assertAttrsEqual(t, event1.Attributes, event2.Attributes, fmt.Sprintf("event[%d] ", i))
+		}
+	}
+	// Compare events one by one
+	if len(s1.Events) != len(s2.Events) {
+		t.Errorf("number of events mismatch: expected %d, got %d", len(s1.Events), len(s2.Events))
+		return
+	}
+
+}
+
+func assertAttrsEqual(t testingT, attrs1, attrs2 []attr.KeyValue, prefix string) {
+	t.Helper()
+
+	// Create maps for easier attribute lookup
+	attrMap1 := make(map[attr.Key]attr.Value)
+	for _, a := range attrs1 {
+		attrMap1[a.Key] = a.Value
+	}
+
+	attrMap2 := make(map[attr.Key]attr.Value)
+	for _, a := range attrs2 {
+		attrMap2[a.Key] = a.Value
+	}
+
+	// Check for missing expected attributes
+	for key, val1 := range attrMap1 {
+		if val2, exists := attrMap2[key]; !exists {
+			t.Errorf("%smissing expected attribute %s", prefix, string(key))
+		} else if val1 != val2 {
+			t.Errorf("%sattribute %s mismatch: expected %v, got %v", prefix, string(key), val1, val2)
 		}
 	}
 
-	assert.Equal(s.t, expectedStatusCode, s.Stub.Status.Code, "span status code")
-	assert.Equal(s.t, expected.StatusDescription, s.Stub.Status.Description, "span status description")
-
-	// Compare attributes individually
-	actualAttrs := convertAttributes(s.t, s.Stub.Attributes)
-
-	for key, expectedVal := range expected.Attrs {
-		assert.Contains(s.t, actualAttrs, key, "missing attribute %q", key)
-		if actualVal, exists := actualAttrs[key]; exists {
-			assert.Equal(s.t, expectedVal, actualVal, "attribute %q", key)
+	// Check for unexpected attributes
+	for key := range attrMap2 {
+		if _, exists := attrMap1[key]; !exists {
+			t.Errorf("%shas unexpected attribute %s", prefix, string(key))
 		}
-	}
-
-	for key := range actualAttrs {
-		assert.Contains(s.t, expected.Attrs, key, "unexpected attribute %q", key)
-	}
-
-	// Compare events individually
-	actualEvents := convertEvents(s.t, s.Stub.Events)
-
-	assert.Equal(s.t, len(expected.Events), len(actualEvents), "number of events")
-
-	for i, expectedEvent := range expected.Events {
-		if i < len(actualEvents) {
-			actualEvent := actualEvents[i]
-			assert.Equal(s.t, expectedEvent.Name, actualEvent["name"], "event[%d] name", i)
-
-			actualEventAttrs := actualEvent["attributes"].(map[string]interface{})
-
-			for key, expectedVal := range expectedEvent.Attrs {
-				assert.Contains(s.t, actualEventAttrs, key, "event[%d] missing attribute %q", i, key)
-				if actualVal, exists := actualEventAttrs[key]; exists {
-					assert.Equal(s.t, expectedVal, actualVal, "event[%d] attribute %q", i, key)
-				}
-			}
-
-			for key := range actualEventAttrs {
-				assert.Contains(s.t, expectedEvent.Attrs, key, "event[%d] unexpected attribute %q", i, key)
-			}
-		}
-	}
-
-	// Validate time range if provided
-	if !expected.TimeRange.Start.IsZero() && !expected.TimeRange.End.IsZero() {
-		assert.True(s.t, expected.TimeRange.Start.Before(s.Stub.StartTime), "span start time should be after TimeRange.Start")
-		assert.True(s.t, expected.TimeRange.End.After(s.Stub.EndTime), "span end time should be before TimeRange.End")
-		assert.True(s.t, s.Stub.StartTime.Before(s.Stub.EndTime), "span start time should be before end time")
 	}
 }

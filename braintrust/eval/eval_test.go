@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
 	"github.com/braintrust/braintrust-x-go/braintrust/autoevals"
@@ -60,12 +61,14 @@ func TestEval_TaskErrors(t *testing.T) {
 	spans[0].AssertEqual(oteltest.TestSpan{
 		Name: "task",
 		Attrs: map[string]any{
-			"braintrust.parent":          "experiment_id:123",
-			"braintrust.expected":        "2",
-			"braintrust.input_json":      "1",
-			"braintrust.span_attributes": "{\"type\":\"task\"}",
+			"braintrust.parent":   "experiment_id:123",
+			"braintrust.expected": "2",
 		},
-		StatusCode:        "ERROR",
+		JSONAttrs: map[string]any{
+			"braintrust.input_json":      1,
+			"braintrust.span_attributes": map[string]string{"type": "task"},
+		},
+		StatusCode:        codes.Error,
 		StatusDescription: "task run error: oops",
 		Events: []oteltest.Event{
 			{
@@ -84,7 +87,7 @@ func TestEval_TaskErrors(t *testing.T) {
 		Attrs: map[string]any{
 			"braintrust.parent": "experiment_id:123",
 		},
-		StatusCode:        "ERROR",
+		StatusCode:        codes.Error,
 		StatusDescription: "task run error: oops",
 	})
 
@@ -92,11 +95,13 @@ func TestEval_TaskErrors(t *testing.T) {
 	spans[2].AssertEqual(oteltest.TestSpan{
 		Name: "task",
 		Attrs: map[string]any{
-			"braintrust.expected":        "4",
-			"braintrust.input_json":      "2",
-			"braintrust.output_json":     "2",
-			"braintrust.parent":          "experiment_id:123",
-			"braintrust.span_attributes": "{\"type\":\"task\"}",
+			"braintrust.expected": "4",
+			"braintrust.parent":   "experiment_id:123",
+		},
+		JSONAttrs: map[string]any{
+			"braintrust.input_json":      2,
+			"braintrust.output_json":     2,
+			"braintrust.span_attributes": map[string]string{"type": "task"},
 		},
 	})
 
@@ -104,9 +109,11 @@ func TestEval_TaskErrors(t *testing.T) {
 	spans[3].AssertEqual(oteltest.TestSpan{
 		Name: "score",
 		Attrs: map[string]any{
-			"braintrust.parent":          "experiment_id:123",
-			"braintrust.scores":          "{\"Equals\":0}",
-			"braintrust.span_attributes": "{\"type\":\"score\"}",
+			"braintrust.parent": "experiment_id:123",
+		},
+		JSONAttrs: map[string]any{
+			"braintrust.scores":          map[string]int{"Equals": 0},
+			"braintrust.span_attributes": map[string]string{"type": "score"},
 		},
 	})
 
@@ -114,11 +121,13 @@ func TestEval_TaskErrors(t *testing.T) {
 	spans[4].AssertEqual(oteltest.TestSpan{
 		Name: "eval",
 		Attrs: map[string]any{
-			"braintrust.expected":        "4",
-			"braintrust.input_json":      "2",
-			"braintrust.output_json":     "2",
-			"braintrust.parent":          "experiment_id:123",
-			"braintrust.span_attributes": "{\"type\":\"eval\"}",
+			"braintrust.expected": "4",
+			"braintrust.parent":   "experiment_id:123",
+		},
+		JSONAttrs: map[string]any{
+			"braintrust.input_json":      2,
+			"braintrust.output_json":     2,
+			"braintrust.span_attributes": map[string]string{"type": "eval"},
 		},
 	})
 }
@@ -173,31 +182,37 @@ func TestEval_ScorerErrors(t *testing.T) {
 	spans[0].AssertEqual(oteltest.TestSpan{
 		Name: "task",
 		Attrs: map[string]any{
-			"braintrust.expected":        "1",
-			"braintrust.input_json":      "1",
-			"braintrust.output_json":     "1",
-			"braintrust.parent":          "experiment_id:123",
-			"braintrust.span_attributes": "{\"type\":\"task\"}",
+			"braintrust.expected": "1",
+			"braintrust.parent":   "experiment_id:123",
+		},
+		JSONAttrs: map[string]any{
+			"braintrust.input_json":      1,
+			"braintrust.output_json":     1,
+			"braintrust.span_attributes": map[string]string{"type": "task"},
 		},
 	})
 
 	spans[1].AssertEqual(oteltest.TestSpan{
 		Name: "score",
 		Attrs: map[string]any{
-			"braintrust.parent":          "experiment_id:123",
-			"braintrust.scores":          "{\"Equals\":1,\"failing_scorer\":1}",
-			"braintrust.span_attributes": "{\"type\":\"score\"}",
+			"braintrust.parent": "experiment_id:123",
+		},
+		JSONAttrs: map[string]any{
+			"braintrust.scores":          map[string]int{"Equals": 1, "failing_scorer": 1},
+			"braintrust.span_attributes": map[string]string{"type": "score"},
 		},
 	})
 
 	spans[2].AssertEqual(oteltest.TestSpan{
 		Name: "eval",
 		Attrs: map[string]any{
-			"braintrust.expected":        "1",
-			"braintrust.input_json":      "1",
-			"braintrust.output_json":     "1",
-			"braintrust.parent":          "experiment_id:123",
-			"braintrust.span_attributes": "{\"type\":\"eval\"}",
+			"braintrust.expected": "1",
+			"braintrust.parent":   "experiment_id:123",
+		},
+		JSONAttrs: map[string]any{
+			"braintrust.input_json":      1,
+			"braintrust.output_json":     1,
+			"braintrust.span_attributes": map[string]string{"type": "eval"},
 		},
 	})
 
@@ -205,11 +220,13 @@ func TestEval_ScorerErrors(t *testing.T) {
 	spans[3].AssertEqual(oteltest.TestSpan{
 		Name: "task",
 		Attrs: map[string]any{
-			"braintrust.expected":        "4",
-			"braintrust.input_json":      "2",
-			"braintrust.output_json":     "4",
-			"braintrust.parent":          "experiment_id:123",
-			"braintrust.span_attributes": "{\"type\":\"task\"}",
+			"braintrust.expected": "4",
+			"braintrust.parent":   "experiment_id:123",
+		},
+		JSONAttrs: map[string]any{
+			"braintrust.input_json":      2,
+			"braintrust.output_json":     4,
+			"braintrust.span_attributes": map[string]string{"type": "task"},
 		},
 	})
 
@@ -217,11 +234,13 @@ func TestEval_ScorerErrors(t *testing.T) {
 	spans[4].AssertEqual(oteltest.TestSpan{
 		Name: "score",
 		Attrs: map[string]any{
-			"braintrust.parent":          "experiment_id:123",
-			"braintrust.scores":          "{\"Equals\":1}",
-			"braintrust.span_attributes": "{\"type\":\"score\"}",
+			"braintrust.parent": "experiment_id:123",
 		},
-		StatusCode:        "ERROR",
+		JSONAttrs: map[string]any{
+			"braintrust.scores":          map[string]int{"Equals": 1},
+			"braintrust.span_attributes": map[string]string{"type": "score"},
+		},
+		StatusCode:        codes.Error,
 		StatusDescription: "scorer error: scorer \"failing_scorer\" failed: scorer failed for input 2",
 		Events: []oteltest.Event{
 			{
@@ -240,7 +259,7 @@ func TestEval_ScorerErrors(t *testing.T) {
 		Attrs: map[string]any{
 			"braintrust.parent": "experiment_id:123",
 		},
-		StatusCode:        "ERROR",
+		StatusCode:        codes.Error,
 		StatusDescription: "scorer error: scorer \"failing_scorer\" failed: scorer failed for input 2",
 	})
 }
@@ -292,11 +311,13 @@ func TestHardcodedEval(t *testing.T) {
 	spans[0].AssertEqual(oteltest.TestSpan{
 		Name: "task",
 		Attrs: map[string]any{
-			"braintrust.expected":        "1",
-			"braintrust.input_json":      "1",
-			"braintrust.output_json":     "1",
-			"braintrust.parent":          "experiment_id:123",
-			"braintrust.span_attributes": "{\"type\":\"task\"}",
+			"braintrust.expected": "1",
+			"braintrust.parent":   "experiment_id:123",
+		},
+		JSONAttrs: map[string]any{
+			"braintrust.input_json":      1,
+			"braintrust.output_json":     1,
+			"braintrust.span_attributes": map[string]string{"type": "task"},
 		},
 		TimeRange: timeRange,
 	})
@@ -304,20 +325,24 @@ func TestHardcodedEval(t *testing.T) {
 	spans[1].AssertEqual(oteltest.TestSpan{
 		Name: "score",
 		Attrs: map[string]any{
-			"braintrust.parent":          "experiment_id:123",
-			"braintrust.scores":          "{\"equals\":1}",
-			"braintrust.span_attributes": "{\"type\":\"score\"}",
+			"braintrust.parent": "experiment_id:123",
+		},
+		JSONAttrs: map[string]any{
+			"braintrust.scores":          map[string]int{"equals": 1},
+			"braintrust.span_attributes": map[string]string{"type": "score"},
 		},
 	})
 
 	spans[2].AssertEqual(oteltest.TestSpan{
 		Name: "eval",
 		Attrs: map[string]any{
-			"braintrust.expected":        "1",
-			"braintrust.input_json":      "1",
-			"braintrust.output_json":     "1",
-			"braintrust.parent":          "experiment_id:123",
-			"braintrust.span_attributes": "{\"type\":\"eval\"}",
+			"braintrust.expected": "1",
+			"braintrust.parent":   "experiment_id:123",
+		},
+		JSONAttrs: map[string]any{
+			"braintrust.input_json":      1,
+			"braintrust.output_json":     1,
+			"braintrust.span_attributes": map[string]string{"type": "eval"},
 		},
 	})
 
@@ -325,31 +350,37 @@ func TestHardcodedEval(t *testing.T) {
 	spans[3].AssertEqual(oteltest.TestSpan{
 		Name: "task",
 		Attrs: map[string]any{
-			"braintrust.expected":        "4",
-			"braintrust.input_json":      "2",
-			"braintrust.output_json":     "5",
-			"braintrust.parent":          "experiment_id:123",
-			"braintrust.span_attributes": "{\"type\":\"task\"}",
+			"braintrust.expected": "4",
+			"braintrust.parent":   "experiment_id:123",
+		},
+		JSONAttrs: map[string]any{
+			"braintrust.input_json":      2,
+			"braintrust.output_json":     5,
+			"braintrust.span_attributes": map[string]string{"type": "task"},
 		},
 	})
 
 	spans[4].AssertEqual(oteltest.TestSpan{
 		Name: "score",
 		Attrs: map[string]any{
-			"braintrust.parent":          "experiment_id:123",
-			"braintrust.scores":          "{\"equals\":0}",
-			"braintrust.span_attributes": "{\"type\":\"score\"}",
+			"braintrust.parent": "experiment_id:123",
+		},
+		JSONAttrs: map[string]any{
+			"braintrust.scores":          map[string]int{"equals": 0},
+			"braintrust.span_attributes": map[string]string{"type": "score"},
 		},
 	})
 
 	spans[5].AssertEqual(oteltest.TestSpan{
 		Name: "eval",
 		Attrs: map[string]any{
-			"braintrust.expected":        "4",
-			"braintrust.input_json":      "2",
-			"braintrust.output_json":     "5",
-			"braintrust.parent":          "experiment_id:123",
-			"braintrust.span_attributes": "{\"type\":\"eval\"}",
+			"braintrust.expected": "4",
+			"braintrust.parent":   "experiment_id:123",
+		},
+		JSONAttrs: map[string]any{
+			"braintrust.input_json":      2,
+			"braintrust.output_json":     5,
+			"braintrust.span_attributes": map[string]string{"type": "eval"},
 		},
 	})
 }
