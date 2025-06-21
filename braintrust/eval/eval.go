@@ -257,6 +257,12 @@ func (e *Eval[I, R]) runTask(ctx context.Context, c Case[I, R]) (R, error) {
 		"braintrust.expected":        c.Expected,
 		"braintrust.span_attributes": taskSpanAttrs,
 	}
+	if c.Metadata != nil {
+		attrs["braintrust.metadata"] = c.Metadata
+	}
+	if c.Tags != nil {
+		attrs["braintrust.tags"] = c.Tags
+	}
 
 	var encodeErrs []error
 	for key, value := range attrs {
@@ -288,6 +294,8 @@ type Task[I, R any] func(ctx context.Context, input I) (R, error)
 type Case[I, R any] struct {
 	Input    I
 	Expected R
+	Metadata map[string]any
+	Tags     []string
 }
 
 // Score represents the result of a scorer evaluation.
