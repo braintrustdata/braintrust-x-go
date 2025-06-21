@@ -16,6 +16,12 @@ import (
 	"github.com/braintrust/braintrust-x-go/braintrust/trace"
 )
 
+var (
+	scoreType = map[string]string{"type": "score"}
+	evalType  = map[string]string{"type": "eval"}
+	taskType  = map[string]string{"type": "task"}
+)
+
 func TestEval_TaskErrors(t *testing.T) {
 	// a test that verifies we properly handle evals where some
 	// tasks pass and some have errors.
@@ -66,7 +72,7 @@ func TestEval_TaskErrors(t *testing.T) {
 		},
 		JSONAttrs: map[string]any{
 			"braintrust.input_json":      1,
-			"braintrust.span_attributes": map[string]string{"type": "task"},
+			"braintrust.span_attributes": taskType,
 		},
 		StatusCode:        codes.Error,
 		StatusDescription: "task run error: oops",
@@ -101,7 +107,7 @@ func TestEval_TaskErrors(t *testing.T) {
 		JSONAttrs: map[string]any{
 			"braintrust.input_json":      2,
 			"braintrust.output_json":     2,
-			"braintrust.span_attributes": map[string]string{"type": "task"},
+			"braintrust.span_attributes": taskType,
 		},
 	})
 
@@ -113,7 +119,7 @@ func TestEval_TaskErrors(t *testing.T) {
 		},
 		JSONAttrs: map[string]any{
 			"braintrust.scores":          map[string]int{"Equals": 0},
-			"braintrust.span_attributes": map[string]string{"type": "score"},
+			"braintrust.span_attributes": scoreType,
 		},
 	})
 
@@ -127,7 +133,7 @@ func TestEval_TaskErrors(t *testing.T) {
 		JSONAttrs: map[string]any{
 			"braintrust.input_json":      2,
 			"braintrust.output_json":     2,
-			"braintrust.span_attributes": map[string]string{"type": "eval"},
+			"braintrust.span_attributes": evalType,
 		},
 	})
 }
@@ -188,7 +194,7 @@ func TestEval_ScorerErrors(t *testing.T) {
 		JSONAttrs: map[string]any{
 			"braintrust.input_json":      1,
 			"braintrust.output_json":     1,
-			"braintrust.span_attributes": map[string]string{"type": "task"},
+			"braintrust.span_attributes": taskType,
 		},
 	})
 
@@ -199,7 +205,7 @@ func TestEval_ScorerErrors(t *testing.T) {
 		},
 		JSONAttrs: map[string]any{
 			"braintrust.scores":          map[string]int{"Equals": 1, "failing_scorer": 1},
-			"braintrust.span_attributes": map[string]string{"type": "score"},
+			"braintrust.span_attributes": scoreType,
 		},
 	})
 
@@ -212,7 +218,7 @@ func TestEval_ScorerErrors(t *testing.T) {
 		JSONAttrs: map[string]any{
 			"braintrust.input_json":      1,
 			"braintrust.output_json":     1,
-			"braintrust.span_attributes": map[string]string{"type": "eval"},
+			"braintrust.span_attributes": evalType,
 		},
 	})
 
@@ -226,7 +232,7 @@ func TestEval_ScorerErrors(t *testing.T) {
 		JSONAttrs: map[string]any{
 			"braintrust.input_json":      2,
 			"braintrust.output_json":     4,
-			"braintrust.span_attributes": map[string]string{"type": "task"},
+			"braintrust.span_attributes": taskType,
 		},
 	})
 
@@ -238,7 +244,7 @@ func TestEval_ScorerErrors(t *testing.T) {
 		},
 		JSONAttrs: map[string]any{
 			"braintrust.scores":          map[string]int{"Equals": 1},
-			"braintrust.span_attributes": map[string]string{"type": "score"},
+			"braintrust.span_attributes": scoreType,
 		},
 		StatusCode:        codes.Error,
 		StatusDescription: "scorer error: scorer \"failing_scorer\" failed: scorer failed for input 2",
@@ -317,7 +323,7 @@ func TestHardcodedEval(t *testing.T) {
 		JSONAttrs: map[string]any{
 			"braintrust.input_json":      1,
 			"braintrust.output_json":     1,
-			"braintrust.span_attributes": map[string]string{"type": "task"},
+			"braintrust.span_attributes": taskType,
 		},
 		TimeRange: timeRange,
 	})
@@ -329,7 +335,7 @@ func TestHardcodedEval(t *testing.T) {
 		},
 		JSONAttrs: map[string]any{
 			"braintrust.scores":          map[string]int{"equals": 1},
-			"braintrust.span_attributes": map[string]string{"type": "score"},
+			"braintrust.span_attributes": scoreType,
 		},
 	})
 
@@ -342,7 +348,7 @@ func TestHardcodedEval(t *testing.T) {
 		JSONAttrs: map[string]any{
 			"braintrust.input_json":      1,
 			"braintrust.output_json":     1,
-			"braintrust.span_attributes": map[string]string{"type": "eval"},
+			"braintrust.span_attributes": evalType,
 		},
 	})
 
@@ -356,7 +362,7 @@ func TestHardcodedEval(t *testing.T) {
 		JSONAttrs: map[string]any{
 			"braintrust.input_json":      2,
 			"braintrust.output_json":     5,
-			"braintrust.span_attributes": map[string]string{"type": "task"},
+			"braintrust.span_attributes": taskType,
 		},
 	})
 
@@ -367,7 +373,7 @@ func TestHardcodedEval(t *testing.T) {
 		},
 		JSONAttrs: map[string]any{
 			"braintrust.scores":          map[string]int{"equals": 0},
-			"braintrust.span_attributes": map[string]string{"type": "score"},
+			"braintrust.span_attributes": scoreType,
 		},
 	})
 
@@ -380,7 +386,7 @@ func TestHardcodedEval(t *testing.T) {
 		JSONAttrs: map[string]any{
 			"braintrust.input_json":      2,
 			"braintrust.output_json":     5,
-			"braintrust.span_attributes": map[string]string{"type": "eval"},
+			"braintrust.span_attributes": evalType,
 		},
 	})
 }
