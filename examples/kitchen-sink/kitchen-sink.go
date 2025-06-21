@@ -98,13 +98,15 @@ func runMathEval() {
 	}
 
 	// Test cases with various scenarios
+	tags := []string{"tag1", "tag2"}
+
 	cases := []eval.Case[int, float64]{
-		{Input: 4, Expected: 2.0},  // ✅ Perfect match
-		{Input: 9, Expected: 3.0},  // ✅ Perfect match
-		{Input: 16, Expected: 4.0}, // ⚠️  Scorer fails (tolerance_checker malfunction)
-		{Input: 25, Expected: 5.1}, // ⚠️  Close but not exact (tolerance should pass, equals should fail)
-		{Input: 42, Expected: 6.5}, // ❌ Task fails (universe error)
-		{Input: 13, Expected: 3.6}, // ❌ Task fails (superstition error)
+		{Input: 4, Expected: 2.0, Tags: tags},
+		{Input: 9, Expected: 3.0, Tags: tags},  // ✅ Perfect match
+		{Input: 16, Expected: 4.0, Tags: tags}, // ⚠️  Scorer fails (tolerance_checker malfunction)
+		{Input: 25, Expected: 5.1, Tags: tags}, // ⚠️  Close but not exact (tolerance should pass, equals should fail)
+		{Input: 42, Expected: 6.5, Tags: tags}, // ❌ Task fails (universe error)
+		{Input: 13, Expected: 3.6, Tags: tags}, // ❌ Task fails (superstition error)
 	}
 
 	experimentID, err := eval.ResolveProjectExperimentID("Math Evaluation - Basic Functionality", "Go Kitchen Sink Examples")

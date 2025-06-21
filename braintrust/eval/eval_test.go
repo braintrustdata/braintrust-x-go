@@ -8,11 +8,18 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
 	"github.com/braintrust/braintrust-x-go/braintrust/autoevals"
 	"github.com/braintrust/braintrust-x-go/braintrust/internal/oteltest"
 	"github.com/braintrust/braintrust-x-go/braintrust/trace"
+)
+
+var (
+	scoreType = map[string]string{"type": "score"}
+	evalType  = map[string]string{"type": "eval"}
+	taskType  = map[string]string{"type": "task"}
 )
 
 func TestEval_TaskErrors(t *testing.T) {
@@ -57,92 +64,78 @@ func TestEval_TaskErrors(t *testing.T) {
 	}
 
 	// First span is the failed task - it has an exception event
-	assert.JSONEq(`{
-		"attributes": {
-			"braintrust.parent": "experiment_id:123"
+	spans[0].AssertEqual(oteltest.TestSpan{
+		Name: "task",
+		Attrs: map[string]any{
+			"braintrust.parent":   "experiment_id:123",
+			"braintrust.expected": "2",
 		},
-		"events": [
+		JSONAttrs: map[string]any{
+			"braintrust.input_json":      1,
+			"braintrust.span_attributes": taskType,
+		},
+		StatusCode:        codes.Error,
+		StatusDescription: "task run error: oops",
+		Events: []oteltest.Event{
 			{
-				"attributes": {
+				Name: "exception",
+				Attrs: map[string]any{
 					"exception.message": "task run error: oops",
-					"exception.type": "ErrTaskRun"
+					"exception.type":    "ErrTaskRun",
 				},
-				"name": "exception"
-			}
-		],
-		"name": "task",
-		"spanKind": "internal",
-		"status": {
-			"code": "Error",
-			"description": "task run error: oops"
-		}
-	}`, spans[0].Snapshot())
+			},
+		},
+	})
 
 	// Second span is the eval span for the first failed case - should have Error status
-	assert.JSONEq(`{
-		"attributes": {
-			"braintrust.parent": "experiment_id:123"
+	spans[1].AssertEqual(oteltest.TestSpan{
+		Name: "eval",
+		Attrs: map[string]any{
+			"braintrust.parent": "experiment_id:123",
 		},
-		"events": [],
-		"name": "eval",
-		"spanKind": "internal",
-		"status": {
-			"code": "Error",
-			"description": "task run error: oops"
-		}
-	}`, spans[1].Snapshot())
+		StatusCode:        codes.Error,
+		StatusDescription: "task run error: oops",
+	})
 
 	// Third span is the successful task for the second case
-	assert.JSONEq(`{
-		"attributes": {
+	spans[2].AssertEqual(oteltest.TestSpan{
+		Name: "task",
+		Attrs: map[string]any{
 			"braintrust.expected": "4",
-			"braintrust.input_json": "2",
-			"braintrust.output_json": "2",
-			"braintrust.parent": "experiment_id:123",
-			"braintrust.span_attributes": "{\"type\":\"task\"}"
+			"braintrust.parent":   "experiment_id:123",
 		},
-		"events": [],
-		"name": "task",
-		"spanKind": "internal",
-		"status": {
-			"code": "Unset",
-			"description": ""
-		}
-	}`, spans[2].Snapshot())
+		JSONAttrs: map[string]any{
+			"braintrust.input_json":      2,
+			"braintrust.output_json":     2,
+			"braintrust.span_attributes": taskType,
+		},
+	})
 
 	// Fourth span is the score for the second case
-	assert.JSONEq(`{
-		"attributes": {
+	spans[3].AssertEqual(oteltest.TestSpan{
+		Name: "score",
+		Attrs: map[string]any{
 			"braintrust.parent": "experiment_id:123",
-			"braintrust.scores": "{\"Equals\":0}",
-			"braintrust.span_attributes": "{\"type\":\"score\"}"
 		},
-		"events": [],
-		"name": "score",
-		"spanKind": "internal",
-		"status": {
-			"code": "Unset",
-			"description": ""
-		}
-	}`, spans[3].Snapshot())
+		JSONAttrs: map[string]any{
+			"braintrust.scores":          map[string]int{"Equals": 0},
+			"braintrust.span_attributes": scoreType,
+		},
+	})
 
 	// Fifth span is the eval for the second case
-	assert.JSONEq(`{
-		"attributes": {
+	spans[4].AssertEqual(oteltest.TestSpan{
+		Name: "eval",
+		Attrs: map[string]any{
 			"braintrust.expected": "4",
-			"braintrust.input_json": "2",
-			"braintrust.output_json": "2",
-			"braintrust.parent": "experiment_id:123",
-			"braintrust.span_attributes": "{\"type\":\"eval\"}"
+			"braintrust.parent":   "experiment_id:123",
 		},
-		"events": [],
-		"name": "eval",
-		"spanKind": "internal",
-		"status": {
-			"code": "Unset",
-			"description": ""
-		}
-	}`, spans[4].Snapshot())
+		JSONAttrs: map[string]any{
+			"braintrust.input_json":      2,
+			"braintrust.output_json":     2,
+			"braintrust.span_attributes": evalType,
+		},
+	})
 }
 
 func TestEval_ScorerErrors(t *testing.T) {
@@ -192,110 +185,89 @@ func TestEval_ScorerErrors(t *testing.T) {
 	}
 
 	// First case (input=1, expected=1, result=1) - all succeed
-	assert.JSONEq(`{
-		"attributes": {
+	spans[0].AssertEqual(oteltest.TestSpan{
+		Name: "task",
+		Attrs: map[string]any{
 			"braintrust.expected": "1",
-			"braintrust.input_json": "1",
-			"braintrust.output_json": "1",
-			"braintrust.parent": "experiment_id:123",
-			"braintrust.span_attributes": "{\"type\":\"task\"}"
+			"braintrust.parent":   "experiment_id:123",
 		},
-		"events": [],
-		"name": "task",
-		"spanKind": "internal",
-		"status": {
-			"code": "Unset",
-			"description": ""
-		}
-	}`, spans[0].Snapshot())
-
-	assert.JSONEq(`{
-		"attributes": {
-			"braintrust.parent": "experiment_id:123",
-			"braintrust.scores": "{\"Equals\":1,\"failing_scorer\":1}",
-			"braintrust.span_attributes": "{\"type\":\"score\"}"
+		JSONAttrs: map[string]any{
+			"braintrust.input_json":      1,
+			"braintrust.output_json":     1,
+			"braintrust.span_attributes": taskType,
 		},
-		"events": [],
-		"name": "score",
-		"spanKind": "internal",
-		"status": {
-			"code": "Unset",
-			"description": ""
-		}
-	}`, spans[1].Snapshot())
+	})
 
-	assert.JSONEq(`{
-		"attributes": {
+	spans[1].AssertEqual(oteltest.TestSpan{
+		Name: "score",
+		Attrs: map[string]any{
+			"braintrust.parent": "experiment_id:123",
+		},
+		JSONAttrs: map[string]any{
+			"braintrust.scores":          map[string]int{"Equals": 1, "failing_scorer": 1},
+			"braintrust.span_attributes": scoreType,
+		},
+	})
+
+	spans[2].AssertEqual(oteltest.TestSpan{
+		Name: "eval",
+		Attrs: map[string]any{
 			"braintrust.expected": "1",
-			"braintrust.input_json": "1",
-			"braintrust.output_json": "1",
-			"braintrust.parent": "experiment_id:123",
-			"braintrust.span_attributes": "{\"type\":\"eval\"}"
+			"braintrust.parent":   "experiment_id:123",
 		},
-		"events": [],
-		"name": "eval",
-		"spanKind": "internal",
-		"status": {
-			"code": "Unset",
-			"description": ""
-		}
-	}`, spans[2].Snapshot())
+		JSONAttrs: map[string]any{
+			"braintrust.input_json":      1,
+			"braintrust.output_json":     1,
+			"braintrust.span_attributes": evalType,
+		},
+	})
 
 	// Second case (input=2, expected=4, result=4) - scorer fails
-	assert.JSONEq(`{
-		"attributes": {
+	spans[3].AssertEqual(oteltest.TestSpan{
+		Name: "task",
+		Attrs: map[string]any{
 			"braintrust.expected": "4",
-			"braintrust.input_json": "2",
-			"braintrust.output_json": "4",
-			"braintrust.parent": "experiment_id:123",
-			"braintrust.span_attributes": "{\"type\":\"task\"}"
+			"braintrust.parent":   "experiment_id:123",
 		},
-		"events": [],
-		"name": "task",
-		"spanKind": "internal",
-		"status": {
-			"code": "Unset",
-			"description": ""
-		}
-	}`, spans[3].Snapshot())
+		JSONAttrs: map[string]any{
+			"braintrust.input_json":      2,
+			"braintrust.output_json":     4,
+			"braintrust.span_attributes": taskType,
+		},
+	})
 
 	// Score span should have exception event for the failing scorer
-	assert.JSONEq(`{
-		"attributes": {
+	spans[4].AssertEqual(oteltest.TestSpan{
+		Name: "score",
+		Attrs: map[string]any{
 			"braintrust.parent": "experiment_id:123",
-			"braintrust.scores": "{\"Equals\":1}",
-			"braintrust.span_attributes": "{\"type\":\"score\"}"
 		},
-		"events": [
+		JSONAttrs: map[string]any{
+			"braintrust.scores":          map[string]int{"Equals": 1},
+			"braintrust.span_attributes": scoreType,
+		},
+		StatusCode:        codes.Error,
+		StatusDescription: "scorer error: scorer \"failing_scorer\" failed: scorer failed for input 2",
+		Events: []oteltest.Event{
 			{
-				"attributes": {
+				Name: "exception",
+				Attrs: map[string]any{
 					"exception.message": "scorer error: scorer \"failing_scorer\" failed: scorer failed for input 2",
-					"exception.type": "ErrScorer"
+					"exception.type":    "ErrScorer",
 				},
-				"name": "exception"
-			}
-		],
-		"name": "score",
-		"spanKind": "internal",
-		"status": {
-			"code": "Error",
-			"description": "scorer error: scorer \"failing_scorer\" failed: scorer failed for input 2"
-		}
-	}`, spans[4].Snapshot())
+			},
+		},
+	})
 
 	// Final eval span should have Error status due to scorer failure
-	assert.JSONEq(`{
-		"attributes": {
-			"braintrust.parent": "experiment_id:123"
+	spans[5].AssertEqual(oteltest.TestSpan{
+		Name: "eval",
+		Attrs: map[string]any{
+			"braintrust.parent": "experiment_id:123",
 		},
-		"events": [],
-		"name": "eval",
-		"spanKind": "internal",
-		"status": {
-			"code": "Error",
-			"description": "scorer error: scorer \"failing_scorer\" failed: scorer failed for input 2"
-		}
-	}`, spans[5].Snapshot())
+		StatusCode:        codes.Error,
+		StatusDescription: "scorer error: scorer \"failing_scorer\" failed: scorer failed for input 2",
+	})
 }
 
 func TestHardcodedEval(t *testing.T) {
@@ -324,7 +296,7 @@ func TestHardcodedEval(t *testing.T) {
 	}
 
 	cases := []Case[int, int]{
-		{Input: 1, Expected: 1},
+		{Input: 1, Expected: 1, Tags: []string{"tag1", "tag2"}},
 		{Input: 2, Expected: 4},
 	}
 
@@ -333,111 +305,91 @@ func TestHardcodedEval(t *testing.T) {
 	}
 
 	eval1 := New(id, NewCases(cases), brokenSquare, scorers)
+	timer := oteltest.NewTimer()
 	err := eval1.Run()
+	timeRange := timer.Tick()
 	require.NoError(err)
 
 	spans := exporter.Flush()
 	assert.Equal(len(cases)*3, len(spans))
 
-	// Assert first case spans
-	assert.JSONEq(`{
-		"attributes": {
+	// Assert first case spans using new API
+	spans[0].AssertEqual(oteltest.TestSpan{
+		Name: "task",
+		Attrs: map[string]any{
 			"braintrust.expected": "1",
-			"braintrust.input_json": "1",
-			"braintrust.output_json": "1",
-			"braintrust.parent": "experiment_id:123",
-			"braintrust.span_attributes": "{\"type\":\"task\"}"
+			"braintrust.parent":   "experiment_id:123",
 		},
-		"events": [],
-		"name": "task",
-		"spanKind": "internal",
-		"status": {
-			"code": "Unset",
-			"description": ""
-		}
-	}`, spans[0].Snapshot())
-
-	assert.JSONEq(`{
-		"attributes": {
-			"braintrust.parent": "experiment_id:123",
-			"braintrust.scores": "{\"equals\":1}",
-			"braintrust.span_attributes": "{\"type\":\"score\"}"
+		JSONAttrs: map[string]any{
+			"braintrust.input_json":      1,
+			"braintrust.output_json":     1,
+			"braintrust.span_attributes": taskType,
 		},
-		"events": [],
-		"name": "score",
-		"spanKind": "internal",
-		"status": {
-			"code": "Unset",
-			"description": ""
-		}
-	}`, spans[1].Snapshot())
+		TimeRange: timeRange,
+	})
 
-	assert.JSONEq(`{
-		"attributes": {
+	spans[1].AssertEqual(oteltest.TestSpan{
+		Name: "score",
+		Attrs: map[string]any{
+			"braintrust.parent": "experiment_id:123",
+		},
+		JSONAttrs: map[string]any{
+			"braintrust.scores":          map[string]int{"equals": 1},
+			"braintrust.span_attributes": scoreType,
+		},
+	})
+
+	spans[2].AssertEqual(oteltest.TestSpan{
+		Name: "eval",
+		Attrs: map[string]any{
 			"braintrust.expected": "1",
-			"braintrust.input_json": "1",
-			"braintrust.output_json": "1",
-			"braintrust.parent": "experiment_id:123",
-			"braintrust.span_attributes": "{\"type\":\"eval\"}"
+			"braintrust.parent":   "experiment_id:123",
+			"braintrust.tags":     []string{"tag1", "tag2"},
 		},
-		"events": [],
-		"name": "eval",
-		"spanKind": "internal",
-		"status": {
-			"code": "Unset",
-			"description": ""
-		}
-	}`, spans[2].Snapshot())
+		JSONAttrs: map[string]any{
+			"braintrust.input_json":      1,
+			"braintrust.output_json":     1,
+			"braintrust.span_attributes": evalType,
+		},
+	})
 
-	// Assert second case spans
-	assert.JSONEq(`{
-		"attributes": {
+	// Assert second case spans using new API
+	spans[3].AssertEqual(oteltest.TestSpan{
+		Name: "task",
+		Attrs: map[string]any{
 			"braintrust.expected": "4",
-			"braintrust.input_json": "2",
-			"braintrust.output_json": "5",
-			"braintrust.parent": "experiment_id:123",
-			"braintrust.span_attributes": "{\"type\":\"task\"}"
+			"braintrust.parent":   "experiment_id:123",
 		},
-		"events": [],
-		"name": "task",
-		"spanKind": "internal",
-		"status": {
-			"code": "Unset",
-			"description": ""
-		}
-	}`, spans[3].Snapshot())
-
-	assert.JSONEq(`{
-		"attributes": {
-			"braintrust.parent": "experiment_id:123",
-			"braintrust.scores": "{\"equals\":0}",
-			"braintrust.span_attributes": "{\"type\":\"score\"}"
+		JSONAttrs: map[string]any{
+			"braintrust.input_json":      2,
+			"braintrust.output_json":     5,
+			"braintrust.span_attributes": taskType,
 		},
-		"events": [],
-		"name": "score",
-		"spanKind": "internal",
-		"status": {
-			"code": "Unset",
-			"description": ""
-		}
-	}`, spans[4].Snapshot())
+	})
 
-	assert.JSONEq(`{
-		"attributes": {
+	spans[4].AssertEqual(oteltest.TestSpan{
+		Name: "score",
+		Attrs: map[string]any{
+			"braintrust.parent": "experiment_id:123",
+		},
+		JSONAttrs: map[string]any{
+			"braintrust.scores":          map[string]int{"equals": 0},
+			"braintrust.span_attributes": scoreType,
+		},
+	})
+
+	spans[5].AssertEqual(oteltest.TestSpan{
+		Name: "eval",
+		Attrs: map[string]any{
 			"braintrust.expected": "4",
-			"braintrust.input_json": "2",
-			"braintrust.output_json": "5",
-			"braintrust.parent": "experiment_id:123",
-			"braintrust.span_attributes": "{\"type\":\"eval\"}"
+			"braintrust.parent":   "experiment_id:123",
 		},
-		"events": [],
-		"name": "eval",
-		"spanKind": "internal",
-		"status": {
-			"code": "Unset",
-			"description": ""
-		}
-	}`, spans[5].Snapshot())
+		JSONAttrs: map[string]any{
+			"braintrust.input_json":      2,
+			"braintrust.output_json":     5,
+			"braintrust.span_attributes": evalType,
+		},
+	})
 }
 
 func TestCases(t *testing.T) {
@@ -538,7 +490,9 @@ func TestEvalWithCasesIteratorError(t *testing.T) {
 	scorers := []Scorer[string, string]{autoevals.NewEquals[string, string]()}
 
 	eval := New("test-error-generator", generator, task, scorers)
+	timer := oteltest.NewTimer()
 	err := eval.Run()
+	timeRange := timer.Tick()
 
 	// Should return the error from the Cases iterator
 	require.Error(err)
@@ -548,38 +502,108 @@ func TestEvalWithCasesIteratorError(t *testing.T) {
 	spans := exporter.Flush()
 	assert.Equal(7, len(spans)) // 2 cases * 3 spans each + 1 iterator error span
 
-	// Verify the spans are for the correct cases
-	// First case spans (first, first)
-	assert.Equal("task", spans[0].Name())
-	assert.Equal("first", spans[0].Input())
-	assert.Equal("first", spans[0].Output())
+	for _, span := range spans {
+		span.AssertInTimeRange(timeRange)
+	}
 
-	assert.Equal("score", spans[1].Name())
-	assert.Contains(spans[1].Attr("braintrust.span_attributes").String(), "score")
+	// First case spans (first, first) - task span
+	spans[0].AssertEqual(oteltest.TestSpan{
+		Name: "task",
+		Attrs: map[string]any{
+			"braintrust.parent": "experiment_id:test-error-generator",
+		},
+		JSONAttrs: map[string]any{
+			"braintrust.expected":        "first",
+			"braintrust.input_json":      "first",
+			"braintrust.output_json":     "first",
+			"braintrust.span_attributes": taskType,
+		},
+	})
 
-	assert.Equal("eval", spans[2].Name())
-	assert.Equal("first", spans[2].Input())
-	assert.Equal("first", spans[2].Output())
+	// First case spans (first, first) - score span
+	spans[1].AssertEqual(oteltest.TestSpan{
+		Name: "score",
+		Attrs: map[string]any{
+			"braintrust.parent": "experiment_id:test-error-generator",
+		},
+		JSONAttrs: map[string]any{
+			"braintrust.scores":          map[string]int{"Equals": 1},
+			"braintrust.span_attributes": scoreType,
+		},
+	})
+
+	// First case spans (first, first) - eval span
+	spans[2].AssertEqual(oteltest.TestSpan{
+		Name: "eval",
+		Attrs: map[string]any{
+			"braintrust.parent": "experiment_id:test-error-generator",
+		},
+		JSONAttrs: map[string]any{
+			"braintrust.expected":        "first",
+			"braintrust.input_json":      "first",
+			"braintrust.output_json":     "first",
+			"braintrust.span_attributes": evalType,
+		},
+	})
 
 	// Iterator error span - should be marked as error and have no input/output
-	assert.Equal("eval", spans[3].Name())
-	assert.Equal("Error", spans[3].Status().Code.String())
-	assert.Contains(spans[3].Status().Description, "case iterator error")
-	// Error span should not have input/output attributes since the iterator failed
-	assert.False(spans[3].HasAttr("braintrust.input_json"))
-	assert.False(spans[3].HasAttr("braintrust.output_json"))
+	spans[3].AssertEqual(oteltest.TestSpan{
+		Name: "eval",
+		Attrs: map[string]any{
+			"braintrust.parent": "experiment_id:test-error-generator",
+		},
+		StatusCode:        codes.Error,
+		StatusDescription: "case iterator error: iterator error between cases",
+		Events: []oteltest.Event{
+			{
+				Name: "exception",
+				Attrs: map[string]any{
+					"exception.message": "case iterator error: iterator error between cases",
+					"exception.type":    "ErrCaseIterator",
+				},
+			},
+		},
+	})
 
-	// Second case spans (second, second)
-	assert.Equal("task", spans[4].Name())
-	assert.Equal("second", spans[4].Input())
-	assert.Equal("second", spans[4].Output())
+	// Second case spans (second, second) - task span
+	spans[4].AssertEqual(oteltest.TestSpan{
+		Name: "task",
+		Attrs: map[string]any{
+			"braintrust.parent": "experiment_id:test-error-generator",
+		},
+		JSONAttrs: map[string]any{
+			"braintrust.expected":        "second",
+			"braintrust.input_json":      "second",
+			"braintrust.output_json":     "second",
+			"braintrust.span_attributes": taskType,
+		},
+	})
 
-	assert.Equal("score", spans[5].Name())
-	assert.Contains(spans[5].Attr("braintrust.span_attributes").String(), "score")
+	// Second case spans (second, second) - score span
+	spans[5].AssertEqual(oteltest.TestSpan{
+		Name: "score",
+		Attrs: map[string]any{
+			"braintrust.parent": "experiment_id:test-error-generator",
+		},
+		JSONAttrs: map[string]any{
+			"braintrust.scores":          map[string]int{"Equals": 1},
+			"braintrust.span_attributes": scoreType,
+		},
+	})
 
-	assert.Equal("eval", spans[6].Name())
-	assert.Equal("second", spans[6].Input())
-	assert.Equal("second", spans[6].Output())
+	// Second case spans (second, second) - eval span
+	spans[6].AssertEqual(oteltest.TestSpan{
+		Name: "eval",
+		Attrs: map[string]any{
+			"braintrust.parent": "experiment_id:test-error-generator",
+		},
+		JSONAttrs: map[string]any{
+			"braintrust.expected":        "second",
+			"braintrust.input_json":      "second",
+			"braintrust.output_json":     "second",
+			"braintrust.span_attributes": evalType,
+		},
+	})
 }
 
 type errCase struct {

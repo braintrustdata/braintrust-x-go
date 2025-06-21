@@ -3,6 +3,7 @@ package oteltest
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
 	attr "go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	oteltrace "go.opentelemetry.io/otel/trace"
@@ -75,6 +77,12 @@ func (e *Exporter) Flush() []Span {
 	return spans
 }
 
+// testingT is a minimal interface for testing that can be implemented by testing.T and mocked for tests
+type testingT interface {
+	Helper()
+	Errorf(format string, args ...interface{})
+}
+
 // FlushOne returns the first span buffered in memory and fails if there is not
 // exactly one span.
 func (e *Exporter) FlushOne() Span {
@@ -116,6 +124,10 @@ func (s *Span) AssertNameIs(expected string) {
 
 func (s *Span) AssertInTimeRange(tr TimeRange) {
 	s.t.Helper()
+	if tr.IsZero() {
+		s.t.Errorf("TimeRange is zero - cannot assert span timing")
+		return
+	}
 	stub := s.Stub
 	assert.NotZero(s.t, tr.Start)
 	assert.NotZero(s.t, tr.End)
@@ -154,86 +166,6 @@ func (s *Span) Attr(key string) Attr {
 // HasAttr returns true if the span has at least one attribute with the given key.
 func (s *Span) HasAttr(key string) bool {
 	return len(s.Attrs(key)) > 0
-}
-
-// Summary returns the core data of the span, including attributes, events, and status.
-// It omits non-deterministic fields such as timestamps and span IDs. If two spans trace
-// the same code path with identical data, their Summary outputs should be equal,
-// even if the spans themselves are not.
-func (s *Span) Summary() map[string]any {
-	return map[string]any{
-		"name":       s.Stub.Name,
-		"spanKind":   s.Stub.SpanKind.String(),
-		"attributes": convertAttributes(s.t, s.Stub.Attributes),
-		"events":     convertEvents(s.t, s.Stub.Events),
-		"status": map[string]any{
-			"code":        s.Stub.Status.Code.String(),
-			"description": s.Stub.Status.Description,
-		},
-	}
-}
-
-// Snapshot returns a JSON string containing the span's summary. Read the docs on
-// Summary() for more information.
-func (s *Span) Snapshot() string {
-	s.t.Helper()
-	jsonBytes, err := json.MarshalIndent(s.Summary(), "", "  ")
-	if err != nil {
-		s.t.Fatalf("Failed to marshal span snapshot: %v", err)
-	}
-	return string(jsonBytes)
-}
-
-func convertAttributes(t *testing.T, attrs []attr.KeyValue) map[string]interface{} {
-	t.Helper()
-	result := make(map[string]interface{})
-	for _, a := range attrs {
-		if a.Key == "" {
-			t.Fatalf("Empty attribute key found")
-		}
-		result[string(a.Key)] = convertAttributeValue(t, a.Value)
-	}
-	return result
-}
-
-func convertAttributeValue(t *testing.T, value attr.Value) interface{} {
-	t.Helper()
-	switch value.Type() {
-	case attr.BOOL:
-		return value.AsBool()
-	case attr.INT64:
-		return value.AsInt64()
-	case attr.FLOAT64:
-		return value.AsFloat64()
-	case attr.STRING:
-		return value.AsString()
-	case attr.BOOLSLICE:
-		return value.AsBoolSlice()
-	case attr.INT64SLICE:
-		return value.AsInt64Slice()
-	case attr.FLOAT64SLICE:
-		return value.AsFloat64Slice()
-	case attr.STRINGSLICE:
-		return value.AsStringSlice()
-	case attr.INVALID:
-		t.Fatalf("Invalid attribute value encountered")
-		return nil
-	default:
-		t.Fatalf("Unsupported attribute type: %v", value.Type())
-		return nil
-	}
-}
-
-func convertEvents(t *testing.T, events []sdktrace.Event) []map[string]interface{} {
-	t.Helper()
-	result := make([]map[string]interface{}, len(events))
-	for i, event := range events {
-		result[i] = map[string]interface{}{
-			"name":       event.Name,
-			"attributes": convertAttributes(t, event.Attributes),
-		}
-	}
-	return result
 }
 
 // Attr is a wrapper around the OTel Attribute with some helpful
@@ -358,4 +290,202 @@ func (t *Timer) Tick() TimeRange {
 type TimeRange struct {
 	Start time.Time
 	End   time.Time
+}
+
+// IsZero returns true if the TimeRange is the zero value
+func (tr TimeRange) IsZero() bool {
+	return tr.Start.IsZero() && tr.End.IsZero()
+}
+
+// Event is a summary of an otel event.
+type Event struct {
+	Name  string
+	Attrs map[string]any
+}
+
+// TestSpan is a span that is easier to write and compare to real otel spans
+// in tests. Any missing attributes will be set to sane OTel defaults, like
+// Unset status and empty events and attributes.
+type TestSpan struct {
+	Name              string
+	Attrs             map[string]any
+	JSONAttrs         map[string]any // Values will be JSON-serialized and merged into Attrs
+	StatusCode        codes.Code
+	StatusDescription string
+	Events            []Event
+	SpanKind          oteltrace.SpanKind
+	TimeRange         TimeRange // Optional: if non-zero, validates span timing is within this range
+}
+
+func NewSpan(t *testing.T, name string, opts TestSpan) Span {
+	t.Helper()
+
+	// Merge regular attrs and JSON attrs
+	srcAttrs := make(map[string]any)
+	// Add regular attributes
+	for k, v := range opts.Attrs {
+		srcAttrs[k] = v
+	}
+
+	// Add JSON attributes (serialize values to JSON strings)
+	for k, v := range opts.JSONAttrs {
+		js, err := json.Marshal(v)
+		if err != nil {
+			t.Fatalf("failed to marshal JSONAttrs[%q]: %v", k, err)
+		}
+		srcAttrs[k] = string(js)
+	}
+
+	attrs := make([]attr.KeyValue, 0, len(srcAttrs))
+	for k, v := range srcAttrs {
+		attrs = append(attrs, convertToAttribute(k, v))
+	}
+
+	// Convert events
+	events := make([]sdktrace.Event, 0, len(opts.Events))
+	for _, e := range opts.Events {
+		eventAttrs := make([]attr.KeyValue, 0, len(e.Attrs))
+		for k, v := range e.Attrs {
+			eventAttrs = append(eventAttrs, convertToAttribute(k, v))
+		}
+		events = append(events, sdktrace.Event{
+			Name:       e.Name,
+			Attributes: eventAttrs,
+			Time:       time.Now(),
+		})
+	}
+
+	spanKind := opts.SpanKind
+	if spanKind == 0 { // SpanKindUnspecified
+		spanKind = oteltrace.SpanKindInternal
+	}
+
+	return Span{
+		t: t,
+		Stub: tracetest.SpanStub{
+			Name:       name,
+			Attributes: attrs,
+			Events:     events,
+			SpanKind:   spanKind,
+			Status: sdktrace.Status{
+				Code:        opts.StatusCode,
+				Description: opts.StatusDescription,
+			},
+		},
+	}
+}
+
+// convertToAttribute converts various Go types to OpenTelemetry attributes
+func convertToAttribute(key string, value any) attr.KeyValue {
+	switch v := value.(type) {
+	case string:
+		return attr.String(key, v)
+	case int:
+		return attr.Int64(key, int64(v))
+	case int64:
+		return attr.Int64(key, v)
+	case float64:
+		return attr.Float64(key, v)
+	case bool:
+		return attr.Bool(key, v)
+	case []string:
+		return attr.StringSlice(key, v)
+	case []int:
+		int64s := make([]int64, len(v))
+		for i, val := range v {
+			int64s[i] = int64(val)
+		}
+		return attr.Int64Slice(key, int64s)
+	case []int64:
+		return attr.Int64Slice(key, v)
+	case []float64:
+		return attr.Float64Slice(key, v)
+	case []bool:
+		return attr.BoolSlice(key, v)
+	default:
+		// For complex types, JSON marshal them
+		if jsonBytes, err := json.Marshal(v); err == nil {
+			return attr.String(key, string(jsonBytes))
+		}
+		return attr.String(key, fmt.Sprintf("%v", v))
+	}
+}
+
+// AssertEqual compares this span with an expected TestSpan. This test ignores
+// non-deterministic fields like timestamps and span IDs and only compares the
+// meaningful fields like name, status, attributes, and events.
+func (s *Span) AssertEqual(expected TestSpan) {
+	s.t.Helper()
+	expectedSpan := NewSpan(s.t, expected.Name, expected)
+	assertSpanStubEqual(s.t, expectedSpan.Stub, s.Stub)
+
+	// Check time range if provided
+	if !expected.TimeRange.IsZero() {
+		s.AssertInTimeRange(expected.TimeRange)
+	}
+}
+
+func assertSpanStubEqual(t testingT, s1, s2 tracetest.SpanStub) {
+	t.Helper()
+
+	if s1.Name != s2.Name {
+		t.Errorf("span name mismatch: expected %q, got %q", s1.Name, s2.Name)
+	}
+
+	if s1.Status != s2.Status {
+		t.Errorf("span status mismatch: expected %+v, got %+v", s1.Status, s2.Status)
+	}
+
+	if s1.SpanKind != s2.SpanKind {
+		t.Errorf("span kind mismatch: expected %v, got %v", s1.SpanKind, s2.SpanKind)
+	}
+
+	assertAttrsEqual(t, s1.Attributes, s2.Attributes, "")
+
+	for i, event1 := range s1.Events {
+		if i < len(s2.Events) {
+			event2 := s2.Events[i]
+			if event1.Name != event2.Name {
+				t.Errorf("event[%d] name mismatch: expected %q, got %q", i, event1.Name, event2.Name)
+			}
+			assertAttrsEqual(t, event1.Attributes, event2.Attributes, fmt.Sprintf("event[%d] ", i))
+		}
+	}
+	// Compare events one by one
+	if len(s1.Events) != len(s2.Events) {
+		t.Errorf("number of events mismatch: expected %d, got %d", len(s1.Events), len(s2.Events))
+		return
+	}
+
+}
+
+func assertAttrsEqual(t testingT, attrs1, attrs2 []attr.KeyValue, prefix string) {
+	t.Helper()
+
+	// Create maps for easier attribute lookup
+	attrMap1 := make(map[attr.Key]attr.Value)
+	for _, a := range attrs1 {
+		attrMap1[a.Key] = a.Value
+	}
+
+	attrMap2 := make(map[attr.Key]attr.Value)
+	for _, a := range attrs2 {
+		attrMap2[a.Key] = a.Value
+	}
+
+	// Check for missing expected attributes
+	for key, val1 := range attrMap1 {
+		if val2, exists := attrMap2[key]; !exists {
+			t.Errorf("%smissing expected attribute %s", prefix, string(key))
+		} else if val1 != val2 {
+			t.Errorf("%sattribute %s mismatch: expected %v, got %v", prefix, string(key), val1, val2)
+		}
+	}
+
+	// Check for unexpected attributes
+	for key := range attrMap2 {
+		if _, exists := attrMap1[key]; !exists {
+			t.Errorf("%shas unexpected attribute %s", prefix, string(key))
+		}
+	}
 }
