@@ -198,6 +198,14 @@ func (e *Eval[I, R]) runCase(ctx context.Context, span trace.Span, c Case[I, R])
 		span.SetAttributes(attr.StringSlice("braintrust.tags", c.Tags))
 	}
 
+	attrs := map[string]any{}
+	if c.Metadata != nil {
+		attrs["braintrust.metadata"] = c.Metadata
+	}
+	if err := setJSONAttrs(span, attrs); err != nil {
+		return err
+	}
+
 	result, err := e.runTask(ctx, c)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
