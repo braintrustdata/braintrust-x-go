@@ -3,6 +3,8 @@ package oteltest
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"strconv"
 	"testing"
 	"time"
 
@@ -10,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
 	attr "go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	oteltrace "go.opentelemetry.io/otel/trace"
@@ -358,4 +361,190 @@ func (t *Timer) Tick() TimeRange {
 type TimeRange struct {
 	Start time.Time
 	End   time.Time
+}
+
+// Event is a summary of an otel event.
+type Event struct {
+	Name  string
+	Attrs map[string]any
+}
+
+// TestSpan is a summary of an otel span that is a little bit easier
+// to write in tests. It only contains "deterministic" fields that
+// we want to compare in tests (e.g it skips timestamps, span IDs, etc)
+type TestSpan struct {
+	Name              string
+	Attrs             map[string]any
+	StatusCode        string
+	StatusDescription string
+	Events            []Event
+	TimeRange         TimeRange // Optional: if non-zero, validates span timing is within this range
+}
+
+func NewSpan(name string, opts TestSpan) *Span {
+	attrs := make([]attr.KeyValue, 0, len(opts.Attrs))
+	for k, v := range opts.Attrs {
+		attrs = append(attrs, convertToAttribute(k, v))
+	}
+
+	// Convert events
+	events := make([]sdktrace.Event, 0, len(opts.Events))
+	for _, e := range opts.Events {
+		eventAttrs := make([]attr.KeyValue, 0, len(e.Attrs))
+		for k, v := range e.Attrs {
+			eventAttrs = append(eventAttrs, convertToAttribute(k, v))
+		}
+		events = append(events, sdktrace.Event{
+			Name:       e.Name,
+			Attributes: eventAttrs,
+			Time:       time.Now(),
+		})
+	}
+
+	// Parse status code - default to Unset if empty
+	var statusCode codes.Code
+	if opts.StatusCode == "" {
+		statusCode = codes.Unset
+	} else {
+		switch opts.StatusCode {
+		case "OK":
+			statusCode = codes.Ok
+		case "ERROR":
+			statusCode = codes.Error
+		case "Unset":
+			statusCode = codes.Unset
+		default:
+			if code, err := strconv.Atoi(opts.StatusCode); err == nil {
+				statusCode = codes.Code(code)
+			} else {
+				statusCode = codes.Unset
+			}
+		}
+	}
+
+	return &Span{
+		Stub: tracetest.SpanStub{
+			Name:       name,
+			Attributes: attrs,
+			Events:     events,
+			Status: sdktrace.Status{
+				Code:        statusCode,
+				Description: opts.StatusDescription,
+			},
+		},
+	}
+}
+
+// convertToAttribute converts various Go types to OpenTelemetry attributes
+func convertToAttribute(key string, value any) attr.KeyValue {
+	switch v := value.(type) {
+	case string:
+		return attr.String(key, v)
+	case int:
+		return attr.Int64(key, int64(v))
+	case int64:
+		return attr.Int64(key, v)
+	case float64:
+		return attr.Float64(key, v)
+	case bool:
+		return attr.Bool(key, v)
+	case []string:
+		return attr.StringSlice(key, v)
+	case []int:
+		int64s := make([]int64, len(v))
+		for i, val := range v {
+			int64s[i] = int64(val)
+		}
+		return attr.Int64Slice(key, int64s)
+	case []int64:
+		return attr.Int64Slice(key, v)
+	case []float64:
+		return attr.Float64Slice(key, v)
+	case []bool:
+		return attr.BoolSlice(key, v)
+	default:
+		// For complex types, JSON marshal them
+		if jsonBytes, err := json.Marshal(v); err == nil {
+			return attr.String(key, string(jsonBytes))
+		}
+		return attr.String(key, fmt.Sprintf("%v", v))
+	}
+}
+
+// AssertEqual compares this span with an expected TestSpan using individual assertions for clear error messages
+func (s *Span) AssertEqual(expected TestSpan) {
+	s.t.Helper()
+
+	// Compare name
+	assert.Equal(s.t, expected.Name, s.Stub.Name, "span name")
+
+	// Parse and compare status code
+	var expectedStatusCode codes.Code
+	if expected.StatusCode == "" {
+		expectedStatusCode = codes.Unset
+	} else {
+		switch expected.StatusCode {
+		case "OK":
+			expectedStatusCode = codes.Ok
+		case "ERROR":
+			expectedStatusCode = codes.Error
+		case "Unset":
+			expectedStatusCode = codes.Unset
+		default:
+			if code, err := strconv.Atoi(expected.StatusCode); err == nil {
+				expectedStatusCode = codes.Code(code)
+			} else {
+				expectedStatusCode = codes.Unset
+			}
+		}
+	}
+
+	assert.Equal(s.t, expectedStatusCode, s.Stub.Status.Code, "span status code")
+	assert.Equal(s.t, expected.StatusDescription, s.Stub.Status.Description, "span status description")
+
+	// Compare attributes individually
+	actualAttrs := convertAttributes(s.t, s.Stub.Attributes)
+
+	for key, expectedVal := range expected.Attrs {
+		assert.Contains(s.t, actualAttrs, key, "missing attribute %q", key)
+		if actualVal, exists := actualAttrs[key]; exists {
+			assert.Equal(s.t, expectedVal, actualVal, "attribute %q", key)
+		}
+	}
+
+	for key := range actualAttrs {
+		assert.Contains(s.t, expected.Attrs, key, "unexpected attribute %q", key)
+	}
+
+	// Compare events individually
+	actualEvents := convertEvents(s.t, s.Stub.Events)
+
+	assert.Equal(s.t, len(expected.Events), len(actualEvents), "number of events")
+
+	for i, expectedEvent := range expected.Events {
+		if i < len(actualEvents) {
+			actualEvent := actualEvents[i]
+			assert.Equal(s.t, expectedEvent.Name, actualEvent["name"], "event[%d] name", i)
+
+			actualEventAttrs := actualEvent["attributes"].(map[string]interface{})
+
+			for key, expectedVal := range expectedEvent.Attrs {
+				assert.Contains(s.t, actualEventAttrs, key, "event[%d] missing attribute %q", i, key)
+				if actualVal, exists := actualEventAttrs[key]; exists {
+					assert.Equal(s.t, expectedVal, actualVal, "event[%d] attribute %q", i, key)
+				}
+			}
+
+			for key := range actualEventAttrs {
+				assert.Contains(s.t, expectedEvent.Attrs, key, "event[%d] unexpected attribute %q", i, key)
+			}
+		}
+	}
+
+	// Validate time range if provided
+	if !expected.TimeRange.Start.IsZero() && !expected.TimeRange.End.IsZero() {
+		assert.True(s.t, expected.TimeRange.Start.Before(s.Stub.StartTime), "span start time should be after TimeRange.Start")
+		assert.True(s.t, expected.TimeRange.End.After(s.Stub.EndTime), "span end time should be before TimeRange.End")
+		assert.True(s.t, s.Stub.StartTime.Before(s.Stub.EndTime), "span start time should be before end time")
+	}
 }
