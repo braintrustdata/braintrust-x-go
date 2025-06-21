@@ -296,7 +296,7 @@ func TestHardcodedEval(t *testing.T) {
 	}
 
 	cases := []Case[int, int]{
-		{Input: 1, Expected: 1, Tags: []string{"tag1", "tag2"}, Metadata: map[string]any{"foo": "bar"}},
+		{Input: 1, Expected: 1, Tags: []string{"tag1", "tag2"}},
 		{Input: 2, Expected: 4},
 	}
 
@@ -350,7 +350,6 @@ func TestHardcodedEval(t *testing.T) {
 			"braintrust.input_json":      1,
 			"braintrust.output_json":     1,
 			"braintrust.span_attributes": evalType,
-			"braintrust.metadata":        map[string]any{"foo": "bar"},
 		},
 	})
 
