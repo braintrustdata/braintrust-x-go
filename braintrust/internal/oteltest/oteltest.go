@@ -124,6 +124,10 @@ func (s *Span) AssertNameIs(expected string) {
 
 func (s *Span) AssertInTimeRange(tr TimeRange) {
 	s.t.Helper()
+	if tr.IsZero() {
+		s.t.Errorf("TimeRange is zero - cannot assert span timing")
+		return
+	}
 	stub := s.Stub
 	assert.NotZero(s.t, tr.Start)
 	assert.NotZero(s.t, tr.End)
@@ -288,6 +292,11 @@ type TimeRange struct {
 	End   time.Time
 }
 
+// IsZero returns true if the TimeRange is the zero value
+func (tr TimeRange) IsZero() bool {
+	return tr.Start.IsZero() && tr.End.IsZero()
+}
+
 // Event is a summary of an otel event.
 type Event struct {
 	Name  string
@@ -409,6 +418,11 @@ func (s *Span) AssertEqual(expected TestSpan) {
 	s.t.Helper()
 	expectedSpan := NewSpan(s.t, expected.Name, expected)
 	assertSpanStubEqual(s.t, expectedSpan.Stub, s.Stub)
+
+	// Check time range if provided
+	if !expected.TimeRange.IsZero() {
+		s.AssertInTimeRange(expected.TimeRange)
+	}
 }
 
 func assertSpanStubEqual(t testingT, s1, s2 tracetest.SpanStub) {

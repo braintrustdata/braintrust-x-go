@@ -491,7 +491,9 @@ func TestEvalWithCasesIteratorError(t *testing.T) {
 	scorers := []Scorer[string, string]{autoevals.NewEquals[string, string]()}
 
 	eval := New("test-error-generator", generator, task, scorers)
+	timer := oteltest.NewTimer()
 	err := eval.Run()
+	timeRange := timer.Tick()
 
 	// Should return the error from the Cases iterator
 	require.Error(err)
@@ -501,38 +503,108 @@ func TestEvalWithCasesIteratorError(t *testing.T) {
 	spans := exporter.Flush()
 	assert.Equal(7, len(spans)) // 2 cases * 3 spans each + 1 iterator error span
 
-	// Verify the spans are for the correct cases
-	// First case spans (first, first)
-	assert.Equal("task", spans[0].Name())
-	assert.Equal("first", spans[0].Input())
-	assert.Equal("first", spans[0].Output())
+	for _, span := range spans {
+		span.AssertInTimeRange(timeRange)
+	}
 
-	assert.Equal("score", spans[1].Name())
-	assert.Contains(spans[1].Attr("braintrust.span_attributes").String(), "score")
+	// First case spans (first, first) - task span
+	spans[0].AssertEqual(oteltest.TestSpan{
+		Name: "task",
+		Attrs: map[string]any{
+			"braintrust.parent": "experiment_id:test-error-generator",
+		},
+		JSONAttrs: map[string]any{
+			"braintrust.expected":        "first",
+			"braintrust.input_json":      "first",
+			"braintrust.output_json":     "first",
+			"braintrust.span_attributes": taskType,
+		},
+	})
 
-	assert.Equal("eval", spans[2].Name())
-	assert.Equal("first", spans[2].Input())
-	assert.Equal("first", spans[2].Output())
+	// First case spans (first, first) - score span
+	spans[1].AssertEqual(oteltest.TestSpan{
+		Name: "score",
+		Attrs: map[string]any{
+			"braintrust.parent": "experiment_id:test-error-generator",
+		},
+		JSONAttrs: map[string]any{
+			"braintrust.scores":          map[string]int{"Equals": 1},
+			"braintrust.span_attributes": scoreType,
+		},
+	})
+
+	// First case spans (first, first) - eval span
+	spans[2].AssertEqual(oteltest.TestSpan{
+		Name: "eval",
+		Attrs: map[string]any{
+			"braintrust.parent": "experiment_id:test-error-generator",
+		},
+		JSONAttrs: map[string]any{
+			"braintrust.expected":        "first",
+			"braintrust.input_json":      "first",
+			"braintrust.output_json":     "first",
+			"braintrust.span_attributes": evalType,
+		},
+	})
 
 	// Iterator error span - should be marked as error and have no input/output
-	assert.Equal("eval", spans[3].Name())
-	assert.Equal("Error", spans[3].Status().Code.String())
-	assert.Contains(spans[3].Status().Description, "case iterator error")
-	// Error span should not have input/output attributes since the iterator failed
-	assert.False(spans[3].HasAttr("braintrust.input_json"))
-	assert.False(spans[3].HasAttr("braintrust.output_json"))
+	spans[3].AssertEqual(oteltest.TestSpan{
+		Name: "eval",
+		Attrs: map[string]any{
+			"braintrust.parent": "experiment_id:test-error-generator",
+		},
+		StatusCode:        codes.Error,
+		StatusDescription: "case iterator error: iterator error between cases",
+		Events: []oteltest.Event{
+			{
+				Name: "exception",
+				Attrs: map[string]any{
+					"exception.message": "case iterator error: iterator error between cases",
+					"exception.type":    "ErrCaseIterator",
+				},
+			},
+		},
+	})
 
-	// Second case spans (second, second)
-	assert.Equal("task", spans[4].Name())
-	assert.Equal("second", spans[4].Input())
-	assert.Equal("second", spans[4].Output())
+	// Second case spans (second, second) - task span
+	spans[4].AssertEqual(oteltest.TestSpan{
+		Name: "task",
+		Attrs: map[string]any{
+			"braintrust.parent": "experiment_id:test-error-generator",
+		},
+		JSONAttrs: map[string]any{
+			"braintrust.expected":        "second",
+			"braintrust.input_json":      "second",
+			"braintrust.output_json":     "second",
+			"braintrust.span_attributes": taskType,
+		},
+	})
 
-	assert.Equal("score", spans[5].Name())
-	assert.Contains(spans[5].Attr("braintrust.span_attributes").String(), "score")
+	// Second case spans (second, second) - score span
+	spans[5].AssertEqual(oteltest.TestSpan{
+		Name: "score",
+		Attrs: map[string]any{
+			"braintrust.parent": "experiment_id:test-error-generator",
+		},
+		JSONAttrs: map[string]any{
+			"braintrust.scores":          map[string]int{"Equals": 1},
+			"braintrust.span_attributes": scoreType,
+		},
+	})
 
-	assert.Equal("eval", spans[6].Name())
-	assert.Equal("second", spans[6].Input())
-	assert.Equal("second", spans[6].Output())
+	// Second case spans (second, second) - eval span
+	spans[6].AssertEqual(oteltest.TestSpan{
+		Name: "eval",
+		Attrs: map[string]any{
+			"braintrust.parent": "experiment_id:test-error-generator",
+		},
+		JSONAttrs: map[string]any{
+			"braintrust.expected":        "second",
+			"braintrust.input_json":      "second",
+			"braintrust.output_json":     "second",
+			"braintrust.span_attributes": evalType,
+		},
+	})
 }
 
 type errCase struct {

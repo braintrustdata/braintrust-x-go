@@ -67,3 +67,5 @@ examples:
 	@echo "Running traceopenai..."
 	cd examples/traceopenai && go run .
 	@echo "All examples completed!"
+
+pre: fmt ci # a command to rn before commiting 
