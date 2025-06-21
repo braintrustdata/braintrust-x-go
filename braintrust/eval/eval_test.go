@@ -296,7 +296,7 @@ func TestHardcodedEval(t *testing.T) {
 	}
 
 	cases := []Case[int, int]{
-		{Input: 1, Expected: 1, Metadata: map[string]any{"foo": "bar"}, Tags: []string{"tag1", "tag2"}},
+		{Input: 1, Expected: 1, Tags: []string{"tag1", "tag2"}},
 		{Input: 2, Expected: 4},
 	}
 
@@ -324,8 +324,6 @@ func TestHardcodedEval(t *testing.T) {
 			"braintrust.input_json":      1,
 			"braintrust.output_json":     1,
 			"braintrust.span_attributes": taskType,
-			"braintrust.metadata":        map[string]any{"foo": "bar"},
-			"braintrust.tags":            []string{"tag1", "tag2"},
 		},
 		TimeRange: timeRange,
 	})
@@ -346,6 +344,7 @@ func TestHardcodedEval(t *testing.T) {
 		Attrs: map[string]any{
 			"braintrust.expected": "1",
 			"braintrust.parent":   "experiment_id:123",
+			"braintrust.tags":     []string{"tag1", "tag2"},
 		},
 		JSONAttrs: map[string]any{
 			"braintrust.input_json":      1,

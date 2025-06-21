@@ -194,6 +194,10 @@ func (e *Eval[I, R]) runNextCase(ctx context.Context) (done bool, err error) {
 }
 
 func (e *Eval[I, R]) runCase(ctx context.Context, span trace.Span, c Case[I, R]) error {
+	if c.Tags != nil {
+		span.SetAttributes(attr.StringSlice("braintrust.tags", c.Tags))
+	}
+
 	result, err := e.runTask(ctx, c)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
@@ -256,12 +260,6 @@ func (e *Eval[I, R]) runTask(ctx context.Context, c Case[I, R]) (R, error) {
 		"braintrust.input_json":      c.Input,
 		"braintrust.expected":        c.Expected,
 		"braintrust.span_attributes": taskSpanAttrs,
-	}
-	if c.Metadata != nil {
-		attrs["braintrust.metadata"] = c.Metadata
-	}
-	if c.Tags != nil {
-		attrs["braintrust.tags"] = c.Tags
 	}
 
 	var encodeErrs []error
