@@ -266,9 +266,9 @@ type Scores []Score
 type ScoreFunc[I, R any] func(ctx context.Context, input I, expected, result R) (Scores, error)
 
 // S is a helper function to concisely return a single score from ScoreFuncs. Scores created with S will default to the
-// name of the scorer.
+// name of the scorer that creates them.
 //
-// `S(0.5)` is equivalent to `[]Score{{Name: "score", Score: 0.5}}`.
+// `S(0.5)` is equivalent to `[]Score{{Score: 0.5}}`.
 func S(score float64) Scores {
 	return Scores{{Name: "", Score: score}}
 }
