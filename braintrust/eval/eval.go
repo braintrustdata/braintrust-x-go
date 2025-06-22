@@ -1,7 +1,8 @@
-// Package eval provides functionality for running evaluations of AI model outputs.
+// Package eval provides tools for evaluating AI model outputs.
 // Evaluations help measure AI application performance (accuracy/quality) and create
 // an effective feedback loop for AI development. They help teams understand if
-// updates improve or regress application quality.
+// updates improve or regress application quality. Evaluations are a key part of
+// the Braintrust platform.
 //
 // An evaluation consists of three main components:
 //   - [Cases]: A set of test examples with inputs and expected outputs
@@ -17,64 +18,11 @@
 // All of the input and result types must be JSON-encodable.
 //
 // For example:
-//   - eval.Case[string, string] represents a test case with string input and string output
-//   - eval.Task[MyInput, MyOutput] represents a task that takes MyInput and returns MyOutput
-//   - eval.Cases[string, bool] represents an iterator over cases with string inputs and boolean outputs
+//   - [Case][string, string] represents a test case with string input and string output
+//   - [Task][MyInput, MyOutput] represents a task that takes MyInput and returns MyOutput
+//   - [Cases][string, bool] represents an iterator over cases with string inputs and boolean outputs
 //
-// Example usage:
-//
-//	import (
-//		"context"
-//		"log"
-//		"github.com/braintrust/braintrust-x-go/braintrust/eval"
-//		"github.com/braintrust/braintrust-x-go/braintrust/trace"
-//	)
-//
-//	// Set up tracing (requires BRAINTRUST_API_KEY)
-//	// export BRAINTRUST_API_KEY="your-api-key-here"
-//	teardown, err := trace.Quickstart()
-//	if err != nil {
-//		log.Fatal(err)
-//	}
-//	defer teardown()
-//
-//	// This task is hardcoded but usually you'd call an AI model here.
-//	greetingTask := func(ctx context.Context, input string) (string, error) {
-//		return "Hello " + input, nil
-//	}
-//
-//	// Define your scoring function
-//	exactMatch := func(ctx context.Context, input, expected, result string) (float64, error) {
-//		if expected == result {
-//			return 1.0, nil // Perfect match
-//		}
-//		return 0.0, nil // No match
-//	}
-//
-//	// Create and run the evaluation
-//	experimentID, err := eval.ResolveProjectExperimentID("greeting-experiment-v1", "my-ai-project")
-//	if err != nil {
-//		log.Fatal(err)
-//	}
-//
-//	evaluation := eval.New(experimentID,
-//		eval.NewCases([]eval.Case[string, string]{
-//			{Input: "World", Expected: "Hello World"},
-//			{Input: "Alice", Expected: "Hello Alice"},
-//			{Input: "Bob", Expected: "Hello Bob"},
-//		}),
-//		greetingTask,
-//		[]eval.Scorer[string, string]{
-//			eval.NewScorer("exact_match", exactMatch),
-//		},
-//	)
-//
-//	summary, err := evaluation.Run(context.Background())
-//	if err != nil {
-//		log.Fatal(err)
-//	}
-//
-//	fmt.Printf("Evaluation completed. Average score: %.2f\n", summary.Scores["exact_match"])
+// For complete usage examples, see the package examples.
 package eval
 
 import (
@@ -126,7 +74,7 @@ type Eval[I, R any] struct {
 	startSpanOpt trace.SpanStartOption
 }
 
-// New creates a new eval.
+// New creates a new eval with the given experiment ID, cases, task, and scorers.
 func New[I, R any](experimentID string, cases Cases[I, R], task Task[I, R], scorers []Scorer[I, R]) *Eval[I, R] {
 
 	// Every span created from this eval will have the experiment ID as the parent. This _should_ be done by the SpanProcessor
