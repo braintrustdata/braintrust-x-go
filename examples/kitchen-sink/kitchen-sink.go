@@ -79,21 +79,23 @@ func runMathEval() {
 	// Mix of scorers - some pass, some fail
 	scorers := []eval.Scorer[int, float64]{
 		autoevals.NewEquals[int, float64](),
-		eval.NewScorer("within_tolerance", func(_ context.Context, input int, expected, result float64) (float64, error) {
+		eval.NewScorer("within_tolerance", func(_ context.Context, input int, expected, result float64) (eval.Scores, error) {
 			if input == 16 {
-				return 0, errors.New("tolerance checker malfunction")
+				return nil, errors.New("tolerance checker malfunction")
 			}
 			diff := math.Abs(expected - result)
+			v := 0.0
 			if diff < 0.1 {
-				return 1.0, nil
+				v = 1.0
 			}
-			return 0.0, nil
+			return eval.Scores{{Name: "within_tolerance", Score: v}}, nil
 		}),
-		eval.NewScorer("is_positive", func(_ context.Context, _ int, _, result float64) (float64, error) {
+		eval.NewScorer("is_positive", func(_ context.Context, _ int, _, result float64) (eval.Scores, error) {
+			v := 0.0
 			if result >= 0 {
-				return 1.0, nil
+				v = 1.0
 			}
-			return 0.0, nil
+			return eval.Scores{{Name: "is_positive", Score: v}}, nil
 		}),
 	}
 
@@ -174,7 +176,7 @@ func runTextProcessingEval(client openai.Client) {
 	// Scorers with different failure scenarios
 	scorers := []eval.Scorer[string, string]{
 		autoevals.NewEquals[string, string](),
-		eval.NewScorer("valid_sentiment", func(ctx context.Context, input, _, result string) (float64, error) {
+		eval.NewScorer("valid_sentiment", func(ctx context.Context, input, _, result string) (eval.Scores, error) {
 			_, span := tracer.Start(ctx, "custom_score_span")
 			defer span.End()
 
@@ -190,18 +192,18 @@ func runTextProcessingEval(client openai.Client) {
 			}
 
 			if strings.Contains(input, "SCORER_FAIL") {
-				return 0, errors.New("sentiment validator crashed: internal error")
+				return nil, errors.New("sentiment validator crashed: internal error")
 			}
 
 			if validSentiments[result] {
-				return 1.0, nil
+				return eval.Scores{{Name: "valid_sentiment", Score: 1.0}}, nil
 			}
-			return 0.0, nil
+			return eval.Scores{{Name: "valid_sentiment", Score: 0.0}}, nil
 		}),
-		eval.NewScorer("sentiment_agreement", func(_ context.Context, input, expected, result string) (float64, error) {
+		eval.NewScorer("sentiment_agreement", func(_ context.Context, input, expected, result string) (eval.Scores, error) {
 			// More lenient scorer that gives partial credit
 			if strings.Contains(input, "PARTIAL_SCORER_FAIL") {
-				return 0, errors.New("agreement checker malfunction: cannot determine agreement")
+				return nil, errors.New("agreement checker malfunction: cannot determine agreement")
 			}
 
 			// Both positive sentiments or both negative sentiments get partial credit
@@ -214,11 +216,11 @@ func runTextProcessingEval(client openai.Client) {
 			resultNegative := contains(negativeWords, result)
 
 			if expected == result {
-				return 1.0, nil // Perfect match
+				return eval.Scores{{Name: "sentiment_agreement", Score: 1.0}}, nil // Perfect match
 			} else if (expectedPositive && resultPositive) || (expectedNegative && resultNegative) {
-				return 0.7, nil // Partial credit
+				return eval.Scores{{Name: "sentiment_agreement", Score: 0.7}}, nil // Partial credit
 			}
-			return 0.0, nil
+			return eval.Scores{{Name: "sentiment_agreement", Score: 0.0}}, nil
 		}),
 	}
 
@@ -294,22 +296,23 @@ func runMixedScenarioEval(client openai.Client) {
 
 	// Complex scoring with multiple failure modes
 	scorers := []eval.Scorer[string, string]{
-		eval.NewScorer("length_check", func(ctx context.Context, input, expected, result string) (float64, error) {
+		eval.NewScorer("length_check", func(ctx context.Context, input, expected, result string) (eval.Scores, error) {
 			if strings.Contains(input, "LENGTH_SCORER_FAIL") {
-				return 0, errors.New("length checker crashed: memory allocation failed")
+				return nil, errors.New("length checker crashed: memory allocation failed")
 			}
 
 			// Penalize answers that are too short or too long
+			v := 1.0
 			if len(result) < 10 {
-				return 0.3, nil
+				v = 0.3
 			} else if len(result) > 200 {
-				return 0.5, nil
+				v = 0.5
 			}
-			return 1.0, nil
+			return eval.Scores{{Name: "length_check", Score: v}}, nil
 		}),
-		eval.NewScorer("keyword_relevance", func(ctx context.Context, input, expected, result string) (float64, error) {
+		eval.NewScorer("keyword_relevance", func(ctx context.Context, input, expected, result string) (eval.Scores, error) {
 			if strings.Contains(input, "RELEVANCE_SCORER_FAIL") {
-				return 0, errors.New("relevance checker error: unable to analyze keywords")
+				return nil, errors.New("relevance checker error: unable to analyze keywords")
 			}
 
 			// Extract key words from question and check if they appear in answer
@@ -324,15 +327,15 @@ func runMixedScenarioEval(client openai.Client) {
 			}
 
 			if len(questionWords) == 0 {
-				return 0.0, nil
+				return eval.Scores{{Name: "keyword_relevance", Score: 0.0}}, nil
 			}
 
 			relevanceScore := float64(matches) / float64(len(questionWords))
-			return math.Min(relevanceScore, 1.0), nil
+			return eval.Scores{{Name: "keyword_relevance", Score: math.Min(relevanceScore, 1.0)}}, nil
 		}),
-		eval.NewScorer("contains_expected_info", func(ctx context.Context, input, expected, result string) (float64, error) {
+		eval.NewScorer("contains_expected_info", func(ctx context.Context, input, expected, result string) (eval.Scores, error) {
 			if strings.Contains(input, "INFO_SCORER_FAIL") {
-				return 0, errors.New("information checker failed: semantic analysis unavailable")
+				return nil, errors.New("information checker failed: semantic analysis unavailable")
 			}
 
 			// Simple check if expected information appears in result
@@ -348,11 +351,12 @@ func runMixedScenarioEval(client openai.Client) {
 				}
 			}
 
-			if len(expectedWords) == 0 {
-				return 1.0, nil
+			v := 1.0
+			if len(expectedWords) > 0 {
+				v = float64(matchedWords) / float64(len(expectedWords))
 			}
 
-			return float64(matchedWords) / float64(len(expectedWords)), nil
+			return eval.Scores{{Name: "contains_expected_info", Score: v}}, nil
 		}),
 	}
 

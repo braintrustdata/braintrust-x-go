@@ -14,6 +14,7 @@ help:
 	@echo "  godoc         - Start godoc server"
 	@echo "  examples      - Run all examples"
 	@echo "  ci            - Run CI pipeline (clean, lint, test, build)"
+	echo  "  precommit     - Run fmt then ci"
 
 ci: clean lint mod-verify test build
 
@@ -68,4 +69,4 @@ examples:
 	cd examples/traceopenai && go run .
 	@echo "All examples completed!"
 
-pre: fmt ci # a command to run before committing code
+precommit: fmt ci

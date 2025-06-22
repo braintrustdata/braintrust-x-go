@@ -219,7 +219,7 @@ func (e *Eval[I, R]) runCase(ctx context.Context, span trace.Span, c Case[I, R])
 	return setJSONAttrs(span, meta)
 }
 
-func (e *Eval[I, R]) runScorers(ctx context.Context, c Case[I, R], result R) ([]Score, error) {
+func (e *Eval[I, R]) runScorers(ctx context.Context, c Case[I, R], result R) (Scores, error) {
 	ctx, span := e.tracer.Start(ctx, "score", e.startSpanOpt)
 	defer span.End()
 
@@ -227,13 +227,11 @@ func (e *Eval[I, R]) runScorers(ctx context.Context, c Case[I, R], result R) ([]
 		return nil, err
 	}
 
-	scores := make([]Score, len(e.scorers))
-	meta := make(map[string]float64, len(e.scorers))
+	var scores Scores
 
 	var errs []error
-
-	for i, scorer := range e.scorers {
-		val, err := scorer.Run(ctx, c.Input, c.Expected, result)
+	for _, scorer := range e.scorers {
+		curScores, err := scorer.Run(ctx, c.Input, c.Expected, result)
 		if err != nil {
 			werr := fmt.Errorf("%w: scorer %q failed: %w", ErrScorer, scorer.Name(), err)
 			recordSpanError(span, werr)
@@ -241,11 +239,15 @@ func (e *Eval[I, R]) runScorers(ctx context.Context, c Case[I, R], result R) ([]
 			continue
 		}
 
-		scores[i] = Score{Name: scorer.Name(), Score: val}
-		meta[scorer.Name()] = val
+		scores = append(scores, curScores...)
 	}
 
-	if err := setJSONAttr(span, "braintrust.scores", meta); err != nil {
+	valsByName := make(map[string]float64, len(scores))
+	for _, score := range scores {
+		valsByName[score.Name] = score.Score
+	}
+
+	if err := setJSONAttr(span, "braintrust.scores", valsByName); err != nil {
 		return nil, err
 	}
 
@@ -302,14 +304,16 @@ type Score struct {
 	Score float64 `json:"score"`
 }
 
-// ScoreFunc is a function that scores the result of a task against the expected result. The returned
-// score must be between 0 and 1.
-type ScoreFunc[I, R any] func(ctx context.Context, input I, expected, result R) (float64, error)
+// Scores is a list of scores.
+type Scores []Score
+
+// ScoreFunc is a function that evaluates a task (usually an LLM call) and returns a list of Scores.
+type ScoreFunc[I, R any] func(ctx context.Context, input I, expected, result R) (Scores, error)
 
 // Scorer evaluates the quality of results against expected values.
 type Scorer[I, R any] interface {
 	Name() string
-	Run(ctx context.Context, input I, expected, result R) (float64, error)
+	Run(ctx context.Context, input I, expected, result R) (Scores, error)
 }
 
 type scorerImpl[I, R any] struct {
@@ -321,7 +325,7 @@ func (s *scorerImpl[I, R]) Name() string {
 	return s.name
 }
 
-func (s *scorerImpl[I, R]) Run(ctx context.Context, input I, expected, result R) (float64, error) {
+func (s *scorerImpl[I, R]) Run(ctx context.Context, input I, expected, result R) (Scores, error) {
 	return s.scoreFunc(ctx, input, expected, result)
 }
 
