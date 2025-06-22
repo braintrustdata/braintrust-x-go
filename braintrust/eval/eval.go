@@ -238,8 +238,12 @@ func (e *Eval[I, R]) runScorers(ctx context.Context, c Case[I, R], result R) (Sc
 			errs = append(errs, werr)
 			continue
 		}
-
-		scores = append(scores, curScores...)
+		for _, score := range curScores {
+			if score.Name == "" {
+				score.Name = scorer.Name()
+			}
+			scores = append(scores, score)
+		}
 	}
 
 	valsByName := make(map[string]float64, len(scores))
@@ -286,6 +290,9 @@ func (e *Eval[I, R]) runTask(ctx context.Context, c Case[I, R]) (R, error) {
 	return result, errors.Join(encodeErrs...)
 }
 
+// Metadata is a map of strings to a JSON-encodable value. It is used to store arbitrary metadata about a case.
+type Metadata map[string]any
+
 // Task is a function that takes an input and returns a result. It represents the unit of work
 // we are evaluating, usually one or more calls to an LLM.
 type Task[I, R any] func(ctx context.Context, input I) (R, error)
@@ -295,7 +302,7 @@ type Case[I, R any] struct {
 	Input    I
 	Expected R
 	Tags     []string
-	// FIXME[matt]: add metadata
+	Metadata Metadata
 }
 
 // Score represents the result of a scorer evaluation.
@@ -310,7 +317,16 @@ type Scores []Score
 // ScoreFunc is a function that evaluates a task (usually an LLM call) and returns a list of Scores.
 type ScoreFunc[I, R any] func(ctx context.Context, input I, expected, result R) (Scores, error)
 
-// Scorer evaluates the quality of results against expected values.
+// S is a helper function to concisely return a single score from ScoreFuncs. Scores created with S will default to the
+// name of the scorer.
+//
+// `S(0.5)` is equivalent to `[]Score{{Name: "score", Score: 0.5}}`.
+func S(score float64) Scores {
+	return Scores{{Name: "", Score: score}}
+}
+
+// Scorer evaluates the quality of results against expected values. If a Scorer returns a score with an empty name,
+// we will default to the score of the score.
 type Scorer[I, R any] interface {
 	Name() string
 	Run(ctx context.Context, input I, expected, result R) (Scores, error)

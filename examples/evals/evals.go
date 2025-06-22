@@ -62,14 +62,14 @@ func main() {
 				if result == "fruit" {
 					v = 1.0
 				}
-				return eval.Scores{{Name: "fruit_scorer", Score: v}}, nil
+				return eval.S(v), nil
 			}),
 			eval.NewScorer("vegetable_scorer", func(_ context.Context, _, _, result string) (eval.Scores, error) {
 				v := 0.0
 				if result == "vegetable" {
 					v = 1.0
 				}
-				return eval.Scores{{Name: "vegetable_scorer", Score: v}}, nil
+				return eval.S(v), nil
 			}),
 		},
 	)

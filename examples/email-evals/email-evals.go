@@ -199,7 +199,7 @@ Respond with just the subject line, no quotes or explanations.`,
 			} else if length <= 60 {
 				v = 0.7
 			}
-			return eval.Scores{{Name: "length_compliance", Score: v}}, nil
+			return eval.S(v), nil
 		}),
 
 		// AI-powered engagement prediction scorer
@@ -260,7 +260,7 @@ Respond with only a number 0-10.`,
 				attribute.Float64("normalized_score", normalizedScore),
 			)
 
-			return eval.Scores{{Name: "engagement_prediction", Score: normalizedScore}}, nil
+			return eval.S(normalizedScore), nil
 		}),
 
 		// Spam filter risk scorer
@@ -296,7 +296,7 @@ Respond with only a number 0-10.`,
 			case 2:
 				v = 0.4
 			}
-			return eval.Scores{{Name: "spam_risk", Score: v}}, nil
+			return eval.S(v), nil
 		}),
 
 		// Product mention scorer
@@ -315,7 +315,7 @@ Respond with only a number 0-10.`,
 			}
 
 			if mentionCount > 0 {
-				return eval.Scores{{Name: "product_relevance", Score: 1.0}}, nil
+				return eval.S(1.0), nil
 			}
 
 			// Check for campaign type relevance as backup
@@ -330,12 +330,12 @@ Respond with only a number 0-10.`,
 			if terms, exists := campaignTerms[input.CampaignType]; exists {
 				for _, term := range terms {
 					if strings.Contains(subjectLower, term) {
-						return eval.Scores{{Name: "product_relevance", Score: 0.7}}, nil
+						return eval.S(0.7), nil
 					}
 				}
 			}
 
-			return eval.Scores{{Name: "product_relevance", Score: 0.3}}, nil
+			return eval.S(0.3), nil
 		}),
 	}
 
