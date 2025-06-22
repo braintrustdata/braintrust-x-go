@@ -14,7 +14,7 @@ help:
 	@echo "  godoc         - Start godoc server"
 	@echo "  examples      - Run all examples"
 	@echo "  ci            - Run CI pipeline (clean, lint, test, build)"
-	echo  "  precommit     - Run fmt then ci"
+	@echo "  precommit     - Run fmt then ci"
 
 ci: clean lint mod-verify test build
 
