@@ -7,9 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log"
-	"math"
 	"strings"
 
 	"github.com/openai/openai-go"
@@ -29,8 +27,7 @@ import (
 var tracer = otel.Tracer("kitchen-sink-example")
 
 func main() {
-	log.Println("🧪 Starting Kitchen Sink Example - Testing All Repository Features")
-	log.Println("================================================================")
+	log.Println("🧪 Starting Kitchen Sink Example")
 
 	// Initialize OpenAI client with tracing middleware
 	client := openai.NewClient(
@@ -38,7 +35,7 @@ func main() {
 	)
 
 	// Get or create the project first to set as default
-	project, err := api.RegisterProject("Go Kitchen Sink Examples")
+	project, err := api.RegisterProject("Kitchen Sink")
 	if err != nil {
 		log.Fatalf("❌ Error registering project: %v", err)
 	}
@@ -50,436 +47,239 @@ func main() {
 	}
 	defer teardown()
 
-	// Run all examples
-	runMathEval()
-	runTextProcessingEval(client)
-	runMixedScenarioEval(client)
-	runIteratorErrorEval()
+	// Create sample dataset
+	datasetID, err := createSampleDataset(project.ID)
+	if err != nil {
+		log.Fatalf("❌ Failed to create dataset: %v", err)
+	}
+	log.Printf("✅ Created dataset: %s", datasetID)
+
+	// Run evaluations
+	runKitchenSinkEval(client)
+	runDatasetEval(client, datasetID)
 
 	log.Println("✅ Kitchen Sink Example completed successfully!")
 }
 
-// runMathEval demonstrates basic eval functionality with no external dependencies
-func runMathEval() {
-	log.Println("\n📊 Running Math Evaluation (Basic Functionality)")
-	log.Println("--------------------------------------------------")
+func runKitchenSinkEval(client openai.Client) {
+	log.Println("🔥 Running Kitchen Sink Eval")
 
-	// Task that sometimes works, sometimes fails
-	mathTask := func(_ context.Context, input int) (float64, error) {
-		switch input {
-		case 42:
-			return 0, errors.New("universe error: cannot compute answer to everything")
-		case 13:
-			return 0, errors.New("superstition error: unlucky number")
-		default:
-			return math.Sqrt(float64(input)), nil
-		}
-	}
-
-	// Mix of scorers - some pass, some fail
-	scorers := []eval.Scorer[int, float64]{
-		autoevals.NewEquals[int, float64](),
-		eval.NewScorer("within_tolerance", func(_ context.Context, input int, expected, result float64) (float64, error) {
-			if input == 16 {
-				return 0, errors.New("tolerance checker malfunction")
-			}
-			diff := math.Abs(expected - result)
-			if diff < 0.1 {
-				return 1.0, nil
-			}
-			return 0.0, nil
-		}),
-		eval.NewScorer("is_positive", func(_ context.Context, _ int, _, result float64) (float64, error) {
-			if result >= 0 {
-				return 1.0, nil
-			}
-			return 0.0, nil
-		}),
-	}
-
-	// Test cases with various scenarios
-	tags := []string{"tag1", "tag2"}
-
-	cases := []eval.Case[int, float64]{
-		{Input: 4, Expected: 2.0, Tags: tags},
-		{Input: 9, Expected: 3.0, Tags: tags},  // ✅ Perfect match
-		{Input: 16, Expected: 4.0, Tags: tags}, // ⚠️  Scorer fails (tolerance_checker malfunction)
-		{Input: 25, Expected: 5.1, Tags: tags}, // ⚠️  Close but not exact (tolerance should pass, equals should fail)
-		{Input: 42, Expected: 6.5, Tags: tags}, // ❌ Task fails (universe error)
-		{Input: 13, Expected: 3.6, Tags: tags}, // ❌ Task fails (superstition error)
-	}
-
-	experimentID, err := eval.ResolveProjectExperimentID("Math Evaluation - Basic Functionality", "Go Kitchen Sink Examples")
-	if err != nil {
-		log.Fatalf("❌ Failed to resolve experiment: %v", err)
-	}
-
-	evaluation := eval.New(experimentID, eval.NewCases(cases), mathTask, scorers)
-
-	err = evaluation.Run()
-	if err != nil {
-		log.Printf("⚠️  Math evaluation completed with errors: %v", err)
-	} else {
-		log.Println("✅ Math evaluation completed successfully")
-	}
-}
-
-// runTextProcessingEval demonstrates OpenAI integration with various failure modes
-func runTextProcessingEval(client openai.Client) {
-	log.Println("\n🤖 Running Text Processing Evaluation (OpenAI Integration)")
-	log.Println("-----------------------------------------------------------")
-
-	// Task using OpenAI that can fail in different ways - with custom tracing
-	sentimentTask := func(ctx context.Context, text string) (string, error) {
-		ctx, span := tracer.Start(ctx, "custom_task_span")
+	// Task with custom tracing that sometimes fails
+	task := func(ctx context.Context, input string) (string, error) {
+		ctx, span := tracer.Start(ctx, "kitchen_sink_task")
 		defer span.End()
 
 		span.SetAttributes(
-			attribute.String("task.type", "sentiment_analysis"),
-			attribute.Int("input.length", len(text)),
+			attribute.String("input.text", input),
+			attribute.Int("input.length", len(input)),
 		)
 
-		// Simulate various failure scenarios
-		if strings.Contains(text, "BROKEN") {
-			return "", errors.New("task preprocessing failed: broken input detected")
+		// Task errors
+		if strings.Contains(input, "TASK_FAIL") {
+			return "", errors.New("task failed: broken input")
 		}
 
-		if strings.Contains(text, "TIMEOUT") {
-			return "", errors.New("task timeout: request took too long")
+		// LLM calls
+		if strings.Contains(input, "sentiment") {
+			prompt := fmt.Sprintf("What's the sentiment of: %s. Reply with just positive/negative/neutral", input)
+			params := responses.ResponseNewParams{
+				Input:        responses.ResponseNewParamsInputUnion{OfString: openai.String(prompt)},
+				Model:        openai.ChatModelGPT4oMini,
+				Instructions: openai.String("Reply with one word only"),
+			}
+			resp, err := client.Responses.New(ctx, params)
+			if err != nil {
+				return "", fmt.Errorf("llm failed: %w", err)
+			}
+			return strings.ToLower(strings.TrimSpace(resp.OutputText())), nil
 		}
 
-		prompt := fmt.Sprintf("Analyze the sentiment of this text and respond with only 'positive', 'negative', or 'neutral': %s", text)
-
-		params := responses.ResponseNewParams{
-			Input:        responses.ResponseNewParamsInputUnion{OfString: openai.String(prompt)},
-			Model:        openai.ChatModelGPT4oMini,
-			Instructions: openai.String("Respond with exactly one word: positive, negative, or neutral"),
+		if strings.Contains(input, "capital") {
+			prompt := fmt.Sprintf("What's the capital of %s? Just the city name.", strings.ReplaceAll(input, "capital of ", ""))
+			params := responses.ResponseNewParams{
+				Input:        responses.ResponseNewParamsInputUnion{OfString: openai.String(prompt)},
+				Model:        openai.ChatModelGPT4oMini,
+				Instructions: openai.String("Reply with just the city name"),
+			}
+			resp, err := client.Responses.New(ctx, params)
+			if err != nil {
+				return "", fmt.Errorf("llm failed: %w", err)
+			}
+			return strings.TrimSpace(resp.OutputText()), nil
 		}
 
-		resp, err := client.Responses.New(ctx, params)
-		if err != nil {
-			return "", fmt.Errorf("openai request failed: %w", err)
-		}
-
-		result := strings.ToLower(strings.TrimSpace(resp.OutputText()))
-
-		// Simulate occasional model confusion
-		if strings.Contains(text, "CONFUSE") {
-			return "unknown", nil // Wrong format to trigger scorer errors
-		}
-
-		return result, nil
-	}
-
-	// Scorers with different failure scenarios
-	scorers := []eval.Scorer[string, string]{
-		autoevals.NewEquals[string, string](),
-		eval.NewScorer("valid_sentiment", func(ctx context.Context, input, _, result string) (float64, error) {
-			_, span := tracer.Start(ctx, "custom_score_span")
-			defer span.End()
-
-			span.SetAttributes(
-				attribute.String("scorer.name", "valid_sentiment"),
-				attribute.String("result.sentiment", result),
-			)
-
-			validSentiments := map[string]bool{
-				"positive": true,
-				"negative": true,
-				"neutral":  true,
-			}
-
-			if strings.Contains(input, "SCORER_FAIL") {
-				return 0, errors.New("sentiment validator crashed: internal error")
-			}
-
-			if validSentiments[result] {
-				return 1.0, nil
-			}
-			return 0.0, nil
-		}),
-		eval.NewScorer("sentiment_agreement", func(_ context.Context, input, expected, result string) (float64, error) {
-			// More lenient scorer that gives partial credit
-			if strings.Contains(input, "PARTIAL_SCORER_FAIL") {
-				return 0, errors.New("agreement checker malfunction: cannot determine agreement")
-			}
-
-			// Both positive sentiments or both negative sentiments get partial credit
-			positiveWords := []string{"positive"}
-			negativeWords := []string{"negative"}
-
-			expectedPositive := contains(positiveWords, expected)
-			resultPositive := contains(positiveWords, result)
-			expectedNegative := contains(negativeWords, expected)
-			resultNegative := contains(negativeWords, result)
-
-			if expected == result {
-				return 1.0, nil // Perfect match
-			} else if (expectedPositive && resultPositive) || (expectedNegative && resultNegative) {
-				return 0.7, nil // Partial credit
-			}
-			return 0.0, nil
-		}),
-	}
-
-	cases := []eval.Case[string, string]{
-		{Input: "I love this product!", Expected: "positive"},             // ✅ Should work perfectly
-		{Input: "This is terrible and I hate it", Expected: "negative"},   // ✅ Should work perfectly
-		{Input: "This is okay, nothing special", Expected: "neutral"},     // ✅ Should work perfectly
-		{Input: "I love this CONFUSE product!", Expected: "positive"},     // ⚠️  Task returns "unknown", scorers should fail
-		{Input: "BROKEN input text", Expected: "neutral"},                 // ❌ Task fails (preprocessing)
-		{Input: "This will TIMEOUT surely", Expected: "negative"},         // ❌ Task fails (timeout)
-		{Input: "I hate this SCORER_FAIL thing", Expected: "negative"},    // ⚠️  Task works, valid_sentiment scorer fails
-		{Input: "Good product PARTIAL_SCORER_FAIL", Expected: "positive"}, // ⚠️  Task works, sentiment_agreement scorer fails
-	}
-
-	experimentID, err := eval.ResolveProjectExperimentID("Text Processing - OpenAI Integration", "Go Kitchen Sink Examples")
-	if err != nil {
-		log.Fatalf("❌ Failed to resolve experiment: %v", err)
-	}
-
-	evaluation := eval.New(experimentID, eval.NewCases(cases), sentimentTask, scorers)
-
-	err = evaluation.Run()
-	if err != nil {
-		log.Printf("⚠️  Text evaluation completed with errors: %v", err)
-	} else {
-		log.Println("✅ Text evaluation completed successfully")
-	}
-}
-
-// runMixedScenarioEval demonstrates complex scenarios with multiple types of failures
-func runMixedScenarioEval(client openai.Client) {
-	log.Println("\n🎯 Running Mixed Scenario Evaluation (Complex Interactions)")
-	log.Println("------------------------------------------------------------")
-
-	// Complex task that combines OpenAI calls with local processing
-	questionAnswerTask := func(ctx context.Context, question string) (string, error) {
-		// Local preprocessing that can fail
-		if len(question) < 5 {
-			return "", errors.New("preprocessing failed: question too short")
-		}
-
-		if strings.Contains(question, "INVALID") {
-			return "", errors.New("preprocessing failed: invalid characters detected")
-		}
-
-		// OpenAI call for question answering
-		prompt := fmt.Sprintf("Answer this question concisely in one sentence: %s", question)
-
-		params := responses.ResponseNewParams{
-			Input:        responses.ResponseNewParamsInputUnion{OfString: openai.String(prompt)},
-			Model:        openai.ChatModelGPT4oMini,
-			Instructions: openai.String("Provide a concise, factual answer in one sentence."),
-		}
-
-		resp, err := client.Responses.New(ctx, params)
-		if err != nil {
-			return "", fmt.Errorf("llm call failed: %w", err)
-		}
-
-		answer := resp.OutputText()
-
-		// Post-processing that can fail
-		if strings.Contains(question, "POSTPROCESS_FAIL") {
-			return "", errors.New("postprocessing failed: output validation error")
-		}
-
-		if len(answer) == 0 {
-			return "", errors.New("postprocessing failed: empty response from model")
-		}
-
-		return answer, nil
-	}
-
-	// Complex scoring with multiple failure modes
-	scorers := []eval.Scorer[string, string]{
-		eval.NewScorer("length_check", func(ctx context.Context, input, expected, result string) (float64, error) {
-			if strings.Contains(input, "LENGTH_SCORER_FAIL") {
-				return 0, errors.New("length checker crashed: memory allocation failed")
-			}
-
-			// Penalize answers that are too short or too long
-			if len(result) < 10 {
-				return 0.3, nil
-			} else if len(result) > 200 {
-				return 0.5, nil
-			}
-			return 1.0, nil
-		}),
-		eval.NewScorer("keyword_relevance", func(ctx context.Context, input, expected, result string) (float64, error) {
-			if strings.Contains(input, "RELEVANCE_SCORER_FAIL") {
-				return 0, errors.New("relevance checker error: unable to analyze keywords")
-			}
-
-			// Extract key words from question and check if they appear in answer
-			questionWords := strings.Fields(strings.ToLower(input))
-			answerLower := strings.ToLower(result)
-
-			matches := 0
-			for _, word := range questionWords {
-				if len(word) > 3 && strings.Contains(answerLower, word) {
-					matches++
-				}
-			}
-
-			if len(questionWords) == 0 {
-				return 0.0, nil
-			}
-
-			relevanceScore := float64(matches) / float64(len(questionWords))
-			return math.Min(relevanceScore, 1.0), nil
-		}),
-		eval.NewScorer("contains_expected_info", func(ctx context.Context, input, expected, result string) (float64, error) {
-			if strings.Contains(input, "INFO_SCORER_FAIL") {
-				return 0, errors.New("information checker failed: semantic analysis unavailable")
-			}
-
-			// Simple check if expected information appears in result
-			expectedLower := strings.ToLower(expected)
-			resultLower := strings.ToLower(result)
-
-			expectedWords := strings.Fields(expectedLower)
-			matchedWords := 0
-
-			for _, word := range expectedWords {
-				if len(word) > 2 && strings.Contains(resultLower, word) {
-					matchedWords++
-				}
-			}
-
-			if len(expectedWords) == 0 {
-				return 1.0, nil
-			}
-
-			return float64(matchedWords) / float64(len(expectedWords)), nil
-		}),
-	}
-
-	cases := []eval.Case[string, string]{
-		{
-			Input:    "What is the capital of France?",
-			Expected: "Paris is the capital of France",
-		}, // ✅ Should work well
-		{
-			Input:    "How does photosynthesis work?",
-			Expected: "Plants convert sunlight into energy using chlorophyll",
-		}, // ✅ Should work well
-		{
-			Input:    "Why LENGTH_SCORER_FAIL is the sky blue?",
-			Expected: "Light scattering causes blue sky appearance",
-		}, // ⚠️  Task works, length_scorer fails
-		{
-			Input:    "What RELEVANCE_SCORER_FAIL causes rain?",
-			Expected: "Water vapor condenses in clouds forming rain",
-		}, // ⚠️  Task works, relevance_scorer fails
-		{
-			Input:    "How INFO_SCORER_FAIL do birds fly?",
-			Expected: "Birds use wings and hollow bones for flight",
-		}, // ⚠️  Task works, info_scorer fails
-		{
-			Input:    "INVALID characters @#$%",
-			Expected: "Invalid input should be handled",
-		}, // ❌ Task fails (preprocessing)
-		{
-			Input:    "Hi?",
-			Expected: "Too short",
-		}, // ❌ Task fails (too short)
-		{
-			Input:    "What happens when POSTPROCESS_FAIL occurs?",
-			Expected: "Processing should handle errors gracefully",
-		}, // ❌ Task fails (postprocessing)
-	}
-
-	experimentID, err := eval.ResolveProjectExperimentID("Mixed Scenarios - Complex Interactions", "Go Kitchen Sink Examples")
-	if err != nil {
-		log.Fatalf("❌ Failed to resolve experiment: %v", err)
-	}
-
-	evaluation := eval.New(experimentID, eval.NewCases(cases), questionAnswerTask, scorers)
-
-	err = evaluation.Run()
-
-	if err != nil {
-		log.Printf("⚠️  Mixed scenario evaluation completed with errors: %v", err)
-	} else {
-		log.Println("✅ Mixed scenario evaluation completed successfully")
-	}
-}
-
-// runIteratorErrorEval demonstrates iterator failure scenarios
-func runIteratorErrorEval() {
-	log.Println("\n🔄 Running Iterator Error Evaluation (Cases Iterator Failures)")
-	log.Println("--------------------------------------------------------------")
-
-	// Simple task that just returns the input
-	simpleTask := func(_ context.Context, input string) (string, error) {
+		// Simple cases
 		return input, nil
 	}
 
-	// Single simple scorer
 	scorers := []eval.Scorer[string, string]{
+		// Autoeval
 		autoevals.NewEquals[string, string](),
+
+		// Multi-score scorer with custom tracing
+		eval.NewScorer("quality_check", func(ctx context.Context, input, expected, result string) (eval.Scores, error) {
+			_, span := tracer.Start(ctx, "quality_scorer")
+			defer span.End()
+
+			span.SetAttributes(
+				attribute.String("result.value", result),
+				attribute.Int("result.length", len(result)),
+			)
+
+			// Scorer error
+			if strings.Contains(input, "SCORER_FAIL") {
+				return nil, errors.New("quality checker crashed")
+			}
+
+			// Multiple scores
+			return eval.Scores{
+				{Name: "length_ok", Score: func() float64 {
+					if len(result) > 0 && len(result) < 100 {
+						return 1.0
+					}
+					return 0.0
+				}()},
+				{Name: "not_empty", Score: func() float64 {
+					if len(result) > 0 {
+						return 1.0
+					}
+					return 0.0
+				}()},
+			}, nil
+		}),
 	}
 
-	// Create iterator that will throw errors during iteration
-	errorIterator := newErrorCasesIterator()
+	cases := []eval.Case[string, string]{
+		// Success cases
+		{Input: "hello", Expected: "hello", Tags: []string{"simple", "success"}},
+		{Input: "sentiment: I love this!", Expected: "positive", Tags: []string{"llm", "sentiment"}},
+		{Input: "capital of France", Expected: "Paris", Tags: []string{"llm", "geography"}},
 
-	experimentID, err := eval.ResolveProjectExperimentID("Iterator Errors - Cases Iterator Failures", "Go Kitchen Sink Examples")
+		// Error cases
+		{Input: "TASK_FAIL this", Expected: "anything", Tags: []string{"task_error"}},
+		{Input: "SCORER_FAIL test", Expected: "test", Tags: []string{"scorer_error"}},
+
+		// Mixed
+		{Input: "maybe", Expected: "perhaps", Tags: []string{"mismatch"}},
+	}
+
+	experimentID, err := eval.ResolveProjectExperimentID("Kitchen Sink", "Kitchen Sink")
 	if err != nil {
 		log.Fatalf("❌ Failed to resolve experiment: %v", err)
 	}
 
-	evaluation := eval.New(experimentID, errorIterator, simpleTask, scorers)
-
+	evaluation := eval.New(experimentID, eval.NewCases(cases), task, scorers)
 	err = evaluation.Run()
 	if err != nil {
-		log.Printf("⚠️  Iterator error evaluation completed with errors (expected): %v", err)
-		log.Println("   📊 Check the Braintrust dashboard to see how iterator errors are recorded in spans")
+		log.Printf("⚠️  Eval completed with errors: %v", err)
 	} else {
-		log.Println("✅ Iterator error evaluation completed (no iterator errors occurred)")
+		log.Println("✅ Eval completed")
 	}
 }
 
-// errorCasesIterator implements eval.Cases[string, string] but throws errors during iteration
-type errorCasesIterator struct {
-	sequence []iteratorStep
-	index    int
-}
-
-type iteratorStep struct {
-	c   eval.Case[string, string]
-	err error
-}
-
-func newErrorCasesIterator() *errorCasesIterator {
-	return &errorCasesIterator{
-		sequence: []iteratorStep{
-			{c: eval.Case[string, string]{Input: "hello", Expected: "hello"}},
-			{err: errors.New("iterator error: database connection lost")},
-			{c: eval.Case[string, string]{Input: "world", Expected: "world"}},
-		},
-		index: 0,
-	}
-}
-
-func (e *errorCasesIterator) Next() (eval.Case[string, string], error) {
-	if e.index >= len(e.sequence) {
-		return eval.Case[string, string]{}, io.EOF
+func createSampleDataset(projectID string) (string, error) {
+	req := api.DatasetRequest{
+		ProjectID: projectID,
+		Name:      "Kitchen Sink QA",
 	}
 
-	step := e.sequence[e.index]
-	e.index++
+	dataset, err := api.CreateDataset(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to create dataset: %w", err)
+	}
 
-	return step.c, step.err
+	events := []api.DatasetEvent{
+		{Input: "What is the capital of Japan?", Expected: "Tokyo"},
+		{Input: "What is 5 + 3?", Expected: "8"},
+		{Input: "What color is grass?", Expected: "green"},
+	}
+
+	err = api.InsertDatasetEvents(dataset.ID, events)
+	if err != nil {
+		return "", fmt.Errorf("failed to insert events: %w", err)
+	}
+
+	return dataset.ID, nil
 }
 
-// Helper function
-func contains(slice []string, item string) bool {
-	for _, s := range slice {
-		if s == item {
-			return true
+func runDatasetEval(client openai.Client, datasetID string) {
+	log.Printf("📊 Running Dataset Eval with %s", datasetID)
+
+	task := func(ctx context.Context, question string) (string, error) {
+		prompt := fmt.Sprintf("Answer this question briefly: %s", question)
+		params := responses.ResponseNewParams{
+			Input:        responses.ResponseNewParamsInputUnion{OfString: openai.String(prompt)},
+			Model:        openai.ChatModelGPT4oMini,
+			Instructions: openai.String("Give a short, accurate answer"),
 		}
+
+		resp, err := client.Responses.New(ctx, params)
+		if err != nil {
+			return "", fmt.Errorf("llm failed: %w", err)
+		}
+
+		return strings.TrimSpace(resp.OutputText()), nil
 	}
-	return false
+
+	scorers := []eval.Scorer[string, string]{
+		autoevals.NewEquals[string, string](),
+		eval.NewScorer("contains_answer", func(_ context.Context, _, expected, result string) (eval.Scores, error) {
+			score := 0.0
+			if strings.Contains(strings.ToLower(result), strings.ToLower(expected)) {
+				score = 1.0
+			}
+			return eval.Scores{{Name: "contains_answer", Score: score}}, nil
+		}),
+		eval.NewScorer("llm_judge", func(ctx context.Context, input, expected, result string) (eval.Scores, error) {
+			prompt := fmt.Sprintf(`Rate how well this answer matches the expected answer on a scale of 0 to 1:
+
+Question: %s
+Expected: %s
+Actual: %s
+
+Reply with just a decimal number between 0 and 1.`, input, expected, result)
+
+			params := responses.ResponseNewParams{
+				Input:        responses.ResponseNewParamsInputUnion{OfString: openai.String(prompt)},
+				Model:        openai.ChatModelGPT4oMini,
+				Instructions: openai.String("Reply with just a decimal number from 0 to 1"),
+			}
+
+			resp, err := client.Responses.New(ctx, params)
+			if err != nil {
+				return nil, fmt.Errorf("llm judge failed: %w", err)
+			}
+
+			scoreText := strings.TrimSpace(resp.OutputText())
+			var score float64
+			if _, err := fmt.Sscanf(scoreText, "%f", &score); err != nil {
+				score = 0.0 // Default to 0 if parsing fails
+			}
+
+			// Clamp to 0-1 range
+			if score > 1.0 {
+				score = 1.0
+			}
+			if score < 0.0 {
+				score = 0.0
+			}
+
+			return eval.Scores{{Name: "llm_judge", Score: score}}, nil
+		}),
+	}
+
+	cases := eval.QueryDataset[string, string](datasetID)
+
+	experimentID, err := eval.ResolveProjectExperimentID("Dataset QA", "Kitchen Sink")
+	if err != nil {
+		log.Fatalf("❌ Failed to resolve experiment: %v", err)
+	}
+
+	evaluation := eval.New(experimentID, cases, task, scorers)
+	err = evaluation.Run()
+	if err != nil {
+		log.Printf("⚠️  Dataset eval completed with errors: %v", err)
+	} else {
+		log.Println("✅ Dataset eval completed")
+	}
 }

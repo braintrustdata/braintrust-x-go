@@ -11,7 +11,6 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
-	"github.com/braintrust/braintrust-x-go/braintrust/autoevals"
 	"github.com/braintrust/braintrust-x-go/braintrust/internal/oteltest"
 	"github.com/braintrust/braintrust-x-go/braintrust/trace"
 )
@@ -44,7 +43,7 @@ func TestEval_TaskErrors(t *testing.T) {
 	}
 
 	scorers := []Scorer[int, int]{
-		autoevals.NewEquals[int, int](),
+		NewEqualsScorer[int, int](),
 	}
 
 	eval := New("123", NewCases(cases), task, scorers)
@@ -118,7 +117,7 @@ func TestEval_TaskErrors(t *testing.T) {
 			"braintrust.parent": "experiment_id:123",
 		},
 		JSONAttrs: map[string]any{
-			"braintrust.scores":          map[string]int{"Equals": 0},
+			"braintrust.scores":          map[string]int{"equals": 0},
 			"braintrust.span_attributes": scoreType,
 		},
 	})
@@ -159,12 +158,12 @@ func TestEval_ScorerErrors(t *testing.T) {
 
 	// Mix of scorers - one that works and one that fails
 	scorers := []Scorer[int, int]{
-		autoevals.NewEquals[int, int](), // This works
-		NewScorer("failing_scorer", func(ctx context.Context, input int, expected, result int) (float64, error) {
+		NewEqualsScorer[int, int](),
+		NewScorer("failing_scorer", func(ctx context.Context, input int, expected, result int) (Scores, error) {
 			if input == 2 {
-				return 0, errors.New("scorer failed for input 2")
+				return nil, errors.New("scorer failed for input 2")
 			}
-			return 1.0, nil
+			return Scores{{Name: "failing_scorer", Score: 1.0}}, nil
 		}),
 	}
 
@@ -204,7 +203,7 @@ func TestEval_ScorerErrors(t *testing.T) {
 			"braintrust.parent": "experiment_id:123",
 		},
 		JSONAttrs: map[string]any{
-			"braintrust.scores":          map[string]int{"Equals": 1, "failing_scorer": 1},
+			"braintrust.scores":          map[string]float64{"equals": 1, "failing_scorer": 1},
 			"braintrust.span_attributes": scoreType,
 		},
 	})
@@ -243,7 +242,7 @@ func TestEval_ScorerErrors(t *testing.T) {
 			"braintrust.parent": "experiment_id:123",
 		},
 		JSONAttrs: map[string]any{
-			"braintrust.scores":          map[string]int{"Equals": 1},
+			"braintrust.scores":          map[string]int{"equals": 1},
 			"braintrust.span_attributes": scoreType,
 		},
 		StatusCode:        codes.Error,
@@ -270,6 +269,59 @@ func TestEval_ScorerErrors(t *testing.T) {
 	})
 }
 
+func TestScorerNames(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	_, exporter := oteltest.Setup(t)
+
+	scorers := []Scorer[int, int]{
+		NewScorer("no-name", func(ctx context.Context, input int, expected, result int) (Scores, error) {
+			return S(0.6), nil
+		}),
+		NewScorer("name", func(ctx context.Context, input int, expected, result int) (Scores, error) {
+			return Scores{{Name: "different", Score: 0.5}}, nil
+		}),
+	}
+
+	task := func(ctx context.Context, input int) (int, error) {
+		return input, nil
+	}
+
+	cases := []Case[int, int]{{Input: 1, Expected: 1}}
+
+	eval := New("123", NewCases(cases), task, scorers)
+	err := eval.Run()
+	require.NoError(err)
+
+	spans := exporter.Flush()
+	assert.Equal(3, len(spans))
+
+	spans[0].AssertEqual(oteltest.TestSpan{
+		Name: "task",
+		Attrs: map[string]any{
+			"braintrust.expected": "1",
+			"braintrust.parent":   "experiment_id:123",
+		},
+		JSONAttrs: map[string]any{
+			"braintrust.input_json":      1,
+			"braintrust.output_json":     1,
+			"braintrust.span_attributes": taskType,
+		},
+	})
+
+	spans[1].AssertEqual(oteltest.TestSpan{
+		Name: "score",
+		Attrs: map[string]any{
+			"braintrust.parent": "experiment_id:123",
+		},
+		JSONAttrs: map[string]any{
+			"braintrust.scores":          map[string]float64{"different": 0.5, "no-name": 0.6},
+			"braintrust.span_attributes": scoreType,
+		},
+	})
+}
+
 func TestHardcodedEval(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -288,11 +340,12 @@ func TestHardcodedEval(t *testing.T) {
 	}
 
 	// test custom scorer
-	equals := func(ctx context.Context, input int, expected, result int) (float64, error) {
+	equals := func(ctx context.Context, input int, expected, result int) (Scores, error) {
+		v := 0.0
 		if result == expected {
-			return 1.0, nil
+			v = 1.0
 		}
-		return 0.0, nil
+		return S(v), nil
 	}
 
 	cases := []Case[int, int]{
@@ -457,7 +510,7 @@ func TestEvalWithCustomGenerator(t *testing.T) {
 		return x * 2, nil
 	}
 
-	scorers := []Scorer[int, int]{autoevals.NewEquals[int, int]()}
+	scorers := []Scorer[int, int]{NewEqualsScorer[int, int]()}
 
 	eval := New("test-generator", generator, task, scorers)
 	err := eval.Run()
@@ -487,7 +540,7 @@ func TestEvalWithCasesIteratorError(t *testing.T) {
 		return input, nil
 	}
 
-	scorers := []Scorer[string, string]{autoevals.NewEquals[string, string]()}
+	scorers := []Scorer[string, string]{NewEqualsScorer[string, string]()}
 
 	eval := New("test-error-generator", generator, task, scorers)
 	timer := oteltest.NewTimer()
@@ -527,7 +580,7 @@ func TestEvalWithCasesIteratorError(t *testing.T) {
 			"braintrust.parent": "experiment_id:test-error-generator",
 		},
 		JSONAttrs: map[string]any{
-			"braintrust.scores":          map[string]int{"Equals": 1},
+			"braintrust.scores":          map[string]int{"equals": 1},
 			"braintrust.span_attributes": scoreType,
 		},
 	})
@@ -586,7 +639,7 @@ func TestEvalWithCasesIteratorError(t *testing.T) {
 			"braintrust.parent": "experiment_id:test-error-generator",
 		},
 		JSONAttrs: map[string]any{
-			"braintrust.scores":          map[string]int{"Equals": 1},
+			"braintrust.scores":          map[string]int{"equals": 1},
 			"braintrust.span_attributes": scoreType,
 		},
 	})
@@ -664,7 +717,7 @@ func TestEval_EmptyExperimentID(t *testing.T) {
 	}
 
 	scorers := []Scorer[int, int]{
-		autoevals.NewEquals[int, int](),
+		NewEqualsScorer[int, int](),
 	}
 
 	cases := []Case[int, int]{
@@ -724,7 +777,7 @@ func TestEval_BraintrustParentWithAndWithoutDefaultProject(t *testing.T) {
 			}
 
 			scorers := []Scorer[int, int]{
-				autoevals.NewEquals[int, int](),
+				NewEqualsScorer[int, int](),
 			}
 
 			cases := []Case[int, int]{
@@ -744,4 +797,23 @@ func TestEval_BraintrustParentWithAndWithoutDefaultProject(t *testing.T) {
 			}
 		})
 	}
+}
+
+// we don't use the autoeval scorer here to avoid a circular dependency in tests
+type equalsScorer[I, R comparable] struct{}
+
+func (s *equalsScorer[I, R]) Name() string {
+	return "equals"
+}
+
+func (s *equalsScorer[I, R]) Run(ctx context.Context, input I, expected, result R) (Scores, error) {
+	v := 0.0
+	if result == expected {
+		v = 1.0
+	}
+	return S(v), nil
+}
+
+func NewEqualsScorer[I, R comparable]() Scorer[I, R] {
+	return &equalsScorer[I, R]{}
 }

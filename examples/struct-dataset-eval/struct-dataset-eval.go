@@ -151,11 +151,7 @@ func main() {
 
 	// Create scorers that work with the business logic types
 	scorers := []eval.Scorer[QuestionInput, AnswerExpected]{
-		// Use autoevals.Equals to check if the response matches expected exactly
-		eval.NewScorer("equals", func(ctx context.Context, input QuestionInput, expected, result AnswerExpected) (float64, error) {
-			equals := autoevals.NewEquals[QuestionInput, string]()
-			return equals.Run(ctx, input, expected.Response, result.Response)
-		}),
+		autoevals.NewEquals[QuestionInput, AnswerExpected](),
 	}
 
 	// Create and run the evaluation

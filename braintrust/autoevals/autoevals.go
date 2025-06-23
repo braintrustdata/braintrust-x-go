@@ -17,32 +17,31 @@ import (
 	"context"
 
 	"golang.org/x/exp/constraints"
-)
 
-// ScoreFunc is a function that scores the result of a task against the expected result.
-type ScoreFunc[I, R any] func(ctx context.Context, input I, expected, result R) (float64, error)
+	"github.com/braintrust/braintrust-x-go/braintrust/eval"
+)
 
 // Scorer evaluates the quality of results against expected values.
 type Scorer[I, R any] interface {
 	Name() string
-	Run(ctx context.Context, input I, expected, result R) (float64, error)
+	Run(ctx context.Context, input I, expected, result R) (eval.Scores, error)
 }
 
 type scorer[I, R any] struct {
 	name      string
-	scoreFunc ScoreFunc[I, R]
+	scoreFunc eval.ScoreFunc[I, R]
 }
 
 func (s *scorer[I, R]) Name() string {
 	return s.name
 }
 
-func (s *scorer[I, R]) Run(ctx context.Context, input I, expected, result R) (float64, error) {
+func (s *scorer[I, R]) Run(ctx context.Context, input I, expected, result R) (eval.Scores, error) {
 	return s.scoreFunc(ctx, input, expected, result)
 }
 
 // NewScorer creates a new scorer with the given name and score function.
-func NewScorer[I, R any](name string, scoreFunc ScoreFunc[I, R]) Scorer[I, R] {
+func NewScorer[I, R any](name string, scoreFunc eval.ScoreFunc[I, R]) Scorer[I, R] {
 	return &scorer[I, R]{
 		name:      name,
 		scoreFunc: scoreFunc,
@@ -56,11 +55,12 @@ func NewScorer[I, R any](name string, scoreFunc ScoreFunc[I, R]) Scorer[I, R] {
 //	equals := autoevals.NewEquals[string, string]()
 //	score, err := equals.Run(ctx, "input", "hello", "hello") // returns 1.0
 func NewEquals[I any, R comparable]() Scorer[I, R] {
-	return NewScorer("Equals", func(_ context.Context, _ I, expected, result R) (float64, error) {
+	return NewScorer("Equals", func(_ context.Context, _ I, expected, result R) (eval.Scores, error) {
+		v := 0.0
 		if expected == result {
-			return 1, nil
+			v = 1.0
 		}
-		return 0, nil
+		return eval.Scores{{Name: "Equals", Score: v}}, nil
 	})
 }
 
@@ -71,10 +71,11 @@ func NewEquals[I any, R comparable]() Scorer[I, R] {
 //	lessThan := autoevals.NewLessThan[string, float64]()
 //	score, err := lessThan.Run(ctx, "input", 0.5, 0.8) // returns 1.0 (0.5 < 0.8)
 func NewLessThan[I any, R constraints.Ordered]() Scorer[I, R] {
-	return NewScorer("LessThan", func(_ context.Context, _ I, expected, result R) (float64, error) {
+	return NewScorer("LessThan", func(_ context.Context, _ I, expected, result R) (eval.Scores, error) {
+		v := 0.0
 		if expected < result {
-			return 1, nil
+			v = 1.0
 		}
-		return 0, nil
+		return eval.Scores{{Name: "LessThan", Score: v}}, nil
 	})
 }

@@ -191,18 +191,19 @@ Respond with just the subject line, no quotes or explanations.`,
 
 	scorers := []eval.Scorer[EmailCampaign, SubjectLineResponse]{
 		// Length compliance scorer
-		eval.NewScorer("length_compliance", func(ctx context.Context, input EmailCampaign, expected, result SubjectLineResponse) (float64, error) {
+		eval.NewScorer("length_compliance", func(ctx context.Context, input EmailCampaign, expected, result SubjectLineResponse) (eval.Scores, error) {
 			length := len(result.SubjectLine)
+			v := 0.0
 			if length <= 50 {
-				return 1.0, nil
+				v = 1.0
 			} else if length <= 60 {
-				return 0.7, nil // Acceptable but not ideal
+				v = 0.7
 			}
-			return 0.0, nil // Too long for mobile
+			return eval.S(v), nil
 		}),
 
 		// AI-powered engagement prediction scorer
-		eval.NewScorer("engagement_prediction", func(ctx context.Context, input EmailCampaign, _, result SubjectLineResponse) (float64, error) {
+		eval.NewScorer("engagement_prediction", func(ctx context.Context, input EmailCampaign, _, result SubjectLineResponse) (eval.Scores, error) {
 			_, span := tracer.Start(ctx, "custom_engagement_scoring")
 			defer span.End()
 
@@ -243,7 +244,7 @@ Respond with only a number 0-10.`,
 
 			resp, err := client.Responses.New(ctx, params)
 			if err != nil {
-				return 0.0, fmt.Errorf("engagement prediction failed: %w", err)
+				return nil, fmt.Errorf("engagement prediction failed: %w", err)
 			}
 
 			scoreText := strings.TrimSpace(resp.OutputText())
@@ -259,11 +260,11 @@ Respond with only a number 0-10.`,
 				attribute.Float64("normalized_score", normalizedScore),
 			)
 
-			return normalizedScore, nil
+			return eval.S(normalizedScore), nil
 		}),
 
 		// Spam filter risk scorer
-		eval.NewScorer("spam_risk", func(ctx context.Context, input EmailCampaign, expected, result SubjectLineResponse) (float64, error) {
+		eval.NewScorer("spam_risk", func(ctx context.Context, input EmailCampaign, expected, result SubjectLineResponse) (eval.Scores, error) {
 			spamTriggers := []string{
 				"FREE", "URGENT", "ACT NOW", "LIMITED TIME", "CLICK HERE",
 				"GUARANTEE", "NO OBLIGATION", "RISK FREE", "CASH", "MONEY",
@@ -286,19 +287,20 @@ Respond with only a number 0-10.`,
 			}
 
 			// Score: 1.0 = no spam risk, 0.0 = high spam risk
+			v := 0.0
 			switch triggerCount {
 			case 0:
-				return 1.0, nil
+				v = 1.0
 			case 1:
-				return 0.7, nil
+				v = 0.7
 			case 2:
-				return 0.4, nil
+				v = 0.4
 			}
-			return 0.0, nil
+			return eval.S(v), nil
 		}),
 
 		// Product mention scorer
-		eval.NewScorer("product_relevance", func(ctx context.Context, input EmailCampaign, expected, result SubjectLineResponse) (float64, error) {
+		eval.NewScorer("product_relevance", func(ctx context.Context, input EmailCampaign, expected, result SubjectLineResponse) (eval.Scores, error) {
 			subjectLower := strings.ToLower(result.SubjectLine)
 			productLower := strings.ToLower(input.ProductName)
 
@@ -313,7 +315,7 @@ Respond with only a number 0-10.`,
 			}
 
 			if mentionCount > 0 {
-				return 1.0, nil
+				return eval.S(1.0), nil
 			}
 
 			// Check for campaign type relevance as backup
@@ -328,12 +330,12 @@ Respond with only a number 0-10.`,
 			if terms, exists := campaignTerms[input.CampaignType]; exists {
 				for _, term := range terms {
 					if strings.Contains(subjectLower, term) {
-						return 0.7, nil
+						return eval.S(0.7), nil
 					}
 				}
 			}
 
-			return 0.3, nil
+			return eval.S(0.3), nil
 		}),
 	}
 
