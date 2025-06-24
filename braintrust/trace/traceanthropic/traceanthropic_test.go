@@ -17,7 +17,7 @@ import (
 func TestMiddleware(t *testing.T) {
 	// Create a test request with a Messages API call
 	requestBody := `{
-		"model": "claude-3-7-sonnet-20250219",
+		"model": "claude-3-haiku-20240307",
 		"max_tokens": 1024,
 		"messages": [
 			{
@@ -41,7 +41,7 @@ func TestMiddleware(t *testing.T) {
 				"text": "Hello! How can I help you today?"
 			}
 		],
-		"model": "claude-3-7-sonnet-20250219",
+		"model": "claude-3-haiku-20240307",
 		"stop_reason": "end_turn",
 		"stop_sequence": null,
 		"usage": {
@@ -89,7 +89,7 @@ func TestMessagesTracer(t *testing.T) {
 
 	// Test StartSpan
 	requestBody := `{
-		"model": "claude-3-7-sonnet-20250219",
+		"model": "claude-3-haiku-20240307",
 		"max_tokens": 1024,
 		"messages": [
 			{
@@ -110,7 +110,7 @@ func TestMessagesTracer(t *testing.T) {
 	require.NotNil(t, newCtx)
 
 	// Verify metadata was parsed
-	assert.Equal(t, "claude-3-7-sonnet-20250219", tracer.metadata["model"])
+	assert.Equal(t, "claude-3-haiku-20240307", tracer.metadata["model"])
 	assert.Equal(t, float64(1024), tracer.metadata["max_tokens"])
 	assert.Equal(t, false, tracer.metadata["stream"])
 	assert.False(t, tracer.streaming)
@@ -121,7 +121,7 @@ func TestMessagesTracerStreaming(t *testing.T) {
 
 	// Test streaming request
 	requestBody := `{
-		"model": "claude-3-7-sonnet-20250219",
+		"model": "claude-3-haiku-20240307",
 		"max_tokens": 1024,
 		"messages": [
 			{
