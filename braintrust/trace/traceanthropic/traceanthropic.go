@@ -45,12 +45,11 @@ var Middleware = internal.Middleware(anthropicRouter)
 
 // anthropicRouter maps Anthropic API paths to their corresponding tracers.
 func anthropicRouter(path string) internal.MiddlewareTracer {
-	switch path {
-	case "/v1/messages":
+	if path == "/v1/messages" {
 		return newMessagesTracer()
-	default:
-		return internal.NewNoopTracer()
 	}
+	return internal.NewNoopTracer()
+
 }
 
 // Ensure our tracers implement the shared interface

@@ -7,8 +7,6 @@ This package provides shared utilities and middleware functionality for OpenTele
 
 - **`BufferedReader`**: Handles response body buffering with completion callbacks
 - **`ParseUsageTokens`**: Normalizes token usage metrics across different API formats
-- **`TranslateMetricKey/Prefix`**: Maps provider-specific metric names to consistent format
-- **`ToInt64`**: Converts various numeric types to int64 for metrics
 - **`SetJSONAttr`**: Helper for setting JSON attributes on OpenTelemetry spans
 
 ### Shared Middleware (`middleware.go`)

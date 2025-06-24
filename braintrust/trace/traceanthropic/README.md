@@ -64,10 +64,6 @@ All your API calls will now be automatically traced and sent to Braintrust!
 Currently supports:
 - `/v1/messages` - The primary Messages endpoint for Claude conversations
 
-## Streaming Support
-
-The tracer automatically detects streaming requests and handles them appropriately:
-Streaming responses are aggregated into a single trace with the complete conversation.
 
 ## Examples
 

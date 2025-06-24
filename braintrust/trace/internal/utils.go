@@ -59,8 +59,8 @@ func (r *BufferedReader) trigger() {
 	})
 }
 
-// TranslateMetricKey translates metric keys to be consistent between APIs
-func TranslateMetricKey(key string) string {
+// translateMetricKey translates metric keys to be consistent between APIs
+func translateMetricKey(key string) string {
 	switch key {
 	case "input_tokens":
 		return "prompt_tokens"
@@ -72,8 +72,8 @@ func TranslateMetricKey(key string) string {
 	return key
 }
 
-// ToInt64 converts various numeric types to int64
-func ToInt64(v any) (bool, int64) {
+// toInt64 converts various numeric types to int64
+func toInt64(v any) (bool, int64) {
 	switch v := v.(type) {
 	case float64:
 		return true, int64(v)
@@ -94,8 +94,8 @@ func ToInt64(v any) (bool, int64) {
 	}
 }
 
-// TranslateMetricPrefix translates metric prefixes to be consistent between APIs
-func TranslateMetricPrefix(prefix string) string {
+// translateMetricPrefix translates metric prefixes to be consistent between APIs
+func translateMetricPrefix(prefix string) string {
 	switch prefix {
 	case "input":
 		return "prompt"
@@ -118,17 +118,17 @@ func ParseUsageTokens(usage map[string]interface{}) map[string]int64 {
 	// Parse token metrics and translate names to be consistent
 	for k, v := range usage {
 		if strings.HasSuffix(k, "_tokens_details") {
-			prefix := TranslateMetricPrefix(strings.TrimSuffix(k, "_tokens_details"))
+			prefix := translateMetricPrefix(strings.TrimSuffix(k, "_tokens_details"))
 			if details, ok := v.(map[string]interface{}); ok {
 				for kd, vd := range details {
-					if ok, i := ToInt64(vd); ok {
+					if ok, i := toInt64(vd); ok {
 						metrics[prefix+"_"+kd] = i
 					}
 				}
 			}
 		} else {
-			if ok, i := ToInt64(v); ok {
-				k = TranslateMetricKey(k)
+			if ok, i := toInt64(v); ok {
+				k = translateMetricKey(k)
 				metrics[k] = i
 			}
 		}
