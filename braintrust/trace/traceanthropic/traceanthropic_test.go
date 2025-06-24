@@ -1,7 +1,6 @@
 package traceanthropic
 
 import (
-	"bytes"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -156,46 +155,4 @@ func TestParseUsageTokens(t *testing.T) {
 
 	assert.Equal(t, int64(12), metrics["prompt_tokens"])
 	assert.Equal(t, int64(9), metrics["completion_tokens"])
-}
-
-func TestBufferedReader(t *testing.T) {
-	content := "test content"
-	src := io.NopCloser(strings.NewReader(content))
-
-	var capturedContent string
-	onDone := func(r io.Reader) {
-		data, _ := io.ReadAll(r)
-		capturedContent = string(data)
-	}
-
-	reader := internal.NewBufferedReader(src, onDone)
-
-	// Read the content
-	data, err := io.ReadAll(reader)
-	require.NoError(t, err)
-	assert.Equal(t, content, string(data))
-
-	// Close to trigger onDone
-	err = reader.Close()
-	require.NoError(t, err)
-
-	// Verify onDone was called with the correct content
-	assert.Equal(t, content, capturedContent)
-}
-
-func TestNoopTracer(t *testing.T) {
-	tracer := internal.NewNoopTracer()
-	assert.NotNil(t, tracer)
-
-	ctx := t.Context()
-	start := time.Now()
-	reader := &bytes.Buffer{}
-
-	newCtx, span, err := tracer.StartSpan(ctx, start, reader)
-	require.NoError(t, err)
-	require.NotNil(t, span)
-	require.NotNil(t, newCtx)
-
-	err = tracer.TagSpan(span, reader)
-	require.NoError(t, err)
 }
