@@ -25,6 +25,8 @@
 package traceopenai
 
 import (
+	"strings"
+
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/braintrust/braintrust-x-go/braintrust/trace/internal"
@@ -51,6 +53,58 @@ func openaiRouter(path string) internal.MiddlewareTracer {
 		return newChatCompletionsTracer()
 	default:
 		return internal.NewNoopTracer()
+	}
+}
+
+// parseUsageTokens parses the usage tokens from OpenAI API responses
+// It handles different API formats using a unified approach
+func parseUsageTokens(usage map[string]interface{}) map[string]int64 {
+	metrics := make(map[string]int64)
+
+	if usage == nil {
+		return metrics
+	}
+
+	// Parse token metrics and translate names to be consistent
+	for k, v := range usage {
+		if strings.HasSuffix(k, "_tokens_details") {
+			prefix := translateMetricPrefix(strings.TrimSuffix(k, "_tokens_details"))
+			if details, ok := v.(map[string]interface{}); ok {
+				for kd, vd := range details {
+					if ok, i := internal.ToInt64(vd); ok {
+						metrics[prefix+"_"+kd] = i
+					}
+				}
+			}
+		} else {
+			if ok, i := internal.ToInt64(v); ok {
+				switch k {
+				case "input_tokens":
+					metrics["prompt_tokens"] = i
+				case "output_tokens":
+					metrics["completion_tokens"] = i
+				case "total_tokens":
+					metrics["tokens"] = i
+				default:
+					// Keep other fields as-is (future-proofing for new OpenAI fields)
+					metrics[k] = i
+				}
+			}
+		}
+	}
+
+	return metrics
+}
+
+// translateMetricPrefix translates metric prefixes to be consistent between APIs
+func translateMetricPrefix(prefix string) string {
+	switch prefix {
+	case "input":
+		return "prompt"
+	case "output":
+		return "completion"
+	default:
+		return prefix
 	}
 }
 

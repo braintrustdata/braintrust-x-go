@@ -179,7 +179,7 @@ func (rt *responsesTracer) handleResponseCompletedMessage(span trace.Span, rawMs
 	}
 
 	if usage, ok := rawMsg["usage"].(map[string]any); ok {
-		metrics := internal.ParseUsageTokens(usage)
+		metrics := parseUsageTokens(usage)
 		if err := internal.SetJSONAttr(span, "braintrust.metrics", metrics); err != nil {
 			return err
 		}

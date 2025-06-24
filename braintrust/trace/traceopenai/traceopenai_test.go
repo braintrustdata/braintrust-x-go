@@ -347,3 +347,75 @@ func TestTestOTelTracer(t *testing.T) {
 	spans = exporter.Flush()
 	assert.Empty(spans)
 }
+
+func TestParseUsageTokens(t *testing.T) {
+	t.Run("basic_tokens", func(t *testing.T) {
+		usage := map[string]interface{}{
+			"input_tokens":  float64(12),
+			"output_tokens": float64(9),
+		}
+
+		metrics := parseUsageTokens(usage)
+
+		assert.Equal(t, int64(12), metrics["prompt_tokens"])
+		assert.Equal(t, int64(9), metrics["completion_tokens"])
+	})
+
+	t.Run("with_tokens_details", func(t *testing.T) {
+		usage := map[string]interface{}{
+			"prompt_tokens":     float64(10),
+			"completion_tokens": float64(5),
+			"prompt_tokens_details": map[string]interface{}{
+				"cached_tokens": float64(8),
+				"audio_tokens":  float64(2),
+			},
+			"completion_tokens_details": map[string]interface{}{
+				"reasoning_tokens": float64(3),
+				"audio_tokens":     float64(2),
+			},
+		}
+
+		metrics := parseUsageTokens(usage)
+
+		assert.Equal(t, int64(10), metrics["prompt_tokens"])
+		assert.Equal(t, int64(5), metrics["completion_tokens"])
+		assert.Equal(t, int64(8), metrics["prompt_cached_tokens"])
+		assert.Equal(t, int64(2), metrics["prompt_audio_tokens"])
+		assert.Equal(t, int64(3), metrics["completion_reasoning_tokens"])
+		assert.Equal(t, int64(2), metrics["completion_audio_tokens"])
+	})
+
+	t.Run("total_tokens", func(t *testing.T) {
+		usage := map[string]interface{}{
+			"total_tokens": float64(25),
+		}
+
+		metrics := parseUsageTokens(usage)
+
+		assert.Equal(t, int64(25), metrics["tokens"])
+	})
+
+	t.Run("nil_usage", func(t *testing.T) {
+		metrics := parseUsageTokens(nil)
+
+		assert.Empty(t, metrics)
+	})
+}
+
+func TestTranslateMetricPrefix(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"input", "prompt"},
+		{"output", "completion"},
+		{"other", "other"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.input, func(t *testing.T) {
+			result := translateMetricPrefix(test.input)
+			assert.Equal(t, test.expected, result)
+		})
+	}
+}

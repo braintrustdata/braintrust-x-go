@@ -10,8 +10,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/braintrust/braintrust-x-go/braintrust/trace/internal"
 )
 
 func TestMiddleware(t *testing.T) {
@@ -151,8 +149,73 @@ func TestParseUsageTokens(t *testing.T) {
 		"output_tokens": float64(9),
 	}
 
-	metrics := internal.ParseUsageTokens(usage)
+	metrics := parseUsageTokens(usage)
 
 	assert.Equal(t, int64(12), metrics["prompt_tokens"])
 	assert.Equal(t, int64(9), metrics["completion_tokens"])
+}
+
+func TestParseUsageTokensWithCache(t *testing.T) {
+	t.Run("cache_creation_input_tokens", func(t *testing.T) {
+		usage := map[string]interface{}{
+			"input_tokens":                float64(10),
+			"output_tokens":               float64(5),
+			"cache_creation_input_tokens": float64(100),
+		}
+
+		metrics := parseUsageTokens(usage)
+
+		// Should include cache creation tokens in the total
+		assert.Equal(t, int64(110), metrics["prompt_tokens"]) // 10 + 100
+		assert.Equal(t, int64(5), metrics["completion_tokens"])
+		assert.Equal(t, int64(100), metrics["cache_creation_input_tokens"])
+	})
+
+	t.Run("cache_read_input_tokens", func(t *testing.T) {
+		usage := map[string]interface{}{
+			"input_tokens":            float64(8),
+			"output_tokens":           float64(12),
+			"cache_read_input_tokens": float64(50),
+		}
+
+		metrics := parseUsageTokens(usage)
+
+		// Should include cache read tokens in the total
+		assert.Equal(t, int64(58), metrics["prompt_tokens"]) // 8 + 50
+		assert.Equal(t, int64(12), metrics["completion_tokens"])
+		assert.Equal(t, int64(50), metrics["cache_read_input_tokens"])
+	})
+
+	t.Run("both_cache_tokens", func(t *testing.T) {
+		usage := map[string]interface{}{
+			"input_tokens":                float64(15),
+			"output_tokens":               float64(20),
+			"cache_creation_input_tokens": float64(200),
+			"cache_read_input_tokens":     float64(75),
+		}
+
+		metrics := parseUsageTokens(usage)
+
+		// Should include both cache tokens in the total
+		assert.Equal(t, int64(290), metrics["prompt_tokens"]) // 15 + 200 + 75
+		assert.Equal(t, int64(20), metrics["completion_tokens"])
+		assert.Equal(t, int64(200), metrics["cache_creation_input_tokens"])
+		assert.Equal(t, int64(75), metrics["cache_read_input_tokens"])
+	})
+
+	t.Run("cache_tokens_without_input_tokens", func(t *testing.T) {
+		usage := map[string]interface{}{
+			"output_tokens":               float64(10),
+			"cache_creation_input_tokens": float64(150),
+			"cache_read_input_tokens":     float64(25),
+		}
+
+		metrics := parseUsageTokens(usage)
+
+		// Should still account for cache tokens even without explicit input_tokens
+		assert.Equal(t, int64(175), metrics["prompt_tokens"]) // 150 + 25
+		assert.Equal(t, int64(10), metrics["completion_tokens"])
+		assert.Equal(t, int64(150), metrics["cache_creation_input_tokens"])
+		assert.Equal(t, int64(25), metrics["cache_read_input_tokens"])
+	})
 }

@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"strings"
 	"sync"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -59,21 +58,8 @@ func (r *BufferedReader) trigger() {
 	})
 }
 
-// translateMetricKey translates metric keys to be consistent between APIs
-func translateMetricKey(key string) string {
-	switch key {
-	case "input_tokens":
-		return "prompt_tokens"
-	case "output_tokens":
-		return "completion_tokens"
-	case "total_tokens":
-		return "tokens"
-	}
-	return key
-}
-
-// toInt64 converts various numeric types to int64
-func toInt64(v any) (bool, int64) {
+// ToInt64 converts various numeric types to int64
+func ToInt64(v any) (bool, int64) {
 	switch v := v.(type) {
 	case float64:
 		return true, int64(v)
@@ -92,49 +78,6 @@ func toInt64(v any) (bool, int64) {
 	default:
 		return false, 0
 	}
-}
-
-// translateMetricPrefix translates metric prefixes to be consistent between APIs
-func translateMetricPrefix(prefix string) string {
-	switch prefix {
-	case "input":
-		return "prompt"
-	case "output":
-		return "completion"
-	default:
-		return prefix
-	}
-}
-
-// ParseUsageTokens parses the usage tokens from various API responses
-// It handles different API formats using a unified approach
-func ParseUsageTokens(usage map[string]interface{}) map[string]int64 {
-	metrics := make(map[string]int64)
-
-	if usage == nil {
-		return metrics
-	}
-
-	// Parse token metrics and translate names to be consistent
-	for k, v := range usage {
-		if strings.HasSuffix(k, "_tokens_details") {
-			prefix := translateMetricPrefix(strings.TrimSuffix(k, "_tokens_details"))
-			if details, ok := v.(map[string]interface{}); ok {
-				for kd, vd := range details {
-					if ok, i := toInt64(vd); ok {
-						metrics[prefix+"_"+kd] = i
-					}
-				}
-			}
-		} else {
-			if ok, i := toInt64(v); ok {
-				k = translateMetricKey(k)
-				metrics[k] = i
-			}
-		}
-	}
-
-	return metrics
 }
 
 // SetJSONAttr is a helper function to set JSON attributes on spans

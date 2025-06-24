@@ -156,6 +156,61 @@ func (a *AnthropicBot) multiTurnConversation(ctx context.Context) error {
 	return nil
 }
 
+// demonstrateCacheTokenHandling shows how the tracer correctly handles cache tokens
+// Note: This example shows the intended behavior, though cache tokens are only available
+// with Anthropic's prompt caching feature (when using compatible models and long prompts)
+func (a *AnthropicBot) demonstrateCacheTokenHandling(ctx context.Context) error {
+	ctx, span := tracer.Start(ctx, "demonstrateCacheTokenHandling")
+	defer span.End()
+
+	fmt.Println("\n=== Example 5: Cache Token Handling Demonstration ===")
+	fmt.Println("Note: Cache tokens (cache_creation_input_tokens, cache_read_input_tokens)")
+	fmt.Println("are automatically included in the total prompt_tokens count in traces.")
+	fmt.Println("This ensures accurate cost tracking when using Anthropic's prompt caching.")
+
+	// Use a longer prompt that might benefit from caching
+	longPrompt := `You are an expert software engineer working on a complex distributed system. 
+Please analyze the following architecture and provide detailed recommendations for optimization.
+
+Context: We have a microservices architecture with the following components:
+1. API Gateway (handles authentication and routing)
+2. User Service (manages user accounts and profiles)
+3. Order Service (processes customer orders)
+4. Payment Service (handles payment processing)
+5. Inventory Service (tracks product availability)
+6. Notification Service (sends emails and push notifications)
+
+Each service has its own database and communicates via REST APIs and message queues.
+Current challenges include high latency, occasional data consistency issues, and scalability bottlenecks.
+
+What specific optimizations would you recommend?`
+
+	message, err := a.client.Messages.New(ctx, anthropic.MessageNewParams{
+		Model: anthropic.ModelClaude3_7SonnetLatest,
+		Messages: []anthropic.MessageParam{
+			anthropic.NewUserMessage(anthropic.NewTextBlock(longPrompt)),
+		},
+		MaxTokens: 1024,
+	})
+	if err != nil {
+		return fmt.Errorf("cache demonstration error: %v", err)
+	}
+
+	// The response itself doesn't contain cache tokens in this simple example,
+	// but when cache tokens are present in API responses, the tracer will:
+	// 1. Track cache_creation_input_tokens and cache_read_input_tokens separately
+	// 2. Add them to the total prompt_tokens count for accurate cost tracking
+	// 3. Include all metrics in the trace for observability
+
+	fmt.Printf("Response: %s\n", message.Content[0].Text[:200]+"...")
+	fmt.Println("\n✨ The tracer automatically handles cache tokens when present in Anthropic responses:")
+	fmt.Println("   • cache_creation_input_tokens + cache_read_input_tokens → added to prompt_tokens")
+	fmt.Println("   • Individual cache metrics tracked for detailed cost analysis")
+	fmt.Println("   • No code changes needed - handled transparently!")
+
+	return nil
+}
+
 func main() {
 	fmt.Println("🧠 Braintrust Anthropic Tracing Examples")
 	fmt.Println("=========================================")
@@ -222,6 +277,11 @@ func main() {
 	// Example 4: Multi-turn conversation
 	if err := bot.multiTurnConversation(ctx); err != nil {
 		log.Printf("Error in multi-turn conversation example: %v", err)
+	}
+
+	// Example 5: Cache token handling demonstration
+	if err := bot.demonstrateCacheTokenHandling(ctx); err != nil {
+		log.Printf("Error in cache token demonstration: %v", err)
 	}
 
 	fmt.Println("\n=== Tracing Complete ===")

@@ -52,5 +52,48 @@ func anthropicRouter(path string) internal.MiddlewareTracer {
 
 }
 
+// parseUsageTokens parses the usage tokens from Anthropic API responses
+// It handles Anthropic-specific fields including cache tokens
+func parseUsageTokens(usage map[string]interface{}) map[string]int64 {
+	metrics := make(map[string]int64)
+
+	if usage == nil {
+		return metrics
+	}
+
+	var inputTokens, cacheCreationTokens, cacheReadTokens int64
+
+	// Single pass: process all tokens
+	for k, v := range usage {
+		if ok, i := internal.ToInt64(v); ok {
+			switch k {
+			case "input_tokens":
+				inputTokens = i
+			case "cache_creation_input_tokens":
+				cacheCreationTokens = i
+				metrics["cache_creation_input_tokens"] = i
+			case "cache_read_input_tokens":
+				cacheReadTokens = i
+				metrics["cache_read_input_tokens"] = i
+			case "output_tokens":
+				metrics["completion_tokens"] = i
+			case "total_tokens":
+				metrics["tokens"] = i
+			default:
+				// Keep other fields as-is (future-proofing for new Anthropic fields)
+				metrics[k] = i
+			}
+		}
+	}
+
+	// Calculate total prompt tokens (input + cache tokens)
+	totalPromptTokens := inputTokens + cacheCreationTokens + cacheReadTokens
+	if totalPromptTokens > 0 {
+		metrics["prompt_tokens"] = totalPromptTokens
+	}
+
+	return metrics
+}
+
 // Ensure our tracers implement the shared interface
 var _ internal.MiddlewareTracer = &messagesTracer{}

@@ -142,7 +142,7 @@ func (ct *chatCompletionsTracer) parseStreamingResponse(span trace.Span, body io
 
 	// Handle usage metrics
 	if usage, ok := ct.metadata["usage"].(map[string]any); ok {
-		metrics := internal.ParseUsageTokens(usage)
+		metrics := parseUsageTokens(usage)
 		if err := internal.SetJSONAttr(span, "braintrust.metrics", metrics); err != nil {
 			return err
 		}
@@ -288,7 +288,7 @@ func (ct *chatCompletionsTracer) handleChatCompletionResponse(span trace.Span, r
 	}
 
 	if usage, ok := rawMsg["usage"].(map[string]any); ok {
-		metrics := internal.ParseUsageTokens(usage)
+		metrics := parseUsageTokens(usage)
 		if err := internal.SetJSONAttr(span, "braintrust.metrics", metrics); err != nil {
 			return err
 		}

@@ -139,7 +139,7 @@ func (mt *messagesTracer) parseStreamingResponse(span trace.Span, body io.Reader
 
 	// Handle usage metrics
 	if usage, ok := mt.metadata["usage"].(map[string]any); ok {
-		metrics := internal.ParseUsageTokens(usage)
+		metrics := parseUsageTokens(usage)
 		if err := internal.SetJSONAttr(span, "braintrust.metrics", metrics); err != nil {
 			return err
 		}
@@ -230,7 +230,7 @@ func (mt *messagesTracer) handleMessageResponse(span trace.Span, rawMsg map[stri
 	}
 
 	if usage, ok := rawMsg["usage"].(map[string]any); ok {
-		metrics := internal.ParseUsageTokens(usage)
+		metrics := parseUsageTokens(usage)
 		if err := internal.SetJSONAttr(span, "braintrust.metrics", metrics); err != nil {
 			return err
 		}
