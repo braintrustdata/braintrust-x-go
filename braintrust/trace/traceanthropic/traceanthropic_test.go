@@ -4,12 +4,17 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/anthropics/anthropic-sdk-go/option"
+	"github.com/braintrust/braintrust-x-go/braintrust/internal/oteltest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/codes"
 )
 
 func TestMiddleware(t *testing.T) {
@@ -218,4 +223,130 @@ func TestParseUsageTokensWithCache(t *testing.T) {
 		assert.Equal(t, int64(150), metrics["prompt_cache_creation_tokens"])
 		assert.Equal(t, int64(25), metrics["prompt_cached_tokens"])
 	})
+}
+
+// TestMiddlewareIntegration tests the middleware with real Anthropic API calls
+func TestMiddlewareIntegration(t *testing.T) {
+	// Skip if no API key is available
+	apiKey := os.Getenv("ANTHROPIC_API_KEY")
+	if apiKey == "" {
+		t.Skip("ANTHROPIC_API_KEY not set, skipping integration test")
+	}
+
+	// Set up test tracer and client
+	client, exporter := setUpTest(t, apiKey)
+
+	// Make a simple API call
+	timer := oteltest.NewTimer()
+	ctx := t.Context()
+	resp, err := client.Messages.New(ctx, anthropic.MessageNewParams{
+		Model: anthropic.Model("claude-3-haiku-20240307"), // Use cheapest model
+		Messages: []anthropic.MessageParam{
+			anthropic.NewUserMessage(anthropic.NewTextBlock("What is the capital of France?")),
+		},
+		MaxTokens: 1024, // Using higher token count - very low MaxTokens (like 10) cause timeouts
+	})
+	timeRange := timer.Tick()
+
+	// Verify the API call succeeded
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+
+	// Basic response validation
+	assert.Equal(t, anthropic.Model("claude-3-haiku-20240307"), resp.Model)
+	assert.Equal(t, "assistant", string(resp.Role))
+	assert.NotEmpty(t, resp.Content)
+
+	// Verify usage metrics are present
+	assert.Greater(t, resp.Usage.InputTokens, int64(0))
+	assert.Greater(t, resp.Usage.OutputTokens, int64(0))
+
+	// Verify we got some content back
+	require.Len(t, resp.Content, 1)
+	assert.NotEmpty(t, resp.Content[0].Text)
+
+	t.Logf("✅ API call successful. Response: %s", resp.Content[0].Text)
+	t.Logf("📊 Usage - Input: %d, Output: %d", resp.Usage.InputTokens, resp.Usage.OutputTokens)
+
+	// Validate spans were generated correctly
+	span := exporter.FlushOne()
+	assertSpanValid(t, span, timeRange)
+
+	// Verify span content
+	input := span.Attr("braintrust.input").String()
+	assert.Contains(t, input, "What is the capital of France?")
+
+	output := span.Output()
+	assert.NotNil(t, output)
+
+	metadata := span.Metadata()
+	assert.Equal(t, "anthropic", metadata["provider"])
+	assert.Equal(t, "claude-3-haiku-20240307", metadata["model"])
+	assert.Equal(t, "/v1/messages", metadata["endpoint"])
+	assert.Equal(t, float64(1024), metadata["max_tokens"])
+
+	// Verify metrics
+	metrics := span.Metrics()
+	assert.Greater(t, metrics["prompt_tokens"], float64(0))
+	assert.Greater(t, metrics["completion_tokens"], float64(0))
+
+	t.Logf("🎯 Span validation passed: %d metrics, %d metadata fields", len(metrics), len(metadata))
+}
+
+// setUpTest is a helper function that sets up a new tracer provider for each test.
+// It returns an anthropic client and an exporter.
+func setUpTest(t *testing.T, apiKey string) (anthropic.Client, *oteltest.Exporter) {
+	t.Helper()
+
+	_, exporter := oteltest.Setup(t)
+
+	client := anthropic.NewClient(
+		option.WithAPIKey(apiKey),
+		option.WithMiddleware(Middleware),
+	)
+
+	return client, exporter
+}
+
+// assertSpanValid asserts all the common properties of an Anthropic span are valid.
+func assertSpanValid(t *testing.T, span oteltest.Span, timeRange oteltest.TimeRange) {
+	t.Helper()
+	assert := assert.New(t)
+
+	span.AssertInTimeRange(timeRange)
+	span.AssertNameIs("anthropic.messages.create")
+	assert.Equal(codes.Unset, span.Stub.Status.Code)
+
+	metadata := span.Metadata()
+	assert.Equal("anthropic", metadata["provider"])
+	assert.Equal("/v1/messages", metadata["endpoint"])
+
+	// validate metrics
+	metrics := span.Metrics()
+	gtz := func(v float64) bool { return v > 0 }
+	gtez := func(v float64) bool { return v >= 0 }
+
+	metricToValidator := map[string]func(float64) bool{
+		"prompt_tokens":                gtz,
+		"completion_tokens":            gtz,
+		"tokens":                       gtz,
+		"prompt_cached_tokens":         gtez,
+		"prompt_cache_creation_tokens": gtez,
+	}
+
+	// Validate known metrics, but allow unknown metrics to pass through
+	for n, v := range metrics {
+		validator, ok := metricToValidator[n]
+		if !ok {
+			// Unknown metric - just log it but don't fail the test
+			t.Logf("Unknown metric %s with value %v - this is likely a new Anthropic metric", n, v)
+			continue
+		}
+		assert.True(validator(v), "metric %s is not valid", n)
+	}
+
+	// a crude check to make sure all json is parsed
+	assert.NotNil(span.Metadata())
+	assert.NotNil(span.Input())
+	assert.NotNil(span.Output())
 }
