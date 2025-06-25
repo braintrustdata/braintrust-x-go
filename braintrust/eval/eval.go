@@ -95,12 +95,12 @@ func New[I, R any](experimentID string, cases Cases[I, R], task Task[I, R], scor
 }
 
 // Run runs the eval.
-func (e *Eval[I, R]) Run() error {
+func (e *Eval[I, R]) Run(ctx context.Context) error {
 	if e.experimentID == "" {
 		return fmt.Errorf("%w: experiment ID is required", ErrEval)
 	}
 
-	ctx := bttrace.SetParent(context.Background(), e.parent)
+	ctx = bttrace.SetParent(ctx, e.parent)
 
 	var errs []error
 	for {

@@ -347,7 +347,7 @@ Respond with only a number 0-10.`,
 	evaluation := eval.New(experimentID, eval.NewCases(testCases), generateSubjectLine, scorers)
 
 	log.Println("🚀 Running email subject line evaluation...")
-	err = evaluation.Run()
+	err = evaluation.Run(context.Background())
 	if err != nil {
 		log.Printf("⚠️  Evaluation completed with some issues: %v", err)
 	} else {

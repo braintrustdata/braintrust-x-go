@@ -48,7 +48,7 @@ func Example() {
 		},
 	)
 
-	err = evaluation.Run()
+	err = evaluation.Run(context.Background())
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -81,7 +81,7 @@ func ExampleNew() {
 	// Create evaluation
 	evaluation := eval.New("exp-123", cases, task, scorers)
 
-	err := evaluation.Run()
+	err := evaluation.Run(context.Background())
 	if err != nil {
 		log.Printf("Error: %v", err)
 		return
