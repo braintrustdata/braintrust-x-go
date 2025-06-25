@@ -76,11 +76,6 @@ func TestNoopTracer(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestGetTracer(t *testing.T) {
-	tracer := GetTracer()
-	assert.NotNil(t, tracer)
-}
-
 // Mock tracer for testing
 type mockTracer struct {
 	startSpanCalled bool
@@ -89,7 +84,7 @@ type mockTracer struct {
 
 func (m *mockTracer) StartSpan(ctx context.Context, start time.Time, request io.Reader) (context.Context, trace.Span, error) {
 	m.startSpanCalled = true
-	tracer := GetTracer()
+	tracer := otel.GetTracerProvider().Tracer("braintrust")
 	newCtx, span := tracer.Start(ctx, "mock-span", trace.WithTimestamp(start))
 	return newCtx, span, nil
 }

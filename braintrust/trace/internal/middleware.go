@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"time"
 
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
@@ -83,11 +82,6 @@ func Middleware(router TracerRouter) func(*http.Request, NextMiddleware) (*http.
 		resp.Body = body
 		return resp, nil
 	}
-}
-
-// GetTracer returns the shared braintrust tracer.
-func GetTracer() trace.Tracer {
-	return otel.GetTracerProvider().Tracer("braintrust")
 }
 
 // NoopTracer is a MiddlewareTracer that doesn't record any tracing data.

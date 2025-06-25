@@ -27,6 +27,7 @@ package traceopenai
 import (
 	"strings"
 
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/braintrust/braintrust-x-go/braintrust/trace/internal"
@@ -37,7 +38,7 @@ type NextMiddleware = internal.NextMiddleware
 
 // tracer returns the shared braintrust tracer.
 func tracer() trace.Tracer {
-	return internal.GetTracer()
+	return otel.GetTracerProvider().Tracer("braintrust")
 }
 
 // Middleware adds OpenTelemetry tracing to OpenAI client requests.
