@@ -117,7 +117,7 @@ func runKitchenSinkEval(client openai.Client) {
 		autoevals.NewEquals[string, string](),
 
 		// Multi-score scorer with custom tracing
-		eval.NewScorer("quality_check", func(ctx context.Context, input, expected, result string) (eval.Scores, error) {
+		eval.NewScorer("quality_check", func(ctx context.Context, input, expected, result string, _ eval.Metadata) (eval.Scores, error) {
 			_, span := tracer.Start(ctx, "quality_scorer")
 			defer span.End()
 
@@ -169,7 +169,7 @@ func runKitchenSinkEval(client openai.Client) {
 	}
 
 	evaluation := eval.New(experimentID, eval.NewCases(cases), task, scorers)
-	err = evaluation.Run()
+	err = evaluation.Run(context.Background())
 	if err != nil {
 		log.Printf("⚠️  Eval completed with errors: %v", err)
 	} else {
@@ -223,14 +223,14 @@ func runDatasetEval(client openai.Client, datasetID string) {
 
 	scorers := []eval.Scorer[string, string]{
 		autoevals.NewEquals[string, string](),
-		eval.NewScorer("contains_answer", func(_ context.Context, _, expected, result string) (eval.Scores, error) {
+		eval.NewScorer("contains_answer", func(_ context.Context, _, expected, result string, _ eval.Metadata) (eval.Scores, error) {
 			score := 0.0
 			if strings.Contains(strings.ToLower(result), strings.ToLower(expected)) {
 				score = 1.0
 			}
 			return eval.Scores{{Name: "contains_answer", Score: score}}, nil
 		}),
-		eval.NewScorer("llm_judge", func(ctx context.Context, input, expected, result string) (eval.Scores, error) {
+		eval.NewScorer("llm_judge", func(ctx context.Context, input, expected, result string, _ eval.Metadata) (eval.Scores, error) {
 			prompt := fmt.Sprintf(`Rate how well this answer matches the expected answer on a scale of 0 to 1:
 
 Question: %s
@@ -276,7 +276,7 @@ Reply with just a decimal number between 0 and 1.`, input, expected, result)
 	}
 
 	evaluation := eval.New(experimentID, cases, task, scorers)
-	err = evaluation.Run()
+	err = evaluation.Run(context.Background())
 	if err != nil {
 		log.Printf("⚠️  Dataset eval completed with errors: %v", err)
 	} else {

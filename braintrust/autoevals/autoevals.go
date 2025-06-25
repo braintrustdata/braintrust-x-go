@@ -24,7 +24,7 @@ import (
 // Scorer evaluates the quality of results against expected values.
 type Scorer[I, R any] interface {
 	Name() string
-	Run(ctx context.Context, input I, expected, result R) (eval.Scores, error)
+	Run(ctx context.Context, input I, expected, result R, meta eval.Metadata) (eval.Scores, error)
 }
 
 type scorer[I, R any] struct {
@@ -36,8 +36,8 @@ func (s *scorer[I, R]) Name() string {
 	return s.name
 }
 
-func (s *scorer[I, R]) Run(ctx context.Context, input I, expected, result R) (eval.Scores, error) {
-	return s.scoreFunc(ctx, input, expected, result)
+func (s *scorer[I, R]) Run(ctx context.Context, input I, expected, result R, meta eval.Metadata) (eval.Scores, error) {
+	return s.scoreFunc(ctx, input, expected, result, meta)
 }
 
 // NewScorer creates a new scorer with the given name and score function.
@@ -55,7 +55,7 @@ func NewScorer[I, R any](name string, scoreFunc eval.ScoreFunc[I, R]) Scorer[I, 
 //	equals := autoevals.NewEquals[string, string]()
 //	score, err := equals.Run(ctx, "input", "hello", "hello") // returns 1.0
 func NewEquals[I any, R comparable]() Scorer[I, R] {
-	return NewScorer("Equals", func(_ context.Context, _ I, expected, result R) (eval.Scores, error) {
+	return NewScorer("Equals", func(_ context.Context, _ I, expected, result R, _ eval.Metadata) (eval.Scores, error) {
 		v := 0.0
 		if expected == result {
 			v = 1.0
@@ -71,7 +71,7 @@ func NewEquals[I any, R comparable]() Scorer[I, R] {
 //	lessThan := autoevals.NewLessThan[string, float64]()
 //	score, err := lessThan.Run(ctx, "input", 0.5, 0.8) // returns 1.0 (0.5 < 0.8)
 func NewLessThan[I any, R constraints.Ordered]() Scorer[I, R] {
-	return NewScorer("LessThan", func(_ context.Context, _ I, expected, result R) (eval.Scores, error) {
+	return NewScorer("LessThan", func(_ context.Context, _ I, expected, result R, _ eval.Metadata) (eval.Scores, error) {
 		v := 0.0
 		if expected < result {
 			v = 1.0

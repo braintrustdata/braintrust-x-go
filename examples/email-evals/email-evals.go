@@ -191,7 +191,7 @@ Respond with just the subject line, no quotes or explanations.`,
 
 	scorers := []eval.Scorer[EmailCampaign, SubjectLineResponse]{
 		// Length compliance scorer
-		eval.NewScorer("length_compliance", func(ctx context.Context, input EmailCampaign, expected, result SubjectLineResponse) (eval.Scores, error) {
+		eval.NewScorer("length_compliance", func(ctx context.Context, input EmailCampaign, expected, result SubjectLineResponse, _ eval.Metadata) (eval.Scores, error) {
 			length := len(result.SubjectLine)
 			v := 0.0
 			if length <= 50 {
@@ -203,7 +203,7 @@ Respond with just the subject line, no quotes or explanations.`,
 		}),
 
 		// AI-powered engagement prediction scorer
-		eval.NewScorer("engagement_prediction", func(ctx context.Context, input EmailCampaign, _, result SubjectLineResponse) (eval.Scores, error) {
+		eval.NewScorer("engagement_prediction", func(ctx context.Context, input EmailCampaign, _, result SubjectLineResponse, _ eval.Metadata) (eval.Scores, error) {
 			_, span := tracer.Start(ctx, "custom_engagement_scoring")
 			defer span.End()
 
@@ -264,7 +264,7 @@ Respond with only a number 0-10.`,
 		}),
 
 		// Spam filter risk scorer
-		eval.NewScorer("spam_risk", func(ctx context.Context, input EmailCampaign, expected, result SubjectLineResponse) (eval.Scores, error) {
+		eval.NewScorer("spam_risk", func(ctx context.Context, input EmailCampaign, expected, result SubjectLineResponse, _ eval.Metadata) (eval.Scores, error) {
 			spamTriggers := []string{
 				"FREE", "URGENT", "ACT NOW", "LIMITED TIME", "CLICK HERE",
 				"GUARANTEE", "NO OBLIGATION", "RISK FREE", "CASH", "MONEY",
@@ -300,7 +300,7 @@ Respond with only a number 0-10.`,
 		}),
 
 		// Product mention scorer
-		eval.NewScorer("product_relevance", func(ctx context.Context, input EmailCampaign, expected, result SubjectLineResponse) (eval.Scores, error) {
+		eval.NewScorer("product_relevance", func(ctx context.Context, input EmailCampaign, expected, result SubjectLineResponse, _ eval.Metadata) (eval.Scores, error) {
 			subjectLower := strings.ToLower(result.SubjectLine)
 			productLower := strings.ToLower(input.ProductName)
 
@@ -347,7 +347,7 @@ Respond with only a number 0-10.`,
 	evaluation := eval.New(experimentID, eval.NewCases(testCases), generateSubjectLine, scorers)
 
 	log.Println("🚀 Running email subject line evaluation...")
-	err = evaluation.Run()
+	err = evaluation.Run(context.Background())
 	if err != nil {
 		log.Printf("⚠️  Evaluation completed with some issues: %v", err)
 	} else {

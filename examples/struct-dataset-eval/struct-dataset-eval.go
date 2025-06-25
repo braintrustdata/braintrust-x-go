@@ -163,7 +163,7 @@ func main() {
 	evaluation := eval.New(experimentID, cases, task, scorers)
 
 	fmt.Println("\n🚀 Running evaluation with struct-based dataset...")
-	err = evaluation.Run()
+	err = evaluation.Run(context.Background())
 	if err != nil {
 		log.Fatalf("Evaluation failed: %v", err)
 	}
