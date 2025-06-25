@@ -117,7 +117,7 @@ func runKitchenSinkEval(client openai.Client) {
 		autoevals.NewEquals[string, string](),
 
 		// Multi-score scorer with custom tracing
-		eval.NewScorer("quality_check", func(ctx context.Context, input, expected, result string) (eval.Scores, error) {
+		eval.NewScorer("quality_check", func(ctx context.Context, input, expected, result string, _ eval.Metadata) (eval.Scores, error) {
 			_, span := tracer.Start(ctx, "quality_scorer")
 			defer span.End()
 
@@ -223,14 +223,14 @@ func runDatasetEval(client openai.Client, datasetID string) {
 
 	scorers := []eval.Scorer[string, string]{
 		autoevals.NewEquals[string, string](),
-		eval.NewScorer("contains_answer", func(_ context.Context, _, expected, result string) (eval.Scores, error) {
+		eval.NewScorer("contains_answer", func(_ context.Context, _, expected, result string, _ eval.Metadata) (eval.Scores, error) {
 			score := 0.0
 			if strings.Contains(strings.ToLower(result), strings.ToLower(expected)) {
 				score = 1.0
 			}
 			return eval.Scores{{Name: "contains_answer", Score: score}}, nil
 		}),
-		eval.NewScorer("llm_judge", func(ctx context.Context, input, expected, result string) (eval.Scores, error) {
+		eval.NewScorer("llm_judge", func(ctx context.Context, input, expected, result string, _ eval.Metadata) (eval.Scores, error) {
 			prompt := fmt.Sprintf(`Rate how well this answer matches the expected answer on a scale of 0 to 1:
 
 Question: %s

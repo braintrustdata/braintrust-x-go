@@ -159,7 +159,7 @@ func TestEval_ScorerErrors(t *testing.T) {
 	// Mix of scorers - one that works and one that fails
 	scorers := []Scorer[int, int]{
 		NewEqualsScorer[int, int](),
-		NewScorer("failing_scorer", func(ctx context.Context, input int, expected, result int) (Scores, error) {
+		NewScorer("failing_scorer", func(ctx context.Context, input int, expected, result int, _ Metadata) (Scores, error) {
 			if input == 2 {
 				return nil, errors.New("scorer failed for input 2")
 			}
@@ -276,10 +276,10 @@ func TestScorerNames(t *testing.T) {
 	_, exporter := oteltest.Setup(t)
 
 	scorers := []Scorer[int, int]{
-		NewScorer("no-name", func(ctx context.Context, input int, expected, result int) (Scores, error) {
+		NewScorer("no-name", func(ctx context.Context, input, expected, result int, _ Metadata) (Scores, error) {
 			return S(0.6), nil
 		}),
-		NewScorer("name", func(ctx context.Context, input int, expected, result int) (Scores, error) {
+		NewScorer("name", func(ctx context.Context, input, expected, result int, _ Metadata) (Scores, error) {
 			return Scores{{Name: "different", Score: 0.5}}, nil
 		}),
 	}
@@ -340,7 +340,7 @@ func TestHardcodedEval(t *testing.T) {
 	}
 
 	// test custom scorer
-	equals := func(ctx context.Context, input int, expected, result int) (Scores, error) {
+	equals := func(ctx context.Context, input, expected, result int, _ Metadata) (Scores, error) {
 		v := 0.0
 		if result == expected {
 			v = 1.0
@@ -806,7 +806,7 @@ func (s *equalsScorer[I, R]) Name() string {
 	return "equals"
 }
 
-func (s *equalsScorer[I, R]) Run(ctx context.Context, input I, expected, result R) (Scores, error) {
+func (s *equalsScorer[I, R]) Run(ctx context.Context, input I, expected, result R, _ Metadata) (Scores, error) {
 	v := 0.0
 	if result == expected {
 		v = 1.0

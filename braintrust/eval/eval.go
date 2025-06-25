@@ -179,7 +179,7 @@ func (e *Eval[I, R]) runScorers(ctx context.Context, c Case[I, R], result R) (Sc
 
 	var errs []error
 	for _, scorer := range e.scorers {
-		curScores, err := scorer.Run(ctx, c.Input, c.Expected, result)
+		curScores, err := scorer.Run(ctx, c.Input, c.Expected, result, c.Metadata)
 		if err != nil {
 			werr := fmt.Errorf("%w: scorer %q failed: %w", ErrScorer, scorer.Name(), err)
 			recordSpanError(span, werr)
@@ -263,7 +263,7 @@ type Score struct {
 type Scores []Score
 
 // ScoreFunc is a function that evaluates a task (usually an LLM call) and returns a list of Scores.
-type ScoreFunc[I, R any] func(ctx context.Context, input I, expected, result R) (Scores, error)
+type ScoreFunc[I, R any] func(ctx context.Context, input I, expected, result R, meta Metadata) (Scores, error)
 
 // S is a helper function to concisely return a single score from ScoreFuncs. Scores created with S will default to the
 // name of the scorer that creates them.
@@ -277,7 +277,7 @@ func S(score float64) Scores {
 // we will default to the score of the score.
 type Scorer[I, R any] interface {
 	Name() string
-	Run(ctx context.Context, input I, expected, result R) (Scores, error)
+	Run(ctx context.Context, input I, expected, result R, meta Metadata) (Scores, error)
 }
 
 type scorerImpl[I, R any] struct {
@@ -289,8 +289,8 @@ func (s *scorerImpl[I, R]) Name() string {
 	return s.name
 }
 
-func (s *scorerImpl[I, R]) Run(ctx context.Context, input I, expected, result R) (Scores, error) {
-	return s.scoreFunc(ctx, input, expected, result)
+func (s *scorerImpl[I, R]) Run(ctx context.Context, input I, expected, result R, meta Metadata) (Scores, error) {
+	return s.scoreFunc(ctx, input, expected, result, meta)
 }
 
 // NewScorer creates a new scorer with the given name and score function.

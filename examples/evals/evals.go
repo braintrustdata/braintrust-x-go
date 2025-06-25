@@ -57,14 +57,14 @@ func main() {
 		}),
 		getFoodType,
 		[]eval.Scorer[string, string]{
-			eval.NewScorer("fruit_scorer", func(_ context.Context, _, _, result string) (eval.Scores, error) {
+			eval.NewScorer("fruit_scorer", func(_ context.Context, _, _, result string, _ eval.Metadata) (eval.Scores, error) {
 				v := 0.0
 				if result == "fruit" {
 					v = 1.0
 				}
 				return eval.S(v), nil
 			}),
-			eval.NewScorer("vegetable_scorer", func(_ context.Context, _, _, result string) (eval.Scores, error) {
+			eval.NewScorer("vegetable_scorer", func(_ context.Context, _, _, result string, _ eval.Metadata) (eval.Scores, error) {
 				v := 0.0
 				if result == "vegetable" {
 					v = 1.0

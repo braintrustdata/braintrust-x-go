@@ -23,7 +23,7 @@ func Example() {
 	}
 
 	// Define your scoring function - returns a list of scores
-	exactMatch := func(ctx context.Context, input, expected, result string) (eval.Scores, error) {
+	exactMatch := func(ctx context.Context, input, expected, result string, _ eval.Metadata) (eval.Scores, error) {
 		if expected == result {
 			return eval.S(1.0), nil // Perfect match - S() is a helper for single scores
 		}
@@ -70,7 +70,7 @@ func ExampleNew() {
 
 	// Scorer
 	scorers := []eval.Scorer[int, int]{
-		eval.NewScorer("equals", func(ctx context.Context, input, expected, result int) (eval.Scores, error) {
+		eval.NewScorer("equals", func(ctx context.Context, input, expected, result int, _ eval.Metadata) (eval.Scores, error) {
 			if expected == result {
 				return eval.S(1.0), nil
 			}
@@ -92,7 +92,7 @@ func ExampleNew() {
 
 func ExampleNewScorer() {
 	// Single score scorer using S() helper
-	equals := eval.NewScorer("equals", func(ctx context.Context, input, expected, result int) (eval.Scores, error) {
+	equals := eval.NewScorer("equals", func(ctx context.Context, input, expected, result int, _ eval.Metadata) (eval.Scores, error) {
 		if expected == result {
 			return eval.S(1.0), nil
 		}
@@ -100,7 +100,7 @@ func ExampleNewScorer() {
 	})
 
 	// Multiple scores from one scorer
-	analysis := eval.NewScorer("analysis", func(ctx context.Context, input, expected, result int) (eval.Scores, error) {
+	analysis := eval.NewScorer("analysis", func(ctx context.Context, input, expected, result int, _ eval.Metadata) (eval.Scores, error) {
 		exactScore := 0.0
 		if expected == result {
 			exactScore = 1.0
