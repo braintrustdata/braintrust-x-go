@@ -71,10 +71,10 @@ func parseUsageTokens(usage map[string]interface{}) map[string]int64 {
 				inputTokens = i
 			case "cache_creation_input_tokens":
 				cacheCreationTokens = i
-				metrics["cache_creation_input_tokens"] = i
+				metrics["prompt_cache_creation_tokens"] = i
 			case "cache_read_input_tokens":
 				cacheReadTokens = i
-				metrics["cache_read_input_tokens"] = i
+				metrics["prompt_cached_tokens"] = i
 			case "output_tokens":
 				metrics["completion_tokens"] = i
 			case "total_tokens":

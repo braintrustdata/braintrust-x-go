@@ -168,7 +168,7 @@ func TestParseUsageTokensWithCache(t *testing.T) {
 		// Should include cache creation tokens in the total
 		assert.Equal(t, int64(110), metrics["prompt_tokens"]) // 10 + 100
 		assert.Equal(t, int64(5), metrics["completion_tokens"])
-		assert.Equal(t, int64(100), metrics["cache_creation_input_tokens"])
+		assert.Equal(t, int64(100), metrics["prompt_cache_creation_tokens"])
 	})
 
 	t.Run("cache_read_input_tokens", func(t *testing.T) {
@@ -183,7 +183,7 @@ func TestParseUsageTokensWithCache(t *testing.T) {
 		// Should include cache read tokens in the total
 		assert.Equal(t, int64(58), metrics["prompt_tokens"]) // 8 + 50
 		assert.Equal(t, int64(12), metrics["completion_tokens"])
-		assert.Equal(t, int64(50), metrics["cache_read_input_tokens"])
+		assert.Equal(t, int64(50), metrics["prompt_cached_tokens"])
 	})
 
 	t.Run("both_cache_tokens", func(t *testing.T) {
@@ -199,8 +199,8 @@ func TestParseUsageTokensWithCache(t *testing.T) {
 		// Should include both cache tokens in the total
 		assert.Equal(t, int64(290), metrics["prompt_tokens"]) // 15 + 200 + 75
 		assert.Equal(t, int64(20), metrics["completion_tokens"])
-		assert.Equal(t, int64(200), metrics["cache_creation_input_tokens"])
-		assert.Equal(t, int64(75), metrics["cache_read_input_tokens"])
+		assert.Equal(t, int64(200), metrics["prompt_cache_creation_tokens"])
+		assert.Equal(t, int64(75), metrics["prompt_cached_tokens"])
 	})
 
 	t.Run("cache_tokens_without_input_tokens", func(t *testing.T) {
@@ -215,7 +215,7 @@ func TestParseUsageTokensWithCache(t *testing.T) {
 		// Should still account for cache tokens even without explicit input_tokens
 		assert.Equal(t, int64(175), metrics["prompt_tokens"]) // 150 + 25
 		assert.Equal(t, int64(10), metrics["completion_tokens"])
-		assert.Equal(t, int64(150), metrics["cache_creation_input_tokens"])
-		assert.Equal(t, int64(25), metrics["cache_read_input_tokens"])
+		assert.Equal(t, int64(150), metrics["prompt_cache_creation_tokens"])
+		assert.Equal(t, int64(25), metrics["prompt_cached_tokens"])
 	})
 }
