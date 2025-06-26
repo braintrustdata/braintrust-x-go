@@ -35,7 +35,7 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/braintrust/braintrust-x-go/braintrust/diag"
+	"github.com/braintrust/braintrust-x-go/braintrust/log"
 )
 
 func tracer() trace.Tracer {
@@ -48,7 +48,7 @@ type NextMiddleware = func(req *http.Request) (*http.Response, error)
 // Middleware adds OpenTelemetry tracing to OpenAI client requests.
 // Ensure OpenTelemetry is properly configured before using this middleware.
 func Middleware(req *http.Request, next NextMiddleware) (*http.Response, error) {
-	diag.Debugf("Middleware: %s %s", req.Method, req.URL.Path)
+	log.Debugf("Middleware: %s %s", req.Method, req.URL.Path)
 	start := time.Now()
 
 	// Intercept the request body so we can parse it and still pass it along.
@@ -56,7 +56,7 @@ func Middleware(req *http.Request, next NextMiddleware) (*http.Response, error) 
 	reqBody := req.Body
 	defer func() {
 		if err := reqBody.Close(); err != nil {
-			diag.Warnf("Error closing request body: %v", err)
+			log.Warnf("Error closing request body: %v", err)
 		}
 	}()
 	tee := io.TeeReader(reqBody, &buf)
@@ -76,7 +76,7 @@ func Middleware(req *http.Request, next NextMiddleware) (*http.Response, error) 
 	ctx, span, err := reqTracer.StartSpan(req.Context(), start, tee)
 	req = req.WithContext(ctx)
 	if err != nil {
-		diag.Warnf("Error starting span: %v", err)
+		log.Warnf("Error starting span: %v", err)
 	}
 
 	// Continue processing the request.
@@ -97,7 +97,7 @@ func Middleware(req *http.Request, next NextMiddleware) (*http.Response, error) 
 		// latency to the response.
 		now := time.Now()
 		if err := reqTracer.TagSpan(span, r); err != nil {
-			diag.Warnf("Error tagging span: %v\n%s", err)
+			log.Warnf("Error tagging span: %v\n%s", err)
 		}
 		span.End(trace.WithTimestamp(now))
 	}

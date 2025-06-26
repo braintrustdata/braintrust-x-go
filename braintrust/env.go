@@ -16,20 +16,31 @@ func WithDefaultProjectID(projectID string) Option {
 	}
 }
 
-// Config holds the configuration for Braintrust
+// WithAPIKey sets the API key for the Braintrust SDK.
+func WithAPIKey(apiKey string) Option {
+	return func(c *Config) {
+		c.APIKey = apiKey
+	}
+}
+
+// Config holds the configuration for the Braintrust SDK
 type Config struct {
-	APIKey              string
-	APIURL              string
-	AppURL              string
-	DefaultProjectID    string
-	EnableTraceDebugLog bool
+	APIKey                string
+	APIURL                string
+	AppURL                string
+	DefaultProjectID      string
+	EnableTraceConsoleLog bool
 }
 
 // String returns a pretty-printed representation of the config with the API key redacted
 func (c Config) String() string {
-	apiKey := "<not set>"
-	if c.APIKey != "" {
+	var apiKey string
+	if len(c.APIKey) > 6 {
 		apiKey = c.APIKey[:3] + "........" + c.APIKey[len(c.APIKey)-3:]
+	} else if len(c.APIKey) > 0 {
+		apiKey = "<redacted>"
+	} else {
+		apiKey = "<not set>"
 	}
 
 	return fmt.Sprintf(`Braintrust Config:
@@ -42,18 +53,19 @@ func (c Config) String() string {
 		c.APIURL,
 		c.AppURL,
 		c.DefaultProjectID,
-		c.EnableTraceDebugLog,
+		c.EnableTraceConsoleLog,
 	)
 }
 
-// GetConfig returns the Braintrust configuration from environment variables
+// GetConfig loads the Braintrust configuration from environment variables
+// and options. Options take precedence over environment variables.
 func GetConfig(opts ...Option) Config {
 	config := Config{
-		APIKey:              getEnvString("BRAINTRUST_API_KEY", ""),
-		APIURL:              getEnvString("BRAINTRUST_API_URL", "https://api.braintrust.dev"),
-		AppURL:              getEnvString("BRAINTRUST_APP_URL", "https://www.braintrust.dev"),
-		DefaultProjectID:    getEnvString("BRAINTRUST_DEFAULT_PROJECT_ID", ""),
-		EnableTraceDebugLog: getEnvBool("BRAINTRUST_ENABLE_TRACE_DEBUG_LOG", false),
+		APIKey:                getEnvString("BRAINTRUST_API_KEY", ""),
+		APIURL:                getEnvString("BRAINTRUST_API_URL", "https://api.braintrust.dev"),
+		AppURL:                getEnvString("BRAINTRUST_APP_URL", "https://www.braintrust.dev"),
+		DefaultProjectID:      getEnvString("BRAINTRUST_DEFAULT_PROJECT_ID", ""),
+		EnableTraceConsoleLog: getEnvBool("BRAINTRUST_ENABLE_TRACE_CONSOLE_LOG", false),
 	}
 	for _, opt := range opts {
 		opt(&config)

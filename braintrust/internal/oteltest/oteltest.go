@@ -16,7 +16,6 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	oteltrace "go.opentelemetry.io/otel/trace"
 
-	"github.com/braintrust/braintrust-x-go/braintrust/diag"
 	"github.com/braintrust/braintrust-x-go/braintrust/internal"
 )
 
@@ -42,7 +41,6 @@ func Setup(t *testing.T, opts ...sdktrace.TracerProviderOption) (oteltrace.Trace
 	tracer := otel.GetTracerProvider().Tracer(t.Name())
 
 	t.Cleanup(func() {
-		diag.ClearLogger()
 		// withoutcancel is a workaround for usetesting linter which is otherwise
 		// kinda useful https://github.com/ldez/usetesting/issues/4
 		ctx := context.WithoutCancel(t.Context())
