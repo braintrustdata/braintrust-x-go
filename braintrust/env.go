@@ -34,11 +34,13 @@ type Config struct {
 
 // String returns a pretty-printed representation of the config with the API key redacted
 func (c Config) String() string {
-	apiKey := "<not set>"
+	var apiKey string
 	if len(c.APIKey) > 6 {
 		apiKey = c.APIKey[:3] + "........" + c.APIKey[len(c.APIKey)-3:]
-	} else {
+	} else if len(c.APIKey) > 0 {
 		apiKey = "<redacted>"
+	} else {
+		apiKey = "<not set>"
 	}
 
 	return fmt.Sprintf(`Braintrust Config:
