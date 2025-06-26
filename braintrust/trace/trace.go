@@ -46,7 +46,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace"
 
 	"github.com/braintrust/braintrust-x-go/braintrust"
-	"github.com/braintrust/braintrust-x-go/braintrust/diag"
+	"github.com/braintrust/braintrust-x-go/braintrust/log"
 )
 
 // Quickstart configures OpenTelemetry tracing for Braintrust and provides
@@ -66,7 +66,7 @@ func Quickstart(opts ...braintrust.Option) (teardown func(), err error) {
 	url := config.APIURL
 	apiKey := config.APIKey
 
-	diag.Debugf("Initializing OpenTelemetry tracer with config: %s", config.String())
+	log.Debugf("Initializing OpenTelemetry tracer with config: %s", config.String())
 
 	// split url and protocol
 	parts := strings.Split(url, "://")
@@ -102,7 +102,7 @@ func Quickstart(opts ...braintrust.Option) (teardown func(), err error) {
 	if config.DefaultProjectID != "" {
 		spanProcessorOpt = WithDefaultProjectID(config.DefaultProjectID)
 	} else {
-		diag.Debugf("No default project ID set. Untagged spans will be dropped")
+		log.Debugf("No default project ID set. Untagged spans will be dropped")
 	}
 
 	tracerOpts := []trace.TracerProviderOption{
@@ -114,10 +114,10 @@ func Quickstart(opts ...braintrust.Option) (teardown func(), err error) {
 	if config.EnableTraceDebugLog {
 		consoleExporter, err := stdouttrace.New(stdouttrace.WithPrettyPrint())
 		if err != nil {
-			diag.Warnf("failed to create console exporter: %v", err)
+			log.Warnf("failed to create console exporter: %v", err)
 		} else {
 			tracerOpts = append(tracerOpts, trace.WithBatcher(consoleExporter))
-			diag.Debugf("OTEL console debug enabled")
+			log.Debugf("OTEL console debug enabled")
 		}
 
 	}
@@ -129,7 +129,7 @@ func Quickstart(opts ...braintrust.Option) (teardown func(), err error) {
 	teardown = func() {
 		err := tp.Shutdown(context.Background())
 		if err != nil {
-			diag.Warnf("Error shutting down tracer provider: %v", err)
+			log.Warnf("Error shutting down tracer provider: %v", err)
 		}
 	}
 
@@ -225,7 +225,7 @@ func noopSpanProcessorOption() SpanProcessorOption {
 
 // WithDefaultProjectID sets the default project ID for spans created during the session.
 func WithDefaultProjectID(projectID string) SpanProcessorOption {
-	diag.Debugf("Setting default project ID: %s", projectID)
+	log.Debugf("Setting default project ID: %s", projectID)
 	return func(p *spanProcessor) {
 		p.defaultProjectID = projectID
 	}
@@ -251,7 +251,7 @@ func (p *spanProcessor) OnStart(ctx context.Context, span trace.ReadWriteSpan) {
 	// If that span already has a parent, don't override
 	for _, attr := range span.Attributes() {
 		if attr.Key == ParentOtelAttrKey && attr.Value.AsString() != "" {
-			diag.Debugf("SpanProcessor.OnStart: noop. Span has parent %s", attr.Value.AsString())
+			log.Debugf("SpanProcessor.OnStart: noop. Span has parent %s", attr.Value.AsString())
 			return
 		}
 	}
@@ -260,14 +260,14 @@ func (p *spanProcessor) OnStart(ctx context.Context, span trace.ReadWriteSpan) {
 	ok, parent := GetParent(ctx)
 	if ok {
 		setParentOnSpan(span, parent)
-		diag.Debugf("SpanProcessor.OnStart: setting parent from context: %s", parent)
+		log.Debugf("SpanProcessor.OnStart: setting parent from context: %s", parent)
 		return
 	}
 
 	// otherwise use the default parent
 	if p.defaultProjectID != "" {
 		span.SetAttributes(p.defaultAttr)
-		diag.Debugf("SpanProcessor.OnStart: setting default parent: %s", p.defaultProjectID)
+		log.Debugf("SpanProcessor.OnStart: setting default parent: %s", p.defaultProjectID)
 	}
 }
 

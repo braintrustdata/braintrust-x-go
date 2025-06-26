@@ -7,17 +7,17 @@ import (
 	"runtime/debug"
 	"testing"
 
-	"github.com/braintrust/braintrust-x-go/braintrust/diag"
+	"github.com/braintrust/braintrust-x-go/braintrust/log"
 )
 
 // FailTestsOnWarnings will fail tests if warnings are produced during tests. Currently
 // not able to be parallelized.
 func FailTestsOnWarnings(t *testing.T) {
 	t.Helper()
-	original := diag.GetLogger()
-	diag.SetLogger(newFailTestLogger(t))
+	original := log.Get()
+	log.Set(newFailTestLogger(t))
 	t.Cleanup(func() {
-		diag.SetLogger(original)
+		log.Set(original)
 	})
 }
 
@@ -32,9 +32,11 @@ func newFailTestLogger(t *testing.T) *failTestLogger {
 
 func (f *failTestLogger) Debugf(_ string, _ ...any) {}
 
+func (f *failTestLogger) Infof(_ string, _ ...any) {}
+
 func (f *failTestLogger) Warnf(format string, args ...any) {
 	f.t.Helper()
 	f.t.Fatalf("failTestLogger caught a warning: %s\n%s", fmt.Sprintf(format, args...), string(debug.Stack()))
 }
 
-var _ diag.Logger = &failTestLogger{}
+var _ log.Logger = &failTestLogger{}
