@@ -50,7 +50,6 @@ func anthropicRouter(path string) internal.MiddlewareTracer {
 		return newMessagesTracer()
 	}
 	return internal.NewNoopTracer()
-
 }
 
 // parseUsageTokens parses the usage tokens from Anthropic API responses
@@ -89,8 +88,13 @@ func parseUsageTokens(usage map[string]interface{}) map[string]int64 {
 
 	// Calculate total prompt tokens (input + cache tokens)
 	totalPromptTokens := inputTokens + cacheCreationTokens + cacheReadTokens
-	if totalPromptTokens > 0 {
-		metrics["prompt_tokens"] = totalPromptTokens
+	metrics["prompt_tokens"] = totalPromptTokens
+
+	// Calculate total tokens if not provided by Anthropic
+	if _, hasTokens := metrics["tokens"]; !hasTokens {
+		if completionTokens, hasCompletion := metrics["completion_tokens"]; hasCompletion {
+			metrics["tokens"] = totalPromptTokens + completionTokens
+		}
 	}
 
 	return metrics

@@ -98,6 +98,7 @@ func (mt *messagesTracer) TagSpan(span trace.Span, body io.Reader) error {
 func (mt *messagesTracer) parseStreamingResponse(span trace.Span, body io.Reader) error {
 	scanner := bufio.NewScanner(body)
 	var allResults []map[string]any
+	var combinedUsage map[string]any
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -119,14 +120,47 @@ func (mt *messagesTracer) parseStreamingResponse(span trace.Span, body io.Reader
 
 		allResults = append(allResults, chunk)
 
-		// Handle usage in streaming response (if present)
-		// Usage data is only included in the "message_delta" event.
-		// There can be multiple "message_delta" events in a single response.
-		// But the usage data in there is supposed to be cumulative as per the docs.
-		// So using the last usage data is fine.
-		if usage, ok := chunk["usage"]; ok {
-			mt.metadata["usage"] = usage
+		// Handle usage in streaming response from different event types
+		eventType, ok := chunk["type"].(string)
+		if ok {
+			switch eventType {
+
+			// Contains input and cache tokens
+			case "message_start":
+				// Usage is nested in message object for message_start events
+				if message, ok := chunk["message"].(map[string]any); ok {
+					if usage, ok := message["usage"].(map[string]any); ok {
+						// Initialize combined usage with message_start data (contains input_tokens)
+						if combinedUsage == nil {
+							combinedUsage = make(map[string]any)
+						}
+						for k, v := range usage {
+							combinedUsage[k] = v
+						}
+					}
+				}
+
+			// Contains output tokens, There can be multiple "message_delta" events in a single response.
+			// But the usage data in there is supposed to be cumulative as per the docs.
+			// So using the last usage data is fine.
+			case "message_delta":
+				// Usage is at top level for message_delta events (contains final output_tokens)
+				if usage, ok := chunk["usage"].(map[string]any); ok {
+					if combinedUsage == nil {
+						combinedUsage = make(map[string]any)
+					}
+					// message_delta usage is cumulative, so it overrides any previous values
+					for k, v := range usage {
+						combinedUsage[k] = v
+					}
+				}
+			}
 		}
+	}
+
+	// Store the combined usage in metadata
+	if combinedUsage != nil {
+		mt.metadata["usage"] = combinedUsage
 	}
 
 	// Post-process streaming results to match expected output format
@@ -151,7 +185,6 @@ func (mt *messagesTracer) parseStreamingResponse(span trace.Span, body io.Reader
 func (mt *messagesTracer) postprocessStreamingResults(allResults []map[string]any) []map[string]interface{} {
 	var content strings.Builder
 	var stopReason interface{}
-	var usage map[string]interface{}
 
 	for _, result := range allResults {
 		eventType, ok := result["type"].(string)
@@ -172,15 +205,7 @@ func (mt *messagesTracer) postprocessStreamingResults(allResults []map[string]an
 					stopReason = sr
 				}
 			}
-			if us, ok := result["usage"].(map[string]interface{}); ok {
-				usage = us
-			}
 		}
-	}
-
-	// Store usage in metadata if present
-	if usage != nil {
-		mt.metadata["usage"] = usage
 	}
 
 	// Store stop reason in metadata if present

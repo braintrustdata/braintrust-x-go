@@ -11,10 +11,11 @@ import (
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
-	"github.com/braintrust/braintrust-x-go/braintrust/internal/oteltest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/codes"
+
+	"github.com/braintrust/braintrust-x-go/braintrust/internal/oteltest"
 )
 
 func TestMiddleware(t *testing.T) {
@@ -285,12 +286,94 @@ func TestMiddlewareIntegration(t *testing.T) {
 	assert.Equal(t, "/v1/messages", metadata["endpoint"])
 	assert.Equal(t, float64(1024), metadata["max_tokens"])
 
-	// Verify metrics
+	// assertSpanValid already validates all metrics comprehensively, just log for visibility
 	metrics := span.Metrics()
-	assert.Greater(t, metrics["prompt_tokens"], float64(0))
-	assert.Greater(t, metrics["completion_tokens"], float64(0))
-
 	t.Logf("🎯 Span validation passed: %d metrics, %d metadata fields", len(metrics), len(metadata))
+	t.Logf("📊 Non-streaming metrics - prompt: %.0f, completion: %.0f, cached: %.0f, cache_creation: %.0f",
+		metrics["prompt_tokens"], metrics["completion_tokens"],
+		metrics["prompt_cached_tokens"], metrics["prompt_cache_creation_tokens"])
+}
+
+// TestMiddlewareIntegrationStreaming tests the middleware with real Anthropic streaming API calls
+func TestMiddlewareIntegrationStreaming(t *testing.T) {
+	// Skip if no API key is available
+	apiKey := os.Getenv("ANTHROPIC_API_KEY")
+	if apiKey == "" {
+		t.Skip("ANTHROPIC_API_KEY not set, skipping integration test")
+	}
+
+	// Set up test tracer and client
+	client, exporter := setUpTest(t, apiKey)
+
+	// Make a streaming API call
+	timer := oteltest.NewTimer()
+	ctx := t.Context()
+	stream := client.Messages.NewStreaming(ctx, anthropic.MessageNewParams{
+		Model: anthropic.Model("claude-3-haiku-20240307"), // Use cheapest model
+		Messages: []anthropic.MessageParam{
+			anthropic.NewUserMessage(anthropic.NewTextBlock("Tell me a very short joke.")),
+		},
+		MaxTokens:   512,
+		Temperature: anthropic.Float(0.8),
+		TopP:        anthropic.Float(0.95),
+	})
+
+	var completeText string
+
+	// Iterate through the streaming response
+	for stream.Next() {
+		event := stream.Current()
+		switch eventVariant := event.AsAny().(type) {
+		case anthropic.ContentBlockDeltaEvent:
+			switch deltaVariant := eventVariant.Delta.AsAny().(type) {
+			case anthropic.TextDelta:
+				completeText += deltaVariant.Text
+			}
+		}
+	}
+	require.NoError(t, stream.Err())
+	timeRange := timer.Tick()
+
+	// Basic response validation
+	assert.NotEmpty(t, completeText)
+	t.Logf("✅ Streaming API call successful. Complete response: %s", completeText)
+
+	// Validate spans were generated correctly
+	span := exporter.FlushOne()
+
+	assertSpanValid(t, span, timeRange)
+
+	// Verify span content
+	input := span.Attr("braintrust.input").String()
+	assert.Contains(t, input, "Tell me a very short joke.")
+
+	output := span.Output()
+	assert.NotNil(t, output)
+
+	// The output should contain the complete streamed text in JSON format
+	outputStr := span.Attr("braintrust.output").String()
+	// For streaming, the output is stored as JSON: [{"text":"...", "type":"text"}]
+	// So we check that both the accumulated text and the JSON contain expected content
+	assert.Contains(t, outputStr, "joke")    // Should contain the word "joke"
+	assert.Contains(t, completeText, "joke") // Ensure we got the text from streaming
+	// Also verify that some of the streamed content matches what's in the span
+	assert.Contains(t, outputStr, completeText[:10]) // Check first 10 chars are in the output
+
+	metadata := span.Metadata()
+	assert.Equal(t, "anthropic", metadata["provider"])
+	assert.Equal(t, "claude-3-haiku-20240307", metadata["model"])
+	assert.Equal(t, "/v1/messages", metadata["endpoint"])
+	assert.Equal(t, float64(512), metadata["max_tokens"])
+	assert.Equal(t, 0.8, metadata["temperature"])
+	assert.Equal(t, 0.95, metadata["top_p"])
+	assert.Equal(t, true, metadata["stream"]) // Should detect streaming mode
+
+	// assertSpanValid already validates all metrics comprehensively, just log for visibility
+	metrics := span.Metrics()
+	t.Logf("🎯 Streaming span validation passed: %d metrics, %d metadata fields", len(metrics), len(metadata))
+	t.Logf("📊 Streaming metrics - prompt: %.0f, completion: %.0f, cached: %.0f, cache_creation: %.0f",
+		metrics["prompt_tokens"], metrics["completion_tokens"],
+		metrics["prompt_cached_tokens"], metrics["prompt_cache_creation_tokens"])
 }
 
 // setUpTest is a helper function that sets up a new tracer provider for each test.
@@ -323,26 +406,32 @@ func assertSpanValid(t *testing.T, span oteltest.Span, timeRange oteltest.TimeRa
 
 	// validate metrics
 	metrics := span.Metrics()
-	gtz := func(v float64) bool { return v > 0 }
 	gtez := func(v float64) bool { return v >= 0 }
+	gtz := func(v float64) bool { return v > 0 }
 
-	metricToValidator := map[string]func(float64) bool{
-		"prompt_tokens":                gtz,
-		"completion_tokens":            gtz,
-		"tokens":                       gtz,
-		"prompt_cached_tokens":         gtez,
-		"prompt_cache_creation_tokens": gtez,
+	// All expected metrics must be present - core metrics and cache metrics
+	requiredMetrics := map[string]func(float64) bool{
+		"prompt_tokens":                gtz,  // Should always be > 0
+		"completion_tokens":            gtz,  // Should always be > 0
+		"tokens":                       gtz,  // Should always be > 0
+		"prompt_cached_tokens":         gtez, // Should always be ≥ 0 (even if 0)
+		"prompt_cache_creation_tokens": gtez, // Should always be ≥ 0 (even if 0)
 	}
 
-	// Validate known metrics, but allow unknown metrics to pass through
+	// First, ensure all required metrics are present
+	for metricName := range requiredMetrics {
+		assert.Contains(metrics, metricName, "Required metric %s is missing", metricName)
+	}
+
+	// Then validate all present metrics
 	for n, v := range metrics {
-		validator, ok := metricToValidator[n]
+		validator, ok := requiredMetrics[n]
 		if !ok {
 			// Unknown metric - just log it but don't fail the test
 			t.Logf("Unknown metric %s with value %v - this is likely a new Anthropic metric", n, v)
 			continue
 		}
-		assert.True(validator(v), "metric %s is not valid", n)
+		assert.True(validator(v), "metric %s is not valid (value: %v)", n, v)
 	}
 
 	// a crude check to make sure all json is parsed
