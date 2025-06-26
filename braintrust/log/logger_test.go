@@ -1,4 +1,4 @@
-package diag
+package log
 
 import (
 	"bytes"
@@ -15,16 +15,16 @@ func TestDefaultLogger(_ *testing.T) {
 }
 
 func TestSetNilLogger(_ *testing.T) {
-	defer ClearLogger()
-	SetLogger(nil)
+	defer Clear()
+	Set(nil)
 	Debugf("no panic")
 	Warnf("no panic")
 }
 
 func TestLoggingFunctions(t *testing.T) {
 	logger := &testLogger{}
-	SetLogger(logger)
-	defer ClearLogger()
+	Set(logger)
+	defer Clear()
 
 	Debugf("debug message %s", "test1")
 	Warnf("warn message %s", "test2")
@@ -40,9 +40,9 @@ func TestDebugLogger(t *testing.T) {
 
 	w := log.Writer()
 	log.SetOutput(&buf)
-	SetDebugLogger()
+	Set(debugLogger)
 	defer func() {
-		ClearLogger()
+		Clear()
 		log.SetOutput(w)
 	}()
 
@@ -68,8 +68,8 @@ func TestWarnLogger(t *testing.T) {
 
 	log.SetOutput(&buf)
 
-	SetWarnLogger()
-	defer ClearLogger()
+	Set(warnLogger)
+	defer Clear()
 
 	Debugf("123")
 	Warnf("456")
@@ -88,6 +88,10 @@ type testLogger struct {
 
 func (t *testLogger) Debugf(format string, args ...any) {
 	t.debugMsgs = append(t.debugMsgs, fmt.Sprintf(format, args...))
+}
+
+func (t *testLogger) Infof(format string, args ...any) {
+	// No-op for testing
 }
 
 func (t *testLogger) Warnf(format string, args ...any) {

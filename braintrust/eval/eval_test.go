@@ -48,7 +48,7 @@ func TestEval_TaskErrors(t *testing.T) {
 
 	eval := New("123", NewCases(cases), task, scorers)
 	timer := oteltest.NewTimer()
-	err := eval.Run()
+	err := eval.Run(t.Context())
 	timeRange := timer.Tick()
 
 	assert.ErrorIs(err, ErrTaskRun)
@@ -159,7 +159,7 @@ func TestEval_ScorerErrors(t *testing.T) {
 	// Mix of scorers - one that works and one that fails
 	scorers := []Scorer[int, int]{
 		NewEqualsScorer[int, int](),
-		NewScorer("failing_scorer", func(ctx context.Context, input int, expected, result int) (Scores, error) {
+		NewScorer("failing_scorer", func(ctx context.Context, input int, expected, result int, _ Metadata) (Scores, error) {
 			if input == 2 {
 				return nil, errors.New("scorer failed for input 2")
 			}
@@ -169,7 +169,7 @@ func TestEval_ScorerErrors(t *testing.T) {
 
 	eval := New("123", NewCases(cases), task, scorers)
 	timer := oteltest.NewTimer()
-	err := eval.Run()
+	err := eval.Run(t.Context())
 	timeRange := timer.Tick()
 
 	assert.ErrorIs(err, ErrScorer)
@@ -276,10 +276,10 @@ func TestScorerNames(t *testing.T) {
 	_, exporter := oteltest.Setup(t)
 
 	scorers := []Scorer[int, int]{
-		NewScorer("no-name", func(ctx context.Context, input int, expected, result int) (Scores, error) {
+		NewScorer("no-name", func(ctx context.Context, input, expected, result int, _ Metadata) (Scores, error) {
 			return S(0.6), nil
 		}),
-		NewScorer("name", func(ctx context.Context, input int, expected, result int) (Scores, error) {
+		NewScorer("name", func(ctx context.Context, input, expected, result int, _ Metadata) (Scores, error) {
 			return Scores{{Name: "different", Score: 0.5}}, nil
 		}),
 	}
@@ -291,7 +291,7 @@ func TestScorerNames(t *testing.T) {
 	cases := []Case[int, int]{{Input: 1, Expected: 1}}
 
 	eval := New("123", NewCases(cases), task, scorers)
-	err := eval.Run()
+	err := eval.Run(t.Context())
 	require.NoError(err)
 
 	spans := exporter.Flush()
@@ -340,7 +340,7 @@ func TestHardcodedEval(t *testing.T) {
 	}
 
 	// test custom scorer
-	equals := func(ctx context.Context, input int, expected, result int) (Scores, error) {
+	equals := func(ctx context.Context, input, expected, result int, _ Metadata) (Scores, error) {
 		v := 0.0
 		if result == expected {
 			v = 1.0
@@ -359,7 +359,7 @@ func TestHardcodedEval(t *testing.T) {
 
 	eval1 := New(id, NewCases(cases), brokenSquare, scorers)
 	timer := oteltest.NewTimer()
-	err := eval1.Run()
+	err := eval1.Run(t.Context())
 	timeRange := timer.Tick()
 	require.NoError(err)
 
@@ -513,7 +513,7 @@ func TestEvalWithCustomGenerator(t *testing.T) {
 	scorers := []Scorer[int, int]{NewEqualsScorer[int, int]()}
 
 	eval := New("test-generator", generator, task, scorers)
-	err := eval.Run()
+	err := eval.Run(t.Context())
 	require.NoError(err)
 
 	spans := exporter.Flush()
@@ -544,7 +544,7 @@ func TestEvalWithCasesIteratorError(t *testing.T) {
 
 	eval := New("test-error-generator", generator, task, scorers)
 	timer := oteltest.NewTimer()
-	err := eval.Run()
+	err := eval.Run(t.Context())
 	timeRange := timer.Tick()
 
 	// Should return the error from the Cases iterator
@@ -727,7 +727,7 @@ func TestEval_EmptyExperimentID(t *testing.T) {
 	// Create eval with empty experiment ID
 	eval := New("", NewCases(cases), task, scorers)
 	timer := oteltest.NewTimer()
-	err := eval.Run()
+	err := eval.Run(t.Context())
 	timeRange := timer.Tick()
 
 	// Should return ErrEval error
@@ -785,7 +785,7 @@ func TestEval_BraintrustParentWithAndWithoutDefaultProject(t *testing.T) {
 			}
 
 			eval := New("test-exp-456", NewCases(cases), task, scorers)
-			err := eval.Run()
+			err := eval.Run(t.Context())
 			require.NoError(t, err)
 
 			spans := exporter.Flush()
@@ -806,7 +806,7 @@ func (s *equalsScorer[I, R]) Name() string {
 	return "equals"
 }
 
-func (s *equalsScorer[I, R]) Run(ctx context.Context, input I, expected, result R) (Scores, error) {
+func (s *equalsScorer[I, R]) Run(ctx context.Context, input I, expected, result R, _ Metadata) (Scores, error) {
 	v := 0.0
 	if result == expected {
 		v = 1.0
