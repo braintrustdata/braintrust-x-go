@@ -15,9 +15,11 @@ package autoevals
 
 import (
 	"context"
+	"fmt"
 
 	"golang.org/x/exp/constraints"
 
+	"github.com/braintrust/braintrust-x-go/braintrust/api"
 	"github.com/braintrust/braintrust-x-go/braintrust/eval"
 )
 
@@ -77,5 +79,58 @@ func NewLessThan[I any, R constraints.Ordered]() Scorer[I, R] {
 			v = 1.0
 		}
 		return eval.Scores{{Name: "LessThan", Score: v}}, nil
+	})
+}
+
+// NewLevenshtein creates a scorer that calculates the normalized Levenshtein distance
+// between expected and result strings using the Braintrust global Levenshtein function.
+// Returns a score from 0.0 (completely different) to 1.0 (identical).
+//
+// Example:
+//
+//	levenshtein := autoevals.NewLevenshtein[string]()
+//	score, err := levenshtein.Run(ctx, "input", "hello", "helo") // returns ~0.8 (high similarity)
+func NewLevenshtein[I any]() Scorer[I, string] {
+	return NewScorer("Levenshtein", func(ctx context.Context, _ I, expected, result string, _ eval.Metadata) (eval.Scores, error) {
+		// Prepare request for the global Levenshtein function
+		request := api.InvokeFunctionRequest{
+			Input: map[string]interface{}{
+				"expected": expected,
+				"result":   result,
+			},
+		}
+
+		// Call the global Levenshtein function
+		response, err := api.InvokeGlobalFunction("Levenshtein", request)
+		if err != nil {
+			return nil, fmt.Errorf("failed to invoke Levenshtein function: %w", err)
+		}
+
+		if response.Error != nil {
+			return nil, fmt.Errorf("levenshtein function returned error: %s", *response.Error)
+		}
+
+		// Extract the score from the response
+		var score float64
+		if output, ok := response.Output.(map[string]interface{}); ok {
+			if scoreVal, exists := output["score"]; exists {
+				if scoreFloat, ok := scoreVal.(float64); ok {
+					score = scoreFloat
+				} else {
+					return nil, fmt.Errorf("levenshtein function returned non-numeric score: %v", scoreVal)
+				}
+			} else {
+				return nil, fmt.Errorf("levenshtein function output missing 'score' field")
+			}
+		} else {
+			// Try direct output as float64
+			if scoreFloat, ok := response.Output.(float64); ok {
+				score = scoreFloat
+			} else {
+				return nil, fmt.Errorf("levenshtein function returned unexpected output format: %v", response.Output)
+			}
+		}
+
+		return eval.Scores{{Name: "Levenshtein", Score: score}}, nil
 	})
 }

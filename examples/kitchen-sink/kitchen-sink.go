@@ -29,6 +29,18 @@ var tracer = otel.Tracer("kitchen-sink-example")
 func main() {
 	log.Println("🧪 Starting Kitchen Sink Example")
 
+	// List available functions first
+	log.Println("📋 Listing available functions...")
+	functions, err := api.ListFunctions(nil)
+	if err != nil {
+		log.Printf("⚠️ Failed to list functions: %v", err)
+	} else {
+		log.Printf("📋 Found %d functions:", len(functions.Objects))
+		for _, fn := range functions.Objects {
+			log.Printf("  - %s (ID: %s, Project: %s)", fn.Name, fn.ID, fn.ProjectID)
+		}
+	}
+
 	// Initialize OpenAI client with tracing middleware
 	client := openai.NewClient(
 		option.WithMiddleware(traceopenai.Middleware),
@@ -113,8 +125,9 @@ func runKitchenSinkEval(client openai.Client) {
 	}
 
 	scorers := []eval.Scorer[string, string]{
-		// Autoeval
+		// Autoevals
 		autoevals.NewEquals[string, string](),
+		autoevals.NewLevenshtein[string](),
 
 		// Multi-score scorer with custom tracing
 		eval.NewScorer("quality_check", func(ctx context.Context, input, expected, result string, _ eval.Metadata) (eval.Scores, error) {
@@ -155,12 +168,19 @@ func runKitchenSinkEval(client openai.Client) {
 		{Input: "sentiment: I love this!", Expected: "positive", Tags: []string{"llm", "sentiment"}},
 		{Input: "capital of France", Expected: "Paris", Tags: []string{"llm", "geography"}},
 
+		// Levenshtein test cases - these will fail Equals but score well on Levenshtein
+		{Input: "hello world", Expected: "helo world", Tags: []string{"typo", "levenshtein"}}, // Missing 'l' - high similarity
+		{Input: "testing", Expected: "tesing", Tags: []string{"typo", "levenshtein"}},         // Missing 't' - high similarity
+		{Input: "algorithm", Expected: "algoritm", Tags: []string{"typo", "levenshtein"}},     // Missing 'h' - high similarity
+		{Input: "programming", Expected: "programing", Tags: []string{"typo", "levenshtein"}}, // Missing 'm' - high similarity
+
 		// Error cases
 		{Input: "TASK_FAIL this", Expected: "anything", Tags: []string{"task_error"}},
 		{Input: "SCORER_FAIL test", Expected: "test", Tags: []string{"scorer_error"}},
 
 		// Mixed
 		{Input: "maybe", Expected: "perhaps", Tags: []string{"mismatch"}},
+		{Input: "completely", Expected: "different", Tags: []string{"mismatch", "low_similarity"}}, // Low Levenshtein score
 	}
 
 	experimentID, err := eval.ResolveProjectExperimentID("Kitchen Sink", "Kitchen Sink")
