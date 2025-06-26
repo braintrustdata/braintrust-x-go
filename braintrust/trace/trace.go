@@ -111,7 +111,7 @@ func Quickstart(opts ...braintrust.Option) (teardown func(), err error) {
 	}
 
 	// Add console debug exporter if BRAINTRUST_ENABLE_TRACE_DEBUG_LOG is set
-	if config.EnableTraceDebugLog {
+	if config.EnableTraceConsoleLog {
 		consoleExporter, err := stdouttrace.New(stdouttrace.WithPrettyPrint())
 		if err != nil {
 			log.Warnf("failed to create console exporter: %v", err)
