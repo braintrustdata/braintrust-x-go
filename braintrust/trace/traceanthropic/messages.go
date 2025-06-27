@@ -98,7 +98,7 @@ func (mt *messagesTracer) TagSpan(span trace.Span, body io.Reader) error {
 func (mt *messagesTracer) parseStreamingResponse(span trace.Span, body io.Reader) error {
 	scanner := bufio.NewScanner(body)
 	var allResults []map[string]any
-	var combinedUsage map[string]any
+	usage := make(map[string]any)
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -129,13 +129,10 @@ func (mt *messagesTracer) parseStreamingResponse(span trace.Span, body io.Reader
 			case "message_start":
 				// Usage is nested in message object for message_start events
 				if message, ok := chunk["message"].(map[string]any); ok {
-					if usage, ok := message["usage"].(map[string]any); ok {
+					if curUsage, ok := message["usage"].(map[string]any); ok {
 						// Initialize combined usage with message_start data (contains input_tokens)
-						if combinedUsage == nil {
-							combinedUsage = make(map[string]any)
-						}
-						for k, v := range usage {
-							combinedUsage[k] = v
+						for k, v := range curUsage {
+							usage[k] = v
 						}
 					}
 				}
@@ -145,22 +142,14 @@ func (mt *messagesTracer) parseStreamingResponse(span trace.Span, body io.Reader
 			// So using the last usage data is fine.
 			case "message_delta":
 				// Usage is at top level for message_delta events (contains final output_tokens)
-				if usage, ok := chunk["usage"].(map[string]any); ok {
-					if combinedUsage == nil {
-						combinedUsage = make(map[string]any)
-					}
+				if curUsage, ok := chunk["usage"].(map[string]any); ok {
 					// message_delta usage is cumulative, so it overrides any previous values
-					for k, v := range usage {
-						combinedUsage[k] = v
+					for k, v := range curUsage {
+						usage[k] = v
 					}
 				}
 			}
 		}
-	}
-
-	// Store the combined usage in metadata
-	if combinedUsage != nil {
-		mt.metadata["usage"] = combinedUsage
 	}
 
 	// Post-process streaming results to match expected output format
@@ -172,7 +161,7 @@ func (mt *messagesTracer) parseStreamingResponse(span trace.Span, body io.Reader
 	}
 
 	// Handle usage metrics
-	if usage, ok := mt.metadata["usage"].(map[string]any); ok {
+	if len(usage) > 0 {
 		metrics := parseUsageTokens(usage)
 		if err := internal.SetJSONAttr(span, "braintrust.metrics", metrics); err != nil {
 			return err

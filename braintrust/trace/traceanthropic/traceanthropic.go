@@ -32,7 +32,7 @@ import (
 	"github.com/braintrust/braintrust-x-go/braintrust/trace/internal"
 )
 
-// NextMiddleware is re-exported from internal for backward compatibility.
+// NextMiddleware represents the next middleware to run in the OpenAI client middleware chain
 type NextMiddleware = internal.NextMiddleware
 
 // tracer returns the shared braintrust tracer.

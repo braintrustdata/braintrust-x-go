@@ -280,7 +280,7 @@ func main() {
 	fmt.Println("=====================================")
 
 	// initialize braintrust tracing with a specific project
-	projectName := "traceopenai-example-remi-test-2"
+	projectName := "traceopenai-example-go"
 	project, err := api.RegisterProject(projectName)
 	if err != nil {
 		log.Fatal(err)

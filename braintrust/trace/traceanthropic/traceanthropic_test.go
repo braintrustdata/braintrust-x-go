@@ -230,9 +230,6 @@ func TestParseUsageTokensWithCache(t *testing.T) {
 func TestMiddlewareIntegration(t *testing.T) {
 	// Skip if no API key is available
 	apiKey := os.Getenv("ANTHROPIC_API_KEY")
-	if apiKey == "" {
-		t.Skip("ANTHROPIC_API_KEY not set, skipping integration test")
-	}
 
 	// Set up test tracer and client
 	client, exporter := setUpTest(t, apiKey)
@@ -266,9 +263,6 @@ func TestMiddlewareIntegration(t *testing.T) {
 	require.Len(t, resp.Content, 1)
 	assert.NotEmpty(t, resp.Content[0].Text)
 
-	t.Logf("✅ API call successful. Response: %s", resp.Content[0].Text)
-	t.Logf("📊 Usage - Input: %d, Output: %d", resp.Usage.InputTokens, resp.Usage.OutputTokens)
-
 	// Validate spans were generated correctly
 	span := exporter.FlushOne()
 	assertSpanValid(t, span, timeRange)
@@ -286,21 +280,12 @@ func TestMiddlewareIntegration(t *testing.T) {
 	assert.Equal(t, "/v1/messages", metadata["endpoint"])
 	assert.Equal(t, float64(1024), metadata["max_tokens"])
 
-	// assertSpanValid already validates all metrics comprehensively, just log for visibility
-	metrics := span.Metrics()
-	t.Logf("🎯 Span validation passed: %d metrics, %d metadata fields", len(metrics), len(metadata))
-	t.Logf("📊 Non-streaming metrics - prompt: %.0f, completion: %.0f, cached: %.0f, cache_creation: %.0f",
-		metrics["prompt_tokens"], metrics["completion_tokens"],
-		metrics["prompt_cached_tokens"], metrics["prompt_cache_creation_tokens"])
 }
 
 // TestMiddlewareIntegrationStreaming tests the middleware with real Anthropic streaming API calls
 func TestMiddlewareIntegrationStreaming(t *testing.T) {
 	// Skip if no API key is available
 	apiKey := os.Getenv("ANTHROPIC_API_KEY")
-	if apiKey == "" {
-		t.Skip("ANTHROPIC_API_KEY not set, skipping integration test")
-	}
 
 	// Set up test tracer and client
 	client, exporter := setUpTest(t, apiKey)
@@ -336,7 +321,6 @@ func TestMiddlewareIntegrationStreaming(t *testing.T) {
 
 	// Basic response validation
 	assert.NotEmpty(t, completeText)
-	t.Logf("✅ Streaming API call successful. Complete response: %s", completeText)
 
 	// Validate spans were generated correctly
 	span := exporter.FlushOne()
@@ -368,12 +352,6 @@ func TestMiddlewareIntegrationStreaming(t *testing.T) {
 	assert.Equal(t, 0.95, metadata["top_p"])
 	assert.Equal(t, true, metadata["stream"]) // Should detect streaming mode
 
-	// assertSpanValid already validates all metrics comprehensively, just log for visibility
-	metrics := span.Metrics()
-	t.Logf("🎯 Streaming span validation passed: %d metrics, %d metadata fields", len(metrics), len(metadata))
-	t.Logf("📊 Streaming metrics - prompt: %.0f, completion: %.0f, cached: %.0f, cache_creation: %.0f",
-		metrics["prompt_tokens"], metrics["completion_tokens"],
-		metrics["prompt_cached_tokens"], metrics["prompt_cache_creation_tokens"])
 }
 
 // setUpTest is a helper function that sets up a new tracer provider for each test.
