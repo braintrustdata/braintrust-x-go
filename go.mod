@@ -3,6 +3,7 @@ module github.com/braintrust/braintrust-x-go
 go 1.24.2
 
 require (
+	github.com/anthropics/anthropic-sdk-go v1.4.0
 	github.com/openai/openai-go v0.1.0-beta.10
 	github.com/stretchr/testify v1.10.0
 	go.opentelemetry.io/otel v1.36.0

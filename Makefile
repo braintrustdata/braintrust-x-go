@@ -67,6 +67,8 @@ examples:
 	cd examples/struct-dataset-eval && go run .
 	@echo "Running traceopenai..."
 	cd examples/traceopenai && go run .
+	@echo "Running anthropic-tracer..."
+	cd examples/anthropic-tracer && go run .
 	@echo "All examples completed!"
 
 precommit: fmt ci
