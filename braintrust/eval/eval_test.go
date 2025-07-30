@@ -48,11 +48,18 @@ func TestEval_TaskErrors(t *testing.T) {
 
 	eval := New("123", NewCases(cases), task, scorers)
 	timer := oteltest.NewTimer()
-	err := eval.Run(t.Context())
+	result, err := eval.Run(t.Context())
 	timeRange := timer.Tick()
 
 	assert.ErrorIs(err, ErrTaskRun)
 	assert.Contains(err.Error(), "oops")
+
+	// Test that result is not nil and contains meaningful output
+	require.NotNil(result)
+	resultStr := result.String()
+	assert.NotEmpty(resultStr)
+	assert.Contains(resultStr, "123")          // experiment ID
+	assert.Contains(resultStr, "Total Cases:") // summary section
 
 	spans := exporter.Flush()
 	// With errors, we don't get all since not everything is scored
@@ -169,11 +176,18 @@ func TestEval_ScorerErrors(t *testing.T) {
 
 	eval := New("123", NewCases(cases), task, scorers)
 	timer := oteltest.NewTimer()
-	err := eval.Run(t.Context())
+	result, err := eval.Run(t.Context())
 	timeRange := timer.Tick()
 
 	assert.ErrorIs(err, ErrScorer)
 	assert.Contains(err.Error(), "scorer failed for input 2")
+
+	// Test that result is not nil and contains meaningful output
+	require.NotNil(result)
+	resultStr := result.String()
+	assert.NotEmpty(resultStr)
+	assert.Contains(resultStr, "123")          // experiment ID
+	assert.Contains(resultStr, "Total Cases:") // summary section
 
 	spans := exporter.Flush()
 	// We get 6 spans: task1, score1, eval1, task2, score2, eval2
@@ -291,8 +305,15 @@ func TestScorerNames(t *testing.T) {
 	cases := []Case[int, int]{{Input: 1, Expected: 1}}
 
 	eval := New("123", NewCases(cases), task, scorers)
-	err := eval.Run(t.Context())
+	result, err := eval.Run(t.Context())
 	require.NoError(err)
+
+	// Test that result is not nil and contains meaningful output
+	require.NotNil(result)
+	resultStr := result.String()
+	assert.NotEmpty(resultStr)
+	assert.Contains(resultStr, "123")          // experiment ID
+	assert.Contains(resultStr, "Total Cases:") // summary section
 
 	spans := exporter.Flush()
 	assert.Equal(3, len(spans))
@@ -359,9 +380,16 @@ func TestHardcodedEval(t *testing.T) {
 
 	eval1 := New(id, NewCases(cases), brokenSquare, scorers)
 	timer := oteltest.NewTimer()
-	err := eval1.Run(t.Context())
+	result, err := eval1.Run(t.Context())
 	timeRange := timer.Tick()
 	require.NoError(err)
+
+	// Test that result is not nil and contains meaningful output
+	require.NotNil(result)
+	resultStr := result.String()
+	assert.NotEmpty(resultStr)
+	assert.Contains(resultStr, "123")          // experiment ID
+	assert.Contains(resultStr, "Total Cases:") // summary section
 
 	spans := exporter.Flush()
 	assert.Equal(len(cases)*3, len(spans))
@@ -513,8 +541,16 @@ func TestEvalWithCustomGenerator(t *testing.T) {
 	scorers := []Scorer[int, int]{NewEqualsScorer[int, int]()}
 
 	eval := New("test-generator", generator, task, scorers)
-	err := eval.Run(t.Context())
+	result, err := eval.Run(t.Context())
 	require.NoError(err)
+
+	// Test that result is not nil and contains meaningful output
+	require.NotNil(result)
+	resultStr := result.String()
+	assert := assert.New(t)
+	assert.NotEmpty(resultStr)
+	assert.Contains(resultStr, "test-generator") // experiment ID
+	assert.Contains(resultStr, "Total Cases:")   // summary section
 
 	spans := exporter.Flush()
 	require.Equal(6, len(spans)) // 2 cases * 3 spans each
@@ -544,12 +580,19 @@ func TestEvalWithCasesIteratorError(t *testing.T) {
 
 	eval := New("test-error-generator", generator, task, scorers)
 	timer := oteltest.NewTimer()
-	err := eval.Run(t.Context())
+	result, err := eval.Run(t.Context())
 	timeRange := timer.Tick()
 
 	// Should return the error from the Cases iterator
 	require.Error(err)
 	assert.Contains(err.Error(), "iterator error between cases")
+
+	// Test that result is not nil and contains meaningful output
+	require.NotNil(result)
+	resultStr := result.String()
+	assert.NotEmpty(resultStr)
+	assert.Contains(resultStr, "test-error-generator") // experiment ID
+	assert.Contains(resultStr, "Total Cases:")         // summary section
 
 	// Should have processed both successful cases plus one error span
 	spans := exporter.Flush()
@@ -727,12 +770,18 @@ func TestEval_EmptyExperimentID(t *testing.T) {
 	// Create eval with empty experiment ID
 	eval := New("", NewCases(cases), task, scorers)
 	timer := oteltest.NewTimer()
-	err := eval.Run(t.Context())
+	result, err := eval.Run(t.Context())
 	timeRange := timer.Tick()
 
 	// Should return ErrEval error
 	assert.ErrorIs(err, ErrEval)
 	assert.Contains(err.Error(), "experiment ID is required")
+
+	// Test that result is not nil and contains meaningful output even with error
+	require.NotNil(result)
+	resultStr := result.String()
+	assert.NotEmpty(resultStr)
+	assert.Contains(resultStr, "Total Cases:") // summary section
 
 	spans := exporter.Flush()
 	// Should have no spans since the eval fails immediately
@@ -785,8 +834,15 @@ func TestEval_BraintrustParentWithAndWithoutDefaultProject(t *testing.T) {
 			}
 
 			eval := New("test-exp-456", NewCases(cases), task, scorers)
-			err := eval.Run(t.Context())
+			result, err := eval.Run(t.Context())
 			require.NoError(t, err)
+
+			// Test that result is not nil and contains meaningful output
+			require.NotNil(t, result)
+			resultStr := result.String()
+			assert.NotEmpty(t, resultStr)
+			assert.Contains(t, resultStr, "test-exp-456") // experiment ID
+			assert.Contains(t, resultStr, "Total Cases:") // summary section
 
 			spans := exporter.Flush()
 			assert.Equal(t, 3, len(spans)) // task, score, eval

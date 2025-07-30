@@ -169,11 +169,15 @@ func runKitchenSinkEval(client openai.Client) {
 	}
 
 	evaluation := eval.New(experimentID, eval.NewCases(cases), task, scorers)
-	err = evaluation.Run(context.Background())
+	result, err := evaluation.Run(context.Background())
 	if err != nil {
 		log.Printf("⚠️  Eval completed with errors: %v", err)
 	} else {
 		log.Println("✅ Eval completed")
+	}
+
+	if result != nil {
+		log.Printf("📊 Evaluation Results:\n%s", result.String())
 	}
 }
 
@@ -276,10 +280,14 @@ Reply with just a decimal number between 0 and 1.`, input, expected, result)
 	}
 
 	evaluation := eval.New(experimentID, cases, task, scorers)
-	err = evaluation.Run(context.Background())
+	result, err := evaluation.Run(context.Background())
 	if err != nil {
 		log.Printf("⚠️  Dataset eval completed with errors: %v", err)
 	} else {
 		log.Println("✅ Dataset eval completed")
+	}
+
+	if result != nil {
+		log.Printf("📊 Dataset Evaluation Results:\n%s", result.String())
 	}
 }

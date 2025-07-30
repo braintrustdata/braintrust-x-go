@@ -73,8 +73,12 @@ func main() {
 			}),
 		},
 	)
-	err = eval1.Run(context.Background())
+	result, err := eval1.Run(context.Background())
 	if err != nil {
 		log.Fatalf("Error running eval: %v", err)
+	}
+
+	if result != nil {
+		log.Printf("📊 Evaluation Results:\n%s", result.String())
 	}
 }

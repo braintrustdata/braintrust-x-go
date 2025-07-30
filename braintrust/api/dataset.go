@@ -193,6 +193,101 @@ func InsertDatasetEvents(datasetID string, events []DatasetEvent) error {
 	return nil
 }
 
+// ListDatasetsRequest represents the request payload for listing datasets
+type ListDatasetsRequest struct {
+	ProjectID string `json:"project_id,omitempty"`
+	Limit     int    `json:"limit,omitempty"`
+}
+
+// ListDatasetsResponse represents the response from listing datasets
+type ListDatasetsResponse struct {
+	Objects []DatasetInfo `json:"objects"`
+}
+
+// ListDatasets retrieves all datasets for a project
+func ListDatasets(projectID string) ([]DatasetInfo, error) {
+	config := braintrust.GetConfig()
+
+	baseURL, err := url.Parse(config.APIURL)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing base URL: %w", err)
+	}
+
+	endpoint, err := url.Parse("/v1/dataset")
+	if err != nil {
+		return nil, fmt.Errorf("error parsing endpoint: %w", err)
+	}
+
+	fullURL := baseURL.ResolveReference(endpoint)
+
+	// Add query parameters
+	query := fullURL.Query()
+	if projectID != "" {
+		query.Add("project_id", projectID)
+	}
+	fullURL.RawQuery = query.Encode()
+
+	httpReq, err := http.NewRequest("GET", fullURL.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+	httpReq.Header.Set("Authorization", "Bearer "+config.APIKey)
+
+	client := &http.Client{}
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("error making request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	var result ListDatasetsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("error decoding response: %w", err)
+	}
+
+	return result.Objects, nil
+}
+
+// DeleteDataset deletes a dataset by ID
+func DeleteDataset(datasetID string) error {
+	config := braintrust.GetConfig()
+
+	baseURL, err := url.Parse(config.APIURL)
+	if err != nil {
+		return fmt.Errorf("error parsing base URL: %w", err)
+	}
+
+	endpoint, err := url.Parse(fmt.Sprintf("/v1/dataset/%s", datasetID))
+	if err != nil {
+		return fmt.Errorf("error parsing endpoint: %w", err)
+	}
+
+	fullURL := baseURL.ResolveReference(endpoint)
+
+	httpReq, err := http.NewRequest("DELETE", fullURL.String(), nil)
+	if err != nil {
+		return fmt.Errorf("error creating request: %w", err)
+	}
+	httpReq.Header.Set("Authorization", "Bearer "+config.APIKey)
+
+	client := &http.Client{}
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("error making request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	return nil
+}
+
 // Dataset handles fetching raw DatasetEvents from the Braintrust API with pagination
 type Dataset struct {
 	DatasetID string

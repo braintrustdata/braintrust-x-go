@@ -31,10 +31,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"time"
 
 	"go.opentelemetry.io/otel"
 	attr "go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/braintrust/braintrust-x-go/braintrust/api"
@@ -65,13 +67,14 @@ var (
 // Eval is a collection of cases, a task, and a set of scorers. It has two generic types;
 // I is the input type, and R is the result type.
 type Eval[I, R any] struct {
-	experimentID string
-	cases        Cases[I, R]
-	task         Task[I, R]
-	scorers      []Scorer[I, R]
-	tracer       trace.Tracer
-	parent       bttrace.Parent
-	startSpanOpt trace.SpanStartOption
+	experimentID  string
+	cases         Cases[I, R]
+	task          Task[I, R]
+	scorers       []Scorer[I, R]
+	tracer        trace.Tracer
+	parent        bttrace.Parent
+	startSpanOpt  trace.SpanStartOption
+	spanCollector *SpanCollector
 }
 
 // New creates a new eval with the given experiment ID, cases, task, and scorers.
@@ -84,20 +87,25 @@ func New[I, R any](experimentID string, cases Cases[I, R], task Task[I, R], scor
 	startSpanOpt := trace.WithAttributes(parentAttr)
 
 	return &Eval[I, R]{
-		experimentID: experimentID,
-		cases:        cases,
-		task:         task,
-		scorers:      scorers,
-		startSpanOpt: startSpanOpt,
-		parent:       parent,
-		tracer:       otel.GetTracerProvider().Tracer("braintrust.eval"),
+		experimentID:  experimentID,
+		cases:         cases,
+		task:          task,
+		scorers:       scorers,
+		startSpanOpt:  startSpanOpt,
+		parent:        parent,
+		tracer:        otel.GetTracerProvider().Tracer("braintrust.eval"),
+		spanCollector: nil, // Will be set when Run() is called
 	}
 }
 
-// Run runs the eval.
-func (e *Eval[I, R]) Run(ctx context.Context) error {
+// Run runs the eval and returns results with span data and error information.
+func (e *Eval[I, R]) Run(ctx context.Context) (*Result, error) {
+	result := NewResult(e.experimentID)
+	e.spanCollector = NewSpanCollector(result)
+
 	if e.experimentID == "" {
-		return fmt.Errorf("%w: experiment ID is required", ErrEval)
+		err := fmt.Errorf("%w: experiment ID is required", ErrEval)
+		return result, err
 	}
 
 	ctx = bttrace.SetParent(ctx, e.parent)
@@ -108,12 +116,22 @@ func (e *Eval[I, R]) Run(ctx context.Context) error {
 		if done {
 			break
 		}
+		result.TotalCases++
 		if err != nil {
 			errs = append(errs, err)
+			result.ErrorCount++
+		} else {
+			result.SuccessCount++
 		}
 	}
 
-	return errors.Join(errs...)
+	result.EndTime = time.Now()
+	joinedErr := errors.Join(errs...)
+
+	// Build case results from collected spans
+	result.BuildCaseResults()
+
+	return result, joinedErr
 }
 
 // runNextCase runs the next case in the iterator. It returns true if the iterator is
@@ -127,7 +145,15 @@ func (e *Eval[I, R]) runNextCase(ctx context.Context) (done bool, err error) {
 
 	// if we have a case or get an error, we'll create a span.
 	ctx, span := e.tracer.Start(ctx, "eval", e.startSpanOpt)
-	defer span.End()
+	defer func() {
+		span.End()
+		// Collect span data after it ends
+		if e.spanCollector != nil && span != nil {
+			if readOnlySpan, ok := span.(sdktrace.ReadOnlySpan); ok {
+				e.spanCollector.OnEnd(readOnlySpan)
+			}
+		}
+	}()
 
 	// if our case iterator returns an error, we'll wrap it in a more
 	// specific error and short circuit.
@@ -169,7 +195,15 @@ func (e *Eval[I, R]) runCase(ctx context.Context, span trace.Span, c Case[I, R])
 
 func (e *Eval[I, R]) runScorers(ctx context.Context, c Case[I, R], result R) (Scores, error) {
 	ctx, span := e.tracer.Start(ctx, "score", e.startSpanOpt)
-	defer span.End()
+	defer func() {
+		span.End()
+		// Collect span data after it ends
+		if e.spanCollector != nil && span != nil {
+			if readOnlySpan, ok := span.(sdktrace.ReadOnlySpan); ok {
+				e.spanCollector.OnEnd(readOnlySpan)
+			}
+		}
+	}()
 
 	if err := setJSONAttr(span, "braintrust.span_attributes", scoreSpanAttrs); err != nil {
 		return nil, err
@@ -209,7 +243,15 @@ func (e *Eval[I, R]) runScorers(ctx context.Context, c Case[I, R], result R) (Sc
 
 func (e *Eval[I, R]) runTask(ctx context.Context, c Case[I, R]) (R, error) {
 	ctx, span := e.tracer.Start(ctx, "task", e.startSpanOpt)
-	defer span.End()
+	defer func() {
+		span.End()
+		// Collect span data after it ends
+		if e.spanCollector != nil && span != nil {
+			if readOnlySpan, ok := span.(sdktrace.ReadOnlySpan); ok {
+				e.spanCollector.OnEnd(readOnlySpan)
+			}
+		}
+	}()
 	attrs := map[string]any{
 		"braintrust.input_json":      c.Input,
 		"braintrust.expected":        c.Expected,
