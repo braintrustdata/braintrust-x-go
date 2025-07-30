@@ -1,11 +1,9 @@
 
-# Braintrust Go SDK
+# Braintrust Go Tracing & Eval SDK
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/braintrust/braintrust-x-go.svg)](https://pkg.go.dev/github.com/braintrust/braintrust-x-go)
 
 This SDK is currently is in BETA status and APIs may change.
-
-The official Go SDK for [Braintrust](https://www.braintrust.dev), a platform for building reliable AI applications through evaluation, experimentation, and observability.
 
 ## Installation
 
@@ -21,7 +19,7 @@ go get github.com/braintrust/braintrust-x-go
 export BRAINTRUST_API_KEY="your-api-key"
 ```
 
-### Basic Evaluation
+### Evals
 
 ```go
 package main
