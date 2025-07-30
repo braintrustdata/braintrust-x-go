@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/braintrust/braintrust-x-go/braintrust"
+	"github.com/braintrustdata/braintrust-x-go/braintrust"
 )
 
 // DatasetEvent represents a single event/record in a dataset

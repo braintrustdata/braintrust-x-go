@@ -45,8 +45,8 @@ import (
 	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
 	"go.opentelemetry.io/otel/sdk/trace"
 
-	"github.com/braintrust/braintrust-x-go/braintrust"
-	"github.com/braintrust/braintrust-x-go/braintrust/log"
+	"github.com/braintrustdata/braintrust-x-go/braintrust"
+	"github.com/braintrustdata/braintrust-x-go/braintrust/log"
 )
 
 // Quickstart configures OpenTelemetry tracing for Braintrust and provides

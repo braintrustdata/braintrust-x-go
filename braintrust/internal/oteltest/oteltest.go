@@ -16,7 +16,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	oteltrace "go.opentelemetry.io/otel/trace"
 
-	"github.com/braintrust/braintrust-x-go/braintrust/internal"
+	"github.com/braintrustdata/braintrust-x-go/braintrust/internal"
 )
 
 // Setup sets up otel tracing for testing (no sampling, sync, stores spans in memory)

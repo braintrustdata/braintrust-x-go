@@ -11,8 +11,8 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
-	"github.com/braintrust/braintrust-x-go/braintrust/internal/oteltest"
-	"github.com/braintrust/braintrust-x-go/braintrust/trace"
+	"github.com/braintrustdata/braintrust-x-go/braintrust/internal/oteltest"
+	"github.com/braintrustdata/braintrust-x-go/braintrust/trace"
 )
 
 var (

@@ -1,14 +1,14 @@
 
 # Braintrust Go Tracing & Eval SDK
 
-[![Go Reference](https://pkg.go.dev/badge/github.com/braintrust/braintrust-x-go.svg)](https://pkg.go.dev/github.com/braintrust/braintrust-x-go)
+[![Go Reference](https://pkg.go.dev/badge/github.com/braintrustdata/braintrust-x-go.svg)](https://pkg.go.dev/github.com/braintrustdata/braintrust-x-go)
 
 This SDK is currently is in BETA status and APIs may change.
 
 ## Installation
 
 ```bash
-go get github.com/braintrust/braintrust-x-go
+go get github.com/braintrustdata/braintrust-x-go
 ```
 
 ## Quick Start
@@ -28,8 +28,8 @@ import (
     "context"
     "log"
     
-    "github.com/braintrust/braintrust-x-go/braintrust/eval"
-    "github.com/braintrust/braintrust-x-go/braintrust/trace"
+    "github.com/braintrustdata/braintrust-x-go/braintrust/eval"
+    "github.com/braintrustdata/braintrust-x-go/braintrust/trace"
 )
 
 func main() {
@@ -87,8 +87,8 @@ import (
     "github.com/openai/openai-go"
     "github.com/openai/openai-go/option"
     
-    "github.com/braintrust/braintrust-x-go/braintrust/trace"
-    "github.com/braintrust/braintrust-x-go/braintrust/trace/traceopenai"
+    "github.com/braintrustdata/braintrust-x-go/braintrust/trace"
+    "github.com/braintrustdata/braintrust-x-go/braintrust/trace/traceopenai"
 )
 
 func main() {
@@ -118,8 +118,8 @@ import (
     "github.com/anthropics/anthropic-sdk-go"
     "github.com/anthropics/anthropic-sdk-go/option"
     
-    "github.com/braintrust/braintrust-x-go/braintrust/trace"
-    "github.com/braintrust/braintrust-x-go/braintrust/trace/traceanthropic"
+    "github.com/braintrustdata/braintrust-x-go/braintrust/trace"
+    "github.com/braintrustdata/braintrust-x-go/braintrust/trace/traceanthropic"
 )
 
 func main() {
@@ -160,7 +160,7 @@ Check out the [`examples/`](./examples/) directory for complete working examples
 ## Documentation
 
 - [Braintrust Documentation](https://www.braintrust.dev/docs)
-- [API Reference](https://pkg.go.dev/github.com/braintrust/braintrust-x-go)
+- [API Reference](https://pkg.go.dev/github.com/braintrustdata/braintrust-x-go)
 
 ## Contributing
 

@@ -10,9 +10,9 @@ import (
 	"github.com/openai/openai-go/option"
 	"github.com/openai/openai-go/responses"
 
-	"github.com/braintrust/braintrust-x-go/braintrust/eval"
-	"github.com/braintrust/braintrust-x-go/braintrust/trace"
-	"github.com/braintrust/braintrust-x-go/braintrust/trace/traceopenai"
+	"github.com/braintrustdata/braintrust-x-go/braintrust/eval"
+	"github.com/braintrustdata/braintrust-x-go/braintrust/trace"
+	"github.com/braintrustdata/braintrust-x-go/braintrust/trace/traceopenai"
 )
 
 func main() {

@@ -4,8 +4,8 @@ import (
 	"context"
 	"log"
 
-	"github.com/braintrust/braintrust-x-go/braintrust/eval"
-	"github.com/braintrust/braintrust-x-go/braintrust/trace"
+	"github.com/braintrustdata/braintrust-x-go/braintrust/eval"
+	"github.com/braintrustdata/braintrust-x-go/braintrust/trace"
 )
 
 func Example() {

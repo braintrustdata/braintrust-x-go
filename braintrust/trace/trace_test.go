@@ -8,7 +8,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/braintrust/braintrust-x-go/braintrust/internal/oteltest"
+	"github.com/braintrustdata/braintrust-x-go/braintrust/internal/oteltest"
 )
 
 func TestSpanProcessor(t *testing.T) {

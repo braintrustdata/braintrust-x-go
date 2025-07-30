@@ -12,7 +12,7 @@ import (
 
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/braintrust/braintrust-x-go/braintrust/trace/internal"
+	"github.com/braintrustdata/braintrust-x-go/braintrust/trace/internal"
 )
 
 // messagesTracer is a tracer for the anthropic v1/messages POST endpoint.

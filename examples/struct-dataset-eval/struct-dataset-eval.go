@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/braintrust/braintrust-x-go/braintrust/api"
-	"github.com/braintrust/braintrust-x-go/braintrust/autoevals"
-	"github.com/braintrust/braintrust-x-go/braintrust/eval"
-	"github.com/braintrust/braintrust-x-go/braintrust/trace"
+	"github.com/braintrustdata/braintrust-x-go/braintrust/api"
+	"github.com/braintrustdata/braintrust-x-go/braintrust/autoevals"
+	"github.com/braintrustdata/braintrust-x-go/braintrust/eval"
+	"github.com/braintrustdata/braintrust-x-go/braintrust/trace"
 )
 
 // QuestionInput represents the input structure for a question

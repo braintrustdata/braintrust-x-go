@@ -12,7 +12,7 @@ import (
 
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/braintrust/braintrust-x-go/braintrust/trace/internal"
+	"github.com/braintrustdata/braintrust-x-go/braintrust/trace/internal"
 )
 
 // chatCompletionsTracer is a tracer for the openai v1/chat/completions POST endpoint.
