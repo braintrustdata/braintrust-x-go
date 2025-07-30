@@ -1,32 +1,126 @@
 
 # Braintrust Go SDK
 
-## Development Setup
+This SDK is currently is in BETA status and APIs may change.
 
-This project uses [mise](https://mise.jdx.dev/) to manage dependencies, hooks and configure the dev environment. If you want to do it manually,
-install the tools listed in `mise.toml`.
+The official Go SDK for [Braintrust](https://www.braintrust.dev), a platform for building reliable AI applications through evaluation, experimentation, and observability.
 
-
-First, [install mise](https://mise.jdx.dev/installing-mise.html) and then [activate it in your shell](https://mise.jdx.dev/getting-started.html#activate-mise). Now we 
-can start.
+## Installation
 
 ```bash
-# Clone the repo.
-git clone git@github.com:braintrustdata/braintrust-x-go.git
-cd braintrust-x-go
-
-# Install our dependencies.
-mise trust
-mise install
-
-# Setup your env variables 
-cp env.example .env
+go get github.com/braintrust/braintrust-x-go
 ```
 
-## Build, Test and Run
+## Quick Start
 
-All of the common dev tasks are in our `Makefile`.
+### Set up your API key
 
 ```bash
-make help
+export BRAINTRUST_API_KEY="your-api-key"
 ```
+
+### Basic Evaluation
+
+```go
+package main
+
+import (
+    "context"
+    "log"
+    
+    "github.com/braintrust/braintrust-x-go/braintrust/eval"
+)
+
+func main() {
+    // Define your AI function to evaluate
+    myAIFunction := func(ctx context.Context, input string) (string, error) {
+        // Your AI logic here
+        return "some result", nil
+    }
+
+    // Create an evaluation
+    experimentID, err := eval.ResolveProjectExperimentID("my-experiment", "my-project")
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    evaluation := eval.New(experimentID,
+        eval.NewCases([]eval.Case[string, string]{
+            {Input: "test input", Expected: "expected output"},
+        }),
+        myAIFunction,
+        []eval.Scorer[string, string]{
+            // Add your scoring functions here
+        },
+    )
+
+    // Run the evaluation
+    err = evaluation.Run(context.Background())
+    if err != nil {
+        log.Fatal(err)
+    }
+}
+```
+
+### AI Model Tracing
+
+Automatically trace your OpenAI and Anthropic API calls:
+
+```go
+package main
+
+import (
+    "github.com/openai/openai-go"
+    "github.com/openai/openai-go/option"
+    
+    "github.com/braintrust/braintrust-x-go/braintrust/trace"
+    "github.com/braintrust/braintrust-x-go/braintrust/trace/traceopenai"
+)
+
+func main() {
+    // Start tracing
+    teardown, err := trace.Quickstart()
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer teardown()
+
+    // Create OpenAI client with tracing middleware
+    client := openai.NewClient(
+        option.WithMiddleware(traceopenai.Middleware),
+    )
+
+    // Your API calls will now be automatically traced
+    // ...
+}
+```
+
+## Features
+
+- **Evaluations**: Run systematic evaluations of your AI systems with custom scoring functions
+- **Tracing**: Automatic instrumentation for OpenAI and Anthropic API calls
+- **Datasets**: Manage and version your evaluation datasets
+- **Experiments**: Track different versions and configurations of your AI systems
+- **Observability**: Monitor your AI applications in production
+
+## Examples
+
+Check out the [`examples/`](./examples/) directory for complete working examples:
+
+- [`examples/evals/`](./examples/evals/) - Basic evaluation setup
+- [`examples/traceopenai/`](./examples/traceopenai/) - OpenAI tracing
+- [`examples/anthropic-tracer/`](./examples/anthropic-tracer/) - Anthropic tracing
+- [`examples/dataset-eval/`](./examples/dataset-eval/) - Dataset-based evaluations
+
+## Documentation
+
+- [Braintrust Documentation](https://www.braintrust.dev/docs)
+- [API Reference](https://pkg.go.dev/github.com/braintrust/braintrust-x-go)
+
+## Contributing
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for development setup and contribution guidelines.
+
+## License
+
+This project is licensed under the MIT License.
