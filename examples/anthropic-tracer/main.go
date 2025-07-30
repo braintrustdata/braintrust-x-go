@@ -10,10 +10,10 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"go.opentelemetry.io/otel"
 
-	"github.com/braintrust/braintrust-x-go/braintrust"
-	"github.com/braintrust/braintrust-x-go/braintrust/api"
-	"github.com/braintrust/braintrust-x-go/braintrust/trace"
-	"github.com/braintrust/braintrust-x-go/braintrust/trace/traceanthropic"
+	"github.com/braintrustdata/braintrust-x-go/braintrust"
+	"github.com/braintrustdata/braintrust-x-go/braintrust/api"
+	"github.com/braintrustdata/braintrust-x-go/braintrust/trace"
+	"github.com/braintrustdata/braintrust-x-go/braintrust/trace/traceanthropic"
 )
 
 var tracer = otel.Tracer("anthropic-examples")

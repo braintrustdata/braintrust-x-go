@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/braintrust/braintrust-x-go/braintrust"
+	"github.com/braintrustdata/braintrust-x-go/braintrust"
 )
 
 // ExperimentRequest represents the request payload for creating an experiment

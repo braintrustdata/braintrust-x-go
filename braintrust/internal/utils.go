@@ -7,7 +7,7 @@ import (
 	"runtime/debug"
 	"testing"
 
-	"github.com/braintrust/braintrust-x-go/braintrust/log"
+	"github.com/braintrustdata/braintrust-x-go/braintrust/log"
 )
 
 // FailTestsOnWarnings will fail tests if warnings are produced during tests. Currently

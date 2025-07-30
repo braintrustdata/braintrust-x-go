@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/braintrust/braintrust-x-go/braintrust"
+	"github.com/braintrustdata/braintrust-x-go/braintrust"
 )
 
 // ProjectRequest represents the request payload for creating a project

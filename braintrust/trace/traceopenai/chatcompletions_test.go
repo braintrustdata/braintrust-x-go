@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/codes"
 
-	"github.com/braintrust/braintrust-x-go/braintrust/internal/oteltest"
+	"github.com/braintrustdata/braintrust-x-go/braintrust/internal/oteltest"
 )
 
 func TestOpenAIChatCompletions(t *testing.T) {

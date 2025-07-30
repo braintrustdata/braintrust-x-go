@@ -14,7 +14,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"
 
-	"github.com/braintrust/braintrust-x-go/braintrust/internal/oteltest"
+	"github.com/braintrustdata/braintrust-x-go/braintrust/internal/oteltest"
 )
 
 const testModel = "gpt-4o-mini"

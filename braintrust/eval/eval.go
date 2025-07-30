@@ -37,8 +37,8 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/braintrust/braintrust-x-go/braintrust/api"
-	bttrace "github.com/braintrust/braintrust-x-go/braintrust/trace"
+	"github.com/braintrustdata/braintrust-x-go/braintrust/api"
+	bttrace "github.com/braintrustdata/braintrust-x-go/braintrust/trace"
 )
 
 var (

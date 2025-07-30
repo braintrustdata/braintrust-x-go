@@ -18,7 +18,7 @@ import (
 
 	"golang.org/x/exp/constraints"
 
-	"github.com/braintrust/braintrust-x-go/braintrust/eval"
+	"github.com/braintrustdata/braintrust-x-go/braintrust/eval"
 )
 
 // Scorer evaluates the quality of results against expected values.

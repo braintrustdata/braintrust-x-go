@@ -13,7 +13,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/braintrust/braintrust-x-go/braintrust/trace/internal"
+	"github.com/braintrustdata/braintrust-x-go/braintrust/trace/internal"
 )
 
 // responsesTracer is a tracer for the openai v1/responses POST endpoint.
