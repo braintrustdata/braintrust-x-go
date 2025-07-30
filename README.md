@@ -31,28 +31,44 @@ import (
     "log"
     
     "github.com/braintrust/braintrust-x-go/braintrust/eval"
+    "github.com/braintrust/braintrust-x-go/braintrust/trace"
 )
 
 func main() {
+    // Set up tracing
+    teardown, err := trace.Quickstart()
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer teardown()
+
     // Define your AI function to evaluate
-    myAIFunction := func(ctx context.Context, input string) (string, error) {
-        // Your AI logic here
-        return "some result", nil
+    greetingTask := func(ctx context.Context, input string) (string, error) {
+        return "Hello " + input, nil
+    }
+
+    // Define scoring function
+    exactMatch := func(ctx context.Context, input, expected, result string, _ eval.Metadata) (eval.Scores, error) {
+        if expected == result {
+            return eval.S(1.0), nil // Perfect match
+        }
+        return eval.S(0.0), nil // No match
     }
 
     // Create an evaluation
-    experimentID, err := eval.ResolveProjectExperimentID("my-experiment", "my-project")
+    experimentID, err := eval.ResolveProjectExperimentID("greeting-experiment", "my-project")
     if err != nil {
         log.Fatal(err)
     }
 
     evaluation := eval.New(experimentID,
         eval.NewCases([]eval.Case[string, string]{
-            {Input: "test input", Expected: "expected output"},
+            {Input: "World", Expected: "Hello World"},
+            {Input: "Alice", Expected: "Hello Alice"},
         }),
-        myAIFunction,
+        greetingTask,
         []eval.Scorer[string, string]{
-            // Add your scoring functions here
+            eval.NewScorer("exact_match", exactMatch),
         },
     )
 
@@ -64,9 +80,7 @@ func main() {
 }
 ```
 
-### AI Model Tracing
-
-Automatically trace your OpenAI and Anthropic API calls:
+### OpenAI Tracing
 
 ```go
 package main
@@ -92,7 +106,38 @@ func main() {
         option.WithMiddleware(traceopenai.Middleware),
     )
 
-    // Your API calls will now be automatically traced
+    // Your OpenAI API calls will now be automatically traced
+    // ...
+}
+```
+
+### Anthropic Tracing
+
+```go
+package main
+
+import (
+    "github.com/anthropics/anthropic-sdk-go"
+    "github.com/anthropics/anthropic-sdk-go/option"
+    
+    "github.com/braintrust/braintrust-x-go/braintrust/trace"
+    "github.com/braintrust/braintrust-x-go/braintrust/trace/traceanthropic"
+)
+
+func main() {
+    // Start tracing
+    teardown, err := trace.Quickstart()
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer teardown()
+
+    // Create Anthropic client with tracing middleware
+    client := anthropic.NewClient(
+        option.WithMiddleware(traceanthropic.Middleware),
+    )
+
+    // Your Anthropic API calls will now be automatically traced
     // ...
 }
 ```
