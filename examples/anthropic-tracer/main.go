@@ -11,7 +11,6 @@ import (
 	"go.opentelemetry.io/otel"
 
 	"github.com/braintrustdata/braintrust-x-go/braintrust"
-	"github.com/braintrustdata/braintrust-x-go/braintrust/api"
 	"github.com/braintrustdata/braintrust-x-go/braintrust/trace"
 	"github.com/braintrustdata/braintrust-x-go/braintrust/trace/traceanthropic"
 )
@@ -217,12 +216,8 @@ func main() {
 
 	// Initialize braintrust tracing with a specific project
 	projectName := "traceanthropic-example-test"
-	project, err := api.RegisterProject(projectName)
-	if err != nil {
-		log.Fatal(err)
-	}
 
-	opt := braintrust.WithDefaultProjectID(project.ID)
+	opt := braintrust.WithDefaultProject(projectName)
 
 	teardown, err := trace.Quickstart(opt)
 	if err != nil {
@@ -238,16 +233,7 @@ func main() {
 
 	ctx := context.Background()
 
-	// Register experiment
-	experiment, err := api.RegisterExperiment("anthropic-examples", project.ID)
-	if err != nil {
-		log.Fatal(err)
-	}
-
 	// Set the experiment as parent for tracing
-	ctx = trace.SetParent(ctx, trace.NewExperiment(experiment.ID))
-	fmt.Printf("Using project: %s (%s), experiment: %s\n", project.Name, project.ID, experiment.ID)
-
 	ctx, rootSpan := tracer.Start(ctx, "anthropic-examples")
 	defer rootSpan.End()
 

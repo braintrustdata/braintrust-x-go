@@ -100,9 +100,13 @@ func Quickstart(opts ...braintrust.Option) (teardown func(), err error) {
 	// If we have a default project ID, set it on the span processor.
 	spanProcessorOpt := noopSpanProcessorOption()
 	if config.DefaultProjectID != "" {
-		spanProcessorOpt = WithDefaultProjectID(config.DefaultProjectID)
+		parent := Parent{Type: ParentTypeProjectID, ID: config.DefaultProjectID}
+		spanProcessorOpt = WithDefaultParent(parent)
+	} else if config.DefaultProjectName != "" {
+		parent := Parent{Type: ParentTypeProject, ID: config.DefaultProjectName}
+		spanProcessorOpt = WithDefaultParent(parent)
 	} else {
-		log.Debugf("No default project ID set. Untagged spans will be dropped")
+		log.Debugf("No default project ID or name set. Untagged spans will be dropped")
 	}
 
 	tracerOpts := []trace.TracerProviderOption{
@@ -166,44 +170,31 @@ func GetParent(ctx context.Context) (bool, Parent) {
 	return ok, parent
 }
 
+// ParentType is the type of parent.
+type ParentType string
+
+const (
+	// ParentTypeProject is the type of parent that represents a project.
+	ParentTypeProject ParentType = "project_name"
+	// ParentTypeProjectID is the type of parent that represents a project ID.
+	ParentTypeProjectID ParentType = "project_id"
+	// ParentTypeExperimentID is the type of parent that represents an experiment ID.
+	ParentTypeExperimentID ParentType = "experiment_id"
+)
+
 // Parent represents where data goes in Braintrust - a project, an experiment, etc.
-type Parent interface {
-	String() string
+type Parent struct {
+	Type ParentType
+	ID   string
 }
 
-// Project is a parent that represents a project.
-type Project struct {
-	id string
+func (p Parent) valid() bool {
+	return p.Type != "" && p.ID != ""
 }
 
-func (p Project) String() string {
-	return fmt.Sprintf("project_id:%s", p.id)
+func (p Parent) String() string {
+	return fmt.Sprintf("%s:%s", p.Type, p.ID)
 }
-
-var _ Parent = Project{}
-
-// Experiment is a parent that represents an experiment.
-type Experiment struct {
-	ID string
-}
-
-// NewProject creates a new project parent with the given ID.
-// The resulting parent will be formatted as "project_id:{id}".
-func NewProject(id string) Project {
-	return Project{id: id}
-}
-
-// NewExperiment creates a new experiment parent with the given ID.
-// The resulting parent will be formatted as "experiment_id:{id}".
-func NewExperiment(id string) Experiment {
-	return Experiment{ID: id}
-}
-
-func (e Experiment) String() string {
-	return fmt.Sprintf("experiment_id:%s", e.ID)
-}
-
-var _ Parent = Experiment{}
 
 // SpanProcessor is an OTel span processor that labels spans with their parent key.
 // It must be included in the OTel pipeline to send data to Braintrust.
@@ -212,8 +203,8 @@ type SpanProcessor interface {
 }
 
 type spanProcessor struct {
-	defaultProjectID string
-	defaultAttr      attribute.KeyValue
+	defaultParent Parent
+	defaultAttr   attribute.KeyValue
 }
 
 // SpanProcessorOption configures the span processor.
@@ -223,11 +214,11 @@ func noopSpanProcessorOption() SpanProcessorOption {
 	return func(p *spanProcessor) {}
 }
 
-// WithDefaultProjectID sets the default project ID for spans created during the session.
-func WithDefaultProjectID(projectID string) SpanProcessorOption {
-	log.Debugf("Setting default project ID: %s", projectID)
+// WithDefaultParent sets the default parent for all spans that don't explicitly have one.
+func WithDefaultParent(parent Parent) SpanProcessorOption {
+	log.Debugf("Setting default parent: %s:%s", parent.Type, parent.ID)
 	return func(p *spanProcessor) {
-		p.defaultProjectID = projectID
+		p.defaultParent = parent
 	}
 }
 
@@ -238,8 +229,8 @@ func NewSpanProcessor(opts ...SpanProcessorOption) SpanProcessor {
 		opt(p)
 	}
 
-	if p.defaultProjectID != "" {
-		p.defaultAttr = attribute.String(ParentOtelAttrKey, NewProject(p.defaultProjectID).String())
+	if p.defaultParent.valid() {
+		p.defaultAttr = attribute.String(ParentOtelAttrKey, p.defaultParent.String())
 	}
 
 	return p
@@ -265,9 +256,9 @@ func (p *spanProcessor) OnStart(ctx context.Context, span trace.ReadWriteSpan) {
 	}
 
 	// otherwise use the default parent
-	if p.defaultProjectID != "" {
+	if p.defaultParent.valid() {
 		span.SetAttributes(p.defaultAttr)
-		log.Debugf("SpanProcessor.OnStart: setting default parent: %s", p.defaultProjectID)
+		log.Debugf("SpanProcessor.OnStart: setting default parent: %s", p.defaultParent)
 	}
 }
 

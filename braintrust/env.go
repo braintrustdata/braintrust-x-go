@@ -16,6 +16,13 @@ func WithDefaultProjectID(projectID string) Option {
 	}
 }
 
+// WithDefaultProject sets the default project name for spans created during the session.
+func WithDefaultProject(projectName string) Option {
+	return func(c *Config) {
+		c.DefaultProjectName = projectName
+	}
+}
+
 // WithAPIKey sets the API key for the Braintrust SDK.
 func WithAPIKey(apiKey string) Option {
 	return func(c *Config) {
@@ -29,6 +36,7 @@ type Config struct {
 	APIURL                string
 	AppURL                string
 	DefaultProjectID      string
+	DefaultProjectName    string
 	EnableTraceConsoleLog bool
 }
 
@@ -65,6 +73,7 @@ func GetConfig(opts ...Option) Config {
 		APIURL:                getEnvString("BRAINTRUST_API_URL", "https://api.braintrust.dev"),
 		AppURL:                getEnvString("BRAINTRUST_APP_URL", "https://www.braintrust.dev"),
 		DefaultProjectID:      getEnvString("BRAINTRUST_DEFAULT_PROJECT_ID", ""),
+		DefaultProjectName:    getEnvString("BRAINTRUST_DEFAULT_PROJECT", "default-go-project"),
 		EnableTraceConsoleLog: getEnvBool("BRAINTRUST_ENABLE_TRACE_CONSOLE_LOG", false),
 	}
 	for _, opt := range opts {

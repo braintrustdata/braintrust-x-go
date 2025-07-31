@@ -10,8 +10,6 @@ import (
 	"github.com/openai/openai-go/option"
 	"github.com/openai/openai-go/responses"
 
-	"github.com/braintrustdata/braintrust-x-go/braintrust"
-	"github.com/braintrustdata/braintrust-x-go/braintrust/api"
 	"github.com/braintrustdata/braintrust-x-go/braintrust/trace"
 	"github.com/braintrustdata/braintrust-x-go/braintrust/trace/traceopenai"
 
@@ -279,16 +277,7 @@ func main() {
 	fmt.Println("🧠 Braintrust OpenAI Tracing Examples")
 	fmt.Println("=====================================")
 
-	// initialize braintrust tracing with a specific project
-	projectName := "traceopenai-example-go"
-	project, err := api.RegisterProject(projectName)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	opt := braintrust.WithDefaultProjectID(project.ID)
-
-	teardown, err := trace.Quickstart(opt)
+	teardown, err := trace.Quickstart()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -300,16 +289,6 @@ func main() {
 	)
 
 	ctx := context.Background()
-
-	// Register experiment
-	experiment, err := api.RegisterExperiment("openai-examples", project.ID)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// Set the experiment as parent for tracing
-	ctx = trace.SetParent(ctx, trace.NewExperiment(experiment.ID))
-	fmt.Printf("Using project: %s (%s), experiment: %s\n", project.Name, project.ID, experiment.ID)
 
 	ctx, rootSpan := tracer.Start(ctx, "openai-examples")
 	defer rootSpan.End()
