@@ -11,10 +11,18 @@ import (
 	"github.com/braintrustdata/braintrust-x-go/braintrust/internal/oteltest"
 )
 
+func newProjectIDParent(projectID string) Parent {
+	return Parent{Type: ParentTypeProjectID, ID: projectID}
+}
+
+func newProjectNameParent(projectName string) Parent {
+	return Parent{Type: ParentTypeProject, ID: projectName}
+}
+
 func TestSpanProcessor(t *testing.T) {
 	assert := assert.New(t)
 
-	processor := NewSpanProcessor(WithDefaultProjectID("12345"))
+	processor := NewSpanProcessor(WithDefaultParent(newProjectIDParent("12345")))
 	tracer, exporter := oteltest.Setup(t, sdktrace.WithSpanProcessor(processor))
 
 	// Assert we use the default parent if none is set.
@@ -27,7 +35,7 @@ func TestSpanProcessor(t *testing.T) {
 
 	// Assert we use the parent from the context if it is set.
 	ctx := t.Context()
-	ctx = SetParent(ctx, Project{id: "67890"})
+	ctx = SetParent(ctx, newProjectIDParent("67890"))
 	_, span2 := tracer.Start(ctx, "test")
 	span2.End()
 	span = exporter.FlushOne()
@@ -35,7 +43,7 @@ func TestSpanProcessor(t *testing.T) {
 
 	// assert that if a span already has a parent, it is not overridden
 	ctx = t.Context()
-	ctx = SetParent(ctx, Project{id: "77777"})
+	ctx = SetParent(ctx, newProjectIDParent("77777"))
 	_, span4 := tracer.Start(ctx, "test", trace.WithAttributes(attribute.String(ParentOtelAttrKey, "project_id:88888")))
 	span4.End()
 	span = exporter.FlushOne()
@@ -54,4 +62,19 @@ func TestSpanProcessorNoDefaultProjectID(t *testing.T) {
 
 	assert.Equal(span.Name(), "test")
 	assert.False(span.HasAttr(ParentOtelAttrKey))
+}
+
+func TestSpanProcessorWithDefaultProjectName(t *testing.T) {
+	assert := assert.New(t)
+
+	processor := NewSpanProcessor(WithDefaultParent(newProjectNameParent("12345")))
+	tracer, exporter := oteltest.Setup(t, sdktrace.WithSpanProcessor(processor))
+
+	// Assert we use the default parent if none is set.
+	_, span1 := tracer.Start(t.Context(), "test")
+	span1.End()
+	span := exporter.FlushOne()
+
+	assert.Equal(span.Name(), "test")
+	span.AssertAttrEquals(ParentOtelAttrKey, "project_name:12345")
 }

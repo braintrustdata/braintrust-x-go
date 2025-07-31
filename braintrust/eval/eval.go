@@ -79,7 +79,7 @@ func New[I, R any](experimentID string, cases Cases[I, R], task Task[I, R], scor
 
 	// Every span created from this eval will have the experiment ID as the parent. This _should_ be done by the SpanProcessor
 	// but just in case a user hasn't set it up, we'll do it again here just in case as it should be idempotent.
-	parent := bttrace.NewExperiment(experimentID)
+	parent := bttrace.Parent{Type: bttrace.ParentTypeExperimentID, ID: experimentID}
 	parentAttr := attr.String(bttrace.ParentOtelAttrKey, parent.String())
 	startSpanOpt := trace.WithAttributes(parentAttr)
 
@@ -436,4 +436,9 @@ func (s *typedDatasetIterator[InputType, ExpectedType]) Next() (Case[InputType, 
 		Input:    fullEvent.Input,
 		Expected: fullEvent.Expected,
 	}, nil
+}
+
+// newParent creates a new parent with the given experiment ID.
+func newParent(experimentID string) bttrace.Parent {
+	return bttrace.Parent{Type: bttrace.ParentTypeExperimentID, ID: experimentID}
 }
