@@ -437,8 +437,3 @@ func (s *typedDatasetIterator[InputType, ExpectedType]) Next() (Case[InputType, 
 		Expected: fullEvent.Expected,
 	}, nil
 }
-
-// newParent creates a new parent with the given experiment ID.
-func newParent(experimentID string) bttrace.Parent {
-	return bttrace.Parent{Type: bttrace.ParentTypeExperimentID, ID: experimentID}
-}

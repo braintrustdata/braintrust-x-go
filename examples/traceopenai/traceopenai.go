@@ -10,7 +10,6 @@ import (
 	"github.com/openai/openai-go/option"
 	"github.com/openai/openai-go/responses"
 
-	"github.com/braintrustdata/braintrust-x-go/braintrust"
 	"github.com/braintrustdata/braintrust-x-go/braintrust/trace"
 	"github.com/braintrustdata/braintrust-x-go/braintrust/trace/traceopenai"
 
@@ -278,12 +277,7 @@ func main() {
 	fmt.Println("🧠 Braintrust OpenAI Tracing Examples")
 	fmt.Println("=====================================")
 
-	// initialize braintrust tracing with a specific project
-	projectName := "traceopenai-example-go"
-
-	opt := braintrust.WithDefaultProject(projectName)
-
-	teardown, err := trace.Quickstart(opt)
+	teardown, err := trace.Quickstart()
 	if err != nil {
 		log.Fatal(err)
 	}

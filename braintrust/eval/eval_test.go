@@ -765,7 +765,11 @@ func TestEval_BraintrustParentWithAndWithoutDefaultProject(t *testing.T) {
 			if tt.withProcessor {
 				spanProcessorOpts := []trace.SpanProcessorOption{}
 				if tt.projectID != "" {
-					spanProcessorOpts = append(spanProcessorOpts, trace.WithDefaultProjectID(tt.projectID))
+					parent := trace.Parent{
+						Type: trace.ParentTypeProjectID,
+						ID:   tt.projectID,
+					}
+					spanProcessorOpts = append(spanProcessorOpts, trace.WithDefaultParent(parent))
 				}
 				processor := trace.NewSpanProcessor(spanProcessorOpts...)
 				opts = append(opts, sdktrace.WithSpanProcessor(processor))

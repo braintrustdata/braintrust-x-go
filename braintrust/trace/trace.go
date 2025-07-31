@@ -214,6 +214,7 @@ func noopSpanProcessorOption() SpanProcessorOption {
 	return func(p *spanProcessor) {}
 }
 
+// WithDefaultParent sets the default parent for all spans that don't explicitly have one.
 func WithDefaultParent(parent Parent) SpanProcessorOption {
 	log.Debugf("Setting default parent: %s:%s", parent.Type, parent.ID)
 	return func(p *spanProcessor) {
