@@ -32,22 +32,16 @@ func main() {
 		{Input: "test", Expected: "test"},
 	}
 
-	// Try to create online scorer - will fail for non-existent function
+	// Get online scorer - fail if it's not available
 	onlineScorer, err := functions.GetScorer[string, string]("test-go-functions", "fail-scorer-d879")
 	if err != nil {
-		log.Printf("⚠️ Failed to create online scorer: %v", err)
-		log.Println("📝 Continuing with local scorers only...")
+		log.Fatalf("❌ Failed to create online scorer: %v", err)
 	}
 
-	// Build scorers list
+	// Build scorers list with both local and online scorers
 	scorers := []eval.Scorer[string, string]{
 		autoevals.NewEquals[string, string](),
-	}
-
-	// Add online scorer if it was created successfully
-	if onlineScorer != nil {
-		scorers = append(scorers, onlineScorer)
-		log.Println("✅ Online scorer added successfully")
+		onlineScorer,
 	}
 
 	// Create evaluation
