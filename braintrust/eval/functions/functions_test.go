@@ -3,80 +3,139 @@ package functions
 import (
 	"testing"
 
-	"github.com/braintrustdata/braintrust-x-go/braintrust/eval"
+	"github.com/stretchr/testify/assert"
 )
 
-func TestGetScorer_BasicUsage(t *testing.T) {
-	// Test GetScorer behavior - it may succeed or fail depending on whether the function exists
-	scorer, err := GetScorer[string, string]("test-go-functions", "fail-scorer-d879")
+const testProjectName = "test-go-functions"
 
-	if err != nil {
-		// Function doesn't exist - should return nil scorer
-		if scorer != nil {
-			t.Fatal("Expected nil scorer when error occurs")
-		}
-		t.Logf("Function resolution failed as expected: %v", err)
-	} else {
-		// Function exists - should return valid scorer
-		if scorer == nil {
-			t.Fatal("Expected non-nil scorer when no error occurs")
-		}
-		t.Log("Function resolution succeeded")
-	}
+func TestScorerFunctionality(t *testing.T) {
+	assert := assert.New(t)
+	functionData := map[string]any{"type": "prompt"}
+
+	// Create a test function
+	functionID, err := createFunction(testProjectName, "Test Scorer Function", "test-scorer-functionality", "A test function to verify all scorer functionality", functionData)
+	assert.NoError(err)
+	assert.NotEmpty(functionID)
+
+	// Test GetScorer
+	scorer, err := GetScorer[string, string](testProjectName, "test-scorer-functionality")
+	assert.NoError(err)
+	assert.NotNil(scorer)
+	assert.Equal("Test Scorer Function", scorer.Name())
+
+	// Test QueryScorer with different option patterns
+	queryScorer, err := QueryScorer[string, string](Opts{ProjectName: testProjectName, Slug: "test-scorer-functionality"})
+	assert.NoError(err)
+	assert.NotNil(queryScorer)
+	assert.Equal("Test Scorer Function", queryScorer.Name())
+
+	// Test QueryScorer with function ID directly (uses function ID as name)
+	queryScorer2, err := QueryScorer[string, string](Opts{FunctionID: functionID})
+	assert.NoError(err)
+	assert.NotNil(queryScorer2)
+	assert.Equal(functionID, queryScorer2.Name()) // When using function ID directly, name = ID
+
+	// Test QueryScorers
+	scorers, err := QueryScorers[string, string](Opts{ProjectName: testProjectName, Slug: "test-scorer-functionality", Limit: 1})
+	assert.NoError(err)
+	assert.Len(scorers, 1)
+	assert.Equal("Test Scorer Function", scorers[0].Name())
 }
 
-func TestGetScorer_Name(t *testing.T) {
-	// Skip this test since we expect resolution to fail
-	t.Skip("Skipping name test - requires successful resolution")
-}
-
-func TestGetScorer_Run(t *testing.T) {
-	// Skip this test if we don't have a valid function ID to test with
-	t.Skip("Skipping integration test - need valid function UUID")
-
-	scorer, err := GetScorer[string, string]("test-go-functions", "fail-scorer-d879")
-	if err != nil {
-		t.Fatalf("GetScorer failed: %v", err)
+func TestScorerRun(t *testing.T) {
+	assert := assert.New(t)
+	promptData := map[string]any{
+		"parser": map[string]any{
+			"type": "llm_classifier", "use_cot": true,
+			"choice_scores": map[string]any{"fail": 0.31, "pass": 0.32, "mid": 0.33},
+		},
+		"prompt": map[string]any{
+			"type": "chat",
+			"messages": []map[string]any{
+				{"role": "system", "content": "You are a scorer. Evaluate the input and output."},
+				{"role": "user", "content": "Choose 'pass' if the output is good, 'mid' if it's okay, 'fail' if it's bad. For this test, always choose 'pass'."},
+			},
+		},
+		"options": map[string]any{
+			"model":  "gpt-4",
+			"params": map[string]any{"use_cache": true, "temperature": 0},
+		},
 	}
 
-	ctx := t.Context()
-	input := "What is 2+2?"
-	expected := "4"
-	result := "The answer is: What is 2+2?"
-	metadata := eval.Metadata{"test": "value"}
+	functionID, err := createFunctionWithPromptData(testProjectName, "Test Go Scorer Copy", "test-go-scorer-copy", "A test scorer copied from fail-scorer structure", promptData)
+	assert.NoError(err)
+	assert.NotEmpty(functionID)
 
-	scores, err := scorer.Run(ctx, input, expected, result, metadata)
-	if err != nil {
-		t.Fatalf("scorer.Run failed: %v", err)
-	}
+	scorer, err := GetScorer[string, string](testProjectName, "test-go-scorer-copy")
+	assert.NoError(err)
 
-	if len(scores) == 0 {
-		t.Fatal("expected at least one score, got none")
-	}
+	scores, err := scorer.Run(t.Context(), "test input", "expected output", "actual output", map[string]any{"test": "value"})
+	assert.NoError(err)
+	assert.Len(scores, 1) // Assert we received exactly one score
 
-	// Should return a score between 0 and 1
 	score := scores[0]
-	if score.Score < 0 || score.Score > 1 {
-		t.Errorf("expected score between 0 and 1, got %f", score.Score)
-	}
+	assert.Equal("Test Go Scorer Copy", score.Name)
+	assert.True(score.Score >= 0.31)
+	assert.True(score.Score <= 0.33)
+}
+
+func TestVersionHandling(t *testing.T) {
+	assert := assert.New(t)
+	functionData := map[string]any{"type": "prompt"}
+
+	// Create first version
+	functionID1, err := createFunction(testProjectName, "Version Test v1", "test-version-handling", "First version", functionData)
+	assert.NoError(err)
+	assert.NotEmpty(functionID1)
+
+	// Verify first version is accessible
+	scorer1, err := GetScorer[string, string](testProjectName, "test-version-handling")
+	assert.NoError(err)
+	assert.Equal("Version Test v1", scorer1.Name())
+
+	// Create second version (same slug, different name) - this should replace the first
+	functionID2, err := createFunction(testProjectName, "Version Test v2", "test-version-handling", "Second version - updated", functionData)
+	assert.NoError(err)
+	assert.NotEmpty(functionID2)
+	// Note: API uses "create or replace" behavior, so same slug = same function ID
+
+	// GetScorer should return the updated version (v2)
+	scorer2, err := GetScorer[string, string](testProjectName, "test-version-handling")
+	assert.NoError(err)
+	assert.Equal("Version Test v2", scorer2.Name())
+
+	// QueryScorer should also return the updated version (v2)
+	queryScorer, err := QueryScorer[string, string](Opts{ProjectName: testProjectName, Slug: "test-version-handling"})
+	assert.NoError(err)
+	assert.Equal("Version Test v2", queryScorer.Name())
+
+	// QueryScorers should return the updated function
+	scorers, err := QueryScorers[string, string](Opts{ProjectName: testProjectName, Slug: "test-version-handling"})
+	assert.NoError(err)
+	assert.Len(scorers, 1) // Should be exactly one function (replaced, not versioned)
+	assert.Equal("Version Test v2", scorers[0].Name())
+
+	// Test that we can create functions with different slugs and query multiple
+	functionID3, err := createFunction(testProjectName, "Another Function", "test-version-handling-2", "Different slug", functionData)
+	assert.NoError(err)
+	assert.NotEmpty(functionID3)
+
+	// QueryScorers with project name should return multiple functions
+	allProjectScorers, err := QueryScorers[string, string](Opts{ProjectName: testProjectName, Limit: 10})
+	assert.NoError(err)
+	assert.GreaterOrEqual(len(allProjectScorers), 2) // At least our two test functions
 }
 
 func TestGetScorer_DifferentTypes(t *testing.T) {
-	// Test with different generic types - should return error
+	assert := assert.New(t)
 	type CustomInput struct {
 		Question string `json:"question"`
 	}
-
 	type CustomOutput struct {
 		Answer string `json:"answer"`
 	}
 
-	scorer, err := GetScorer[CustomInput, CustomOutput]("test-project", "custom-scorer")
-
-	if err == nil {
-		t.Fatal("Expected error for non-existent function")
-	}
-	if scorer != nil {
-		t.Fatal("Expected nil scorer when error occurs")
-	}
+	scorer, err := GetScorer[CustomInput, CustomOutput](testProjectName, "non-existent-scorer")
+	assert.Error(err)
+	assert.Nil(scorer)
 }

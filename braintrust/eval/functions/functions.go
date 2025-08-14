@@ -1,4 +1,5 @@
-// Package functions provides functionality for invoking remote Braintrust functions as scorers.
+// Package functions provides functionality for invoking remote Braintrust
+// functions and scorers.
 package functions
 
 import (
@@ -83,7 +84,7 @@ type Opts struct {
 	Limit   int    // Max results (default: no limit for QueryScorers)
 }
 
-// Function represents a function from the API
+// Function represents a Braintrust function.
 type Function struct {
 	ID           string `json:"id"`
 	ProjectID    string `json:"project_id"`
@@ -98,7 +99,8 @@ func queryFunctions(opts Opts) ([]Function, error) {
 	if opts.FunctionID != "" {
 		return []Function{{
 			ID:   opts.FunctionID,
-			Slug: opts.FunctionID, // Use ID as name fallback
+			Name: opts.FunctionID, // Use ID as name
+			Slug: opts.FunctionID, // Use ID as slug fallback
 		}}, nil
 	}
 
@@ -164,6 +166,180 @@ func queryFunctions(opts Opts) ([]Function, error) {
 	}
 
 	return response.Objects, nil
+}
+
+// createFunction creates a new function via the Braintrust API
+func createFunction(projectName, name, slug, description string, functionData map[string]any) (string, error) {
+	config := braintrust.GetConfig()
+	if config.APIKey == "" {
+		return "", fmt.Errorf("BRAINTRUST_API_KEY is required")
+	}
+
+	// First resolve project name to project ID
+	projectID, err := resolveProjectID(projectName)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve project ID: %w", err)
+	}
+
+	// Build the request payload
+	payload := map[string]any{
+		"project_id":    projectID,
+		"name":          name,
+		"slug":          slug,
+		"function_type": "scorer",
+		"function_data": functionData,
+	}
+
+	if description != "" {
+		payload["description"] = description
+	}
+
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal payload: %w", err)
+	}
+
+	// Create the API request
+	url := fmt.Sprintf("%s/v1/function", config.APIURL)
+	req, err := http.NewRequest("POST", url, bytes.NewReader(payloadBytes))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+config.APIKey)
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to make request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	// Parse the response
+	var createdFunction Function
+	if err := json.NewDecoder(resp.Body).Decode(&createdFunction); err != nil {
+		return "", fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return createdFunction.ID, nil
+}
+
+// createFunctionWithPromptData creates a function with full prompt_data structure
+func createFunctionWithPromptData(projectName, name, slug, description string, promptData map[string]any) (string, error) {
+	config := braintrust.GetConfig()
+	if config.APIKey == "" {
+		return "", fmt.Errorf("BRAINTRUST_API_KEY is required")
+	}
+
+	// First resolve project name to project ID
+	projectID, err := resolveProjectID(projectName)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve project ID: %w", err)
+	}
+
+	// Build the request payload with prompt_data
+	payload := map[string]any{
+		"project_id":    projectID,
+		"name":          name,
+		"slug":          slug,
+		"function_type": "scorer",
+		"function_data": map[string]any{
+			"type": "prompt",
+		},
+		"prompt_data": promptData,
+	}
+
+	if description != "" {
+		payload["description"] = description
+	}
+
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal payload: %w", err)
+	}
+
+	// Create the API request
+	url := fmt.Sprintf("%s/v1/function", config.APIURL)
+	req, err := http.NewRequest("POST", url, bytes.NewReader(payloadBytes))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+config.APIKey)
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to make request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	// Parse the response
+	var createdFunction Function
+	if err := json.NewDecoder(resp.Body).Decode(&createdFunction); err != nil {
+		return "", fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return createdFunction.ID, nil
+}
+
+// resolveProjectID resolves a project name to a project ID via the Braintrust API
+func resolveProjectID(projectName string) (string, error) {
+	config := braintrust.GetConfig()
+	if config.APIKey == "" {
+		return "", fmt.Errorf("BRAINTRUST_API_KEY is required")
+	}
+
+	// Query projects API to find project by name
+	url := fmt.Sprintf("%s/v1/project?project_name=%s", config.APIURL, projectName)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+config.APIKey)
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to make request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	// Parse the response
+	var response struct {
+		Objects []struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+		} `json:"objects"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		return "", fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	if len(response.Objects) == 0 {
+		return "", fmt.Errorf("project not found: %s", projectName)
+	}
+
+	return response.Objects[0].ID, nil
 }
 
 type functionScorer[I, R any] struct {
