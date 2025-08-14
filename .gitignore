@@ -42,6 +42,7 @@ examples/traceopenai/traceopenai
 /evals
 /struct-dataset-eval
 /traceopenai
+/scorers
 
 **/.claude/settings.local.json
 *.DS_Store
