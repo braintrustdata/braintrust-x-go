@@ -66,3 +66,28 @@ func RegisterProject(name string) (*Project, error) {
 
 	return &result, nil
 }
+
+// DeleteProject deletes a project by its ID
+func DeleteProject(projectID string) error {
+	config := braintrust.GetConfig()
+
+	url := fmt.Sprintf("%s/v1/project/%s", config.APIURL, projectID)
+	httpReq, err := http.NewRequest("DELETE", url, nil)
+	if err != nil {
+		return fmt.Errorf("error creating request: %w", err)
+	}
+	httpReq.Header.Set("Authorization", "Bearer "+config.APIKey)
+
+	client := &http.Client{}
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("error making request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	return nil
+}

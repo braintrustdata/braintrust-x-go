@@ -268,7 +268,10 @@ Reply with just a decimal number between 0 and 1.`, input, expected, result)
 		}),
 	}
 
-	cases := eval.QueryDataset[string, string](datasetID)
+	cases, err := eval.GetDatasetByID[string, string](datasetID)
+	if err != nil {
+		panic(fmt.Errorf("failed to get dataset: %w", err))
+	}
 
 	experimentID, err := eval.ResolveProjectExperimentID("Dataset QA", "Kitchen Sink")
 	if err != nil {

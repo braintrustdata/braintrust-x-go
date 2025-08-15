@@ -407,33 +407,3 @@ func ResolveProjectExperimentID(name string, projectName string) (string, error)
 	}
 	return ResolveExperimentID(name, project.ID)
 }
-
-// QueryDataset queries a dataset from the Braintrust server and returns a Cases iterator that unmarshals
-// the dataset JSON into the given input and expected types.
-func QueryDataset[InputType, ExpectedType any](datasetID string) Cases[InputType, ExpectedType] {
-	return &typedDatasetIterator[InputType, ExpectedType]{
-		dataset: api.NewDataset(datasetID),
-	}
-}
-
-type typedDatasetIterator[InputType, ExpectedType any] struct {
-	dataset *api.Dataset
-}
-
-func (s *typedDatasetIterator[InputType, ExpectedType]) Next() (Case[InputType, ExpectedType], error) {
-	var fullEvent struct {
-		Input    InputType    `json:"input"`
-		Expected ExpectedType `json:"expected"`
-	}
-
-	err := s.dataset.NextAs(&fullEvent)
-	if err != nil {
-		var zero Case[InputType, ExpectedType]
-		return zero, err
-	}
-
-	return Case[InputType, ExpectedType]{
-		Input:    fullEvent.Input,
-		Expected: fullEvent.Expected,
-	}, nil
-}
