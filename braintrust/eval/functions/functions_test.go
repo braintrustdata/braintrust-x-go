@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 const testProjectName = "test-go-functions"
@@ -14,8 +15,8 @@ func TestScorerFunctionality(t *testing.T) {
 
 	// Create a test function
 	functionID, err := createFunction(testProjectName, "Test Scorer Function", "test-scorer-functionality", "A test function to verify all scorer functionality", functionData)
-	assert.NoError(err)
-	assert.NotEmpty(functionID)
+	require.NoError(t, err)
+	require.NotEmpty(t, functionID)
 
 	// Test GetScorer
 	scorer, err := GetScorer[string, string](testProjectName, "test-scorer-functionality")
@@ -63,8 +64,8 @@ func TestScorerRun(t *testing.T) {
 	}
 
 	functionID, err := createFunctionWithPromptData(testProjectName, "Test Go Scorer Copy", "test-go-scorer-copy", "A test scorer copied from fail-scorer structure", promptData)
-	assert.NoError(err)
-	assert.NotEmpty(functionID)
+	require.NoError(t, err)
+	require.NotEmpty(t, functionID)
 
 	scorer, err := GetScorer[string, string](testProjectName, "test-go-scorer-copy")
 	assert.NoError(err)
@@ -85,8 +86,8 @@ func TestVersionHandling(t *testing.T) {
 
 	// Create first version
 	functionID1, err := createFunction(testProjectName, "Version Test v1", "test-version-handling", "First version", functionData)
-	assert.NoError(err)
-	assert.NotEmpty(functionID1)
+	require.NoError(t, err)
+	require.NotEmpty(t, functionID1)
 
 	// Verify first version is accessible
 	scorer1, err := GetScorer[string, string](testProjectName, "test-version-handling")
