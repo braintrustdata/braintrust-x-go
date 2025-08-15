@@ -12,6 +12,7 @@ import (
 	"net/url"
 
 	"github.com/braintrustdata/braintrust-x-go/braintrust"
+	"github.com/braintrustdata/braintrust-x-go/braintrust/api"
 	"github.com/braintrustdata/braintrust-x-go/braintrust/eval"
 )
 
@@ -175,11 +176,12 @@ func createFunction(projectName, name, slug, description string, functionData ma
 		return "", fmt.Errorf("BRAINTRUST_API_KEY is required")
 	}
 
-	// First resolve project name to project ID
-	projectID, err := resolveProjectID(projectName)
+	// Register/get project
+	project, err := api.RegisterProject(projectName)
 	if err != nil {
-		return "", fmt.Errorf("failed to resolve project ID: %w", err)
+		return "", fmt.Errorf("failed to register project: %w", err)
 	}
+	projectID := project.ID
 
 	// Build the request payload
 	payload := map[string]any{
@@ -237,11 +239,12 @@ func createFunctionWithPromptData(projectName, name, slug, description string, p
 		return "", fmt.Errorf("BRAINTRUST_API_KEY is required")
 	}
 
-	// First resolve project name to project ID
-	projectID, err := resolveProjectID(projectName)
+	// Register/get project
+	project, err := api.RegisterProject(projectName)
 	if err != nil {
-		return "", fmt.Errorf("failed to resolve project ID: %w", err)
+		return "", fmt.Errorf("failed to register project: %w", err)
 	}
+	projectID := project.ID
 
 	// Build the request payload with prompt_data
 	payload := map[string]any{
@@ -293,53 +296,6 @@ func createFunctionWithPromptData(projectName, name, slug, description string, p
 	}
 
 	return createdFunction.ID, nil
-}
-
-// resolveProjectID resolves a project name to a project ID via the Braintrust API
-func resolveProjectID(projectName string) (string, error) {
-	config := braintrust.GetConfig()
-	if config.APIKey == "" {
-		return "", fmt.Errorf("BRAINTRUST_API_KEY is required")
-	}
-
-	// Query projects API to find project by name
-	url := fmt.Sprintf("%s/v1/project?project_name=%s", config.APIURL, projectName)
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return "", fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Authorization", "Bearer "+config.APIKey)
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("failed to make request: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	// Parse the response
-	var response struct {
-		Objects []struct {
-			ID   string `json:"id"`
-			Name string `json:"name"`
-		} `json:"objects"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
-		return "", fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	if len(response.Objects) == 0 {
-		return "", fmt.Errorf("project not found: %s", projectName)
-	}
-
-	return response.Objects[0].ID, nil
 }
 
 type functionScorer[I, R any] struct {
