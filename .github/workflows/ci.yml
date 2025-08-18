@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go: ["1.21", "1.22", "1.23", "1.24", "1.25"]
+        go: ["1.21", "1.22", "1.23", "1.24"]
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY}}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY}}
@@ -21,11 +21,14 @@ jobs:
         uses: jdx/mise-action@v2
         with:
           install: true # install tools from mise.toml
-      - name: Setup Go ${{ matrix.go }}
+      - name: Override Go version to ${{ matrix.go }}
         run: |
           mise install go@${{ matrix.go }}
-          mise use --pin go@${{ matrix.go }}
+          mise use go@${{ matrix.go }}
+          echo "Active Go version:"
           go version
+          echo "Go path:"
+          which go
 
       - name: Lint, vet, tests, etc.
         run: make ci
