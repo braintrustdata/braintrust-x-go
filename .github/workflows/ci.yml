@@ -24,7 +24,7 @@ jobs:
       - name: Setup Go ${{ matrix.go }}
         run: |
           mise install go@${{ matrix.go }}
-          mise use go@${{ matrix.go }}
+          mise use --pin go@${{ matrix.go }}
           go version
 
       - name: Lint, vet, tests, etc.
