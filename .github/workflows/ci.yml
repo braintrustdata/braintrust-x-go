@@ -21,8 +21,11 @@ jobs:
         uses: jdx/mise-action@v2
         with:
           install: true # install tools from mise.toml
-      - name: Install Go with mise
-        run: mise install go@${{ matrix.go }}
+      - name: Setup Go ${{ matrix.go }}
+        run: |
+          mise install go@${{ matrix.go }}
+          mise use go@${{ matrix.go }}
+          go version
 
       - name: Lint, vet, tests, etc.
         run: make ci
