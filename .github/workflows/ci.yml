@@ -8,6 +8,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go: ["1.21", "1.22", "1.23", "1.24", "1.25"]
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY}}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY}}
@@ -17,7 +20,9 @@ jobs:
       - name: Install mise
         uses: jdx/mise-action@v2
         with:
-          install: true # install our dependencies
+          install: true # install tools from mise.toml
+      - name: Install Go with mise
+        run: mise install go@${{ matrix.go }}
 
       - name: Lint, vet, tests, etc.
         run: make ci
@@ -30,6 +35,6 @@ jobs:
         uses: actions/upload-artifact@v4
         if: success()
         with:
-          name: coverage-report
+          name: coverage-report-go-${{ matrix.go }}
           path: coverage.html
           retention-days: 7
