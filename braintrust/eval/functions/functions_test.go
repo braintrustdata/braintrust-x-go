@@ -1,6 +1,7 @@
 package functions
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -70,7 +71,7 @@ func TestScorerRun(t *testing.T) {
 	scorer, err := GetScorer[string, string](testProjectName, "test-go-scorer-copy")
 	assert.NoError(err)
 
-	scores, err := scorer.Run(t.Context(), "test input", "expected output", "actual output", map[string]any{"test": "value"})
+	scores, err := scorer.Run(context.Background(), "test input", "expected output", "actual output", map[string]any{"test": "value"})
 	assert.NoError(err)
 	assert.Len(scores, 1) // Assert we received exactly one score
 

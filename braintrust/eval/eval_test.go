@@ -48,7 +48,7 @@ func TestEval_TaskErrors(t *testing.T) {
 
 	eval := New("123", NewCases(cases), task, scorers)
 	timer := oteltest.NewTimer()
-	err := eval.Run(t.Context())
+	err := eval.Run(context.Background())
 	timeRange := timer.Tick()
 
 	assert.ErrorIs(err, ErrTaskRun)
@@ -169,7 +169,7 @@ func TestEval_ScorerErrors(t *testing.T) {
 
 	eval := New("123", NewCases(cases), task, scorers)
 	timer := oteltest.NewTimer()
-	err := eval.Run(t.Context())
+	err := eval.Run(context.Background())
 	timeRange := timer.Tick()
 
 	assert.ErrorIs(err, ErrScorer)
@@ -291,7 +291,7 @@ func TestScorerNames(t *testing.T) {
 	cases := []Case[int, int]{{Input: 1, Expected: 1}}
 
 	eval := New("123", NewCases(cases), task, scorers)
-	err := eval.Run(t.Context())
+	err := eval.Run(context.Background())
 	require.NoError(err)
 
 	spans := exporter.Flush()
@@ -359,7 +359,7 @@ func TestHardcodedEval(t *testing.T) {
 
 	eval1 := New(id, NewCases(cases), brokenSquare, scorers)
 	timer := oteltest.NewTimer()
-	err := eval1.Run(t.Context())
+	err := eval1.Run(context.Background())
 	timeRange := timer.Tick()
 	require.NoError(err)
 
@@ -513,7 +513,7 @@ func TestEvalWithCustomGenerator(t *testing.T) {
 	scorers := []Scorer[int, int]{NewEqualsScorer[int, int]()}
 
 	eval := New("test-generator", generator, task, scorers)
-	err := eval.Run(t.Context())
+	err := eval.Run(context.Background())
 	require.NoError(err)
 
 	spans := exporter.Flush()
@@ -544,7 +544,7 @@ func TestEvalWithCasesIteratorError(t *testing.T) {
 
 	eval := New("test-error-generator", generator, task, scorers)
 	timer := oteltest.NewTimer()
-	err := eval.Run(t.Context())
+	err := eval.Run(context.Background())
 	timeRange := timer.Tick()
 
 	// Should return the error from the Cases iterator
@@ -727,7 +727,7 @@ func TestEval_EmptyExperimentID(t *testing.T) {
 	// Create eval with empty experiment ID
 	eval := New("", NewCases(cases), task, scorers)
 	timer := oteltest.NewTimer()
-	err := eval.Run(t.Context())
+	err := eval.Run(context.Background())
 	timeRange := timer.Tick()
 
 	// Should return ErrEval error
@@ -789,7 +789,7 @@ func TestEval_BraintrustParentWithAndWithoutDefaultProject(t *testing.T) {
 			}
 
 			eval := New("test-exp-456", NewCases(cases), task, scorers)
-			err := eval.Run(t.Context())
+			err := eval.Run(context.Background())
 			require.NoError(t, err)
 
 			spans := exporter.Flush()

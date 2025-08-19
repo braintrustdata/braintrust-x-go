@@ -112,8 +112,8 @@ func ExampleNewScorer() {
 		}
 
 		return eval.Scores{
-			{Name: "exact", Score: exactScore},
-			{Name: "close", Score: closeScore},
+			eval.Score{Name: "exact", Score: exactScore},
+			eval.Score{Name: "close", Score: closeScore},
 		}, nil
 	})
 

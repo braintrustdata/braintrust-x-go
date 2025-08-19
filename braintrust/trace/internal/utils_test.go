@@ -43,7 +43,7 @@ func TestBufferedReader(t *testing.T) {
 func TestSetJSONAttr(t *testing.T) {
 	// Create a test tracer and span
 	tracer := otel.GetTracerProvider().Tracer("test")
-	_, span := tracer.Start(t.Context(), "test-span")
+	_, span := tracer.Start(context.Background(), "test-span")
 	defer span.End()
 
 	// Test data
@@ -61,7 +61,7 @@ func TestNoopTracer(t *testing.T) {
 	tracer := NewNoopTracer()
 	assert.NotNil(t, tracer)
 
-	ctx := t.Context()
+	ctx := context.Background()
 	start := time.Now()
 	reader := strings.NewReader("test")
 

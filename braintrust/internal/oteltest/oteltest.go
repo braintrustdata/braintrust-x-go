@@ -41,9 +41,8 @@ func Setup(t *testing.T, opts ...sdktrace.TracerProviderOption) (oteltrace.Trace
 	tracer := otel.GetTracerProvider().Tracer(t.Name())
 
 	t.Cleanup(func() {
-		// withoutcancel is a workaround for usetesting linter which is otherwise
-		// kinda useful https://github.com/ldez/usetesting/issues/4
-		ctx := context.WithoutCancel(t.Context())
+		// Use background context for cleanup
+		ctx := context.Background()
 
 		err := tp.Shutdown(ctx)
 		if err != nil {
