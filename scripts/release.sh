@@ -69,7 +69,7 @@ fi
 COMMIT=$(git rev-parse HEAD)
 SHORT_COMMIT=$(git rev-parse --short HEAD)
 REPO_URL=$(git config --get remote.origin.url | sed 's/git@github.com:/https:\/\/github.com\//' | sed 's/\.git$//')
-LAST_TAG=$(git tag --sort=-version:refname | head -n 1 2>/dev/null || echo "")
+LAST_TAG=$(git tag --sort=-version:refname | grep -v -- '-rc' | head -n 1 2>/dev/null || echo "")
 
 echo "================================================"
 echo " Go SDK Release"
