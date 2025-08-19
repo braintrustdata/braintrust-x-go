@@ -1,6 +1,7 @@
 package traceopenai
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"testing"
@@ -47,7 +48,7 @@ func TestError(t *testing.T) {
 		option.WithMiddleware(errorware),
 	)
 
-	resp, err := client.Responses.New(t.Context(), responses.ResponseNewParams{
+	resp, err := client.Responses.New(context.Background(), responses.ResponseNewParams{
 		Input: responses.ResponseNewParamsInputUnion{OfString: openai.String("hai")},
 		Model: testModel,
 	})
@@ -87,7 +88,7 @@ func TestOpenAIResponsesRequiredParams(t *testing.T) {
 		Model: testModel,
 	}
 
-	resp, err := client.Responses.New(t.Context(), params)
+	resp, err := client.Responses.New(context.Background(), params)
 	timeRange := timer.Tick()
 	require.NoError(err)
 	require.NotNil(resp)
@@ -126,7 +127,7 @@ func TestOpenAIResponsesKitchenSink(t *testing.T) {
 	}
 
 	timer := oteltest.NewTimer()
-	resp, err := client.Responses.New(t.Context(), params)
+	resp, err := client.Responses.New(context.Background(), params)
 	timeRange := timer.Tick()
 	require.NoError(err)
 	require.NotNil(resp)
@@ -163,7 +164,7 @@ func TestOpenAIResponsesStreamingClose(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
-	ctx := t.Context()
+	ctx := context.Background()
 	question := "Can you return me a list of the first 15 fibonacci numbers?"
 
 	stream := client.Responses.NewStreaming(ctx, responses.ResponseNewParams{
@@ -187,7 +188,7 @@ func TestOpenAIResponsesStreaming(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
-	ctx := t.Context()
+	ctx := context.Background()
 	question := "Can you return me a list of the first 15 fibonacci numbers?"
 
 	timer := oteltest.NewTimer()
@@ -240,7 +241,7 @@ func TestOpenAIResponsesWithListInput(t *testing.T) {
 
 	// Call the API
 	timer := oteltest.NewTimer()
-	resp, err := client.Responses.New(t.Context(), params)
+	resp, err := client.Responses.New(context.Background(), params)
 	timeRange := timer.Tick()
 	require.NoError(err)
 	require.NotNil(resp)
@@ -339,7 +340,7 @@ func TestTestOTelTracer(t *testing.T) {
 	assert.Empty(spans)
 
 	tracer := otel.Tracer("test")
-	_, span := tracer.Start(t.Context(), "test")
+	_, span := tracer.Start(context.Background(), "test")
 	span.End()
 
 	spans = exporter.Flush()

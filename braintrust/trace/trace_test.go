@@ -1,6 +1,7 @@
 package trace
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -26,7 +27,7 @@ func TestSpanProcessor(t *testing.T) {
 	tracer, exporter := oteltest.Setup(t, sdktrace.WithSpanProcessor(processor))
 
 	// Assert we use the default parent if none is set.
-	_, span1 := tracer.Start(t.Context(), "test")
+	_, span1 := tracer.Start(context.Background(), "test")
 	span1.End()
 	span := exporter.FlushOne()
 
@@ -34,7 +35,7 @@ func TestSpanProcessor(t *testing.T) {
 	span.AssertAttrEquals(ParentOtelAttrKey, "project_id:12345")
 
 	// Assert we use the parent from the context if it is set.
-	ctx := t.Context()
+	ctx := context.Background()
 	ctx = SetParent(ctx, newProjectIDParent("67890"))
 	_, span2 := tracer.Start(ctx, "test")
 	span2.End()
@@ -42,7 +43,7 @@ func TestSpanProcessor(t *testing.T) {
 	span.AssertAttrEquals(ParentOtelAttrKey, "project_id:67890")
 
 	// assert that if a span already has a parent, it is not overridden
-	ctx = t.Context()
+	ctx = context.Background()
 	ctx = SetParent(ctx, newProjectIDParent("77777"))
 	_, span4 := tracer.Start(ctx, "test", trace.WithAttributes(attribute.String(ParentOtelAttrKey, "project_id:88888")))
 	span4.End()
@@ -56,7 +57,7 @@ func TestSpanProcessorNoDefaultProjectID(t *testing.T) {
 	tracer, exporter := oteltest.Setup(t, sdktrace.WithSpanProcessor(processor))
 
 	// Assert we don't set a parent if none is set.
-	_, span1 := tracer.Start(t.Context(), "test")
+	_, span1 := tracer.Start(context.Background(), "test")
 	span1.End()
 	span := exporter.FlushOne()
 
@@ -71,7 +72,7 @@ func TestSpanProcessorWithDefaultProjectName(t *testing.T) {
 	tracer, exporter := oteltest.Setup(t, sdktrace.WithSpanProcessor(processor))
 
 	// Assert we use the default parent if none is set.
-	_, span1 := tracer.Start(t.Context(), "test")
+	_, span1 := tracer.Start(context.Background(), "test")
 	span1.End()
 	span := exporter.FlushOne()
 

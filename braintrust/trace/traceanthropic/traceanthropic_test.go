@@ -1,6 +1,7 @@
 package traceanthropic
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -104,7 +105,7 @@ func TestMessagesTracer(t *testing.T) {
 		"stream": false
 	}`
 
-	ctx := t.Context()
+	ctx := context.Background()
 	start := time.Now()
 	reader := strings.NewReader(requestBody)
 
@@ -136,7 +137,7 @@ func TestMessagesTracerStreaming(t *testing.T) {
 		"stream": true
 	}`
 
-	ctx := t.Context()
+	ctx := context.Background()
 	start := time.Now()
 	reader := strings.NewReader(requestBody)
 
@@ -236,7 +237,7 @@ func TestMiddlewareIntegration(t *testing.T) {
 
 	// Make a simple API call
 	timer := oteltest.NewTimer()
-	ctx := t.Context()
+	ctx := context.Background()
 	resp, err := client.Messages.New(ctx, anthropic.MessageNewParams{
 		Model: anthropic.Model("claude-3-haiku-20240307"), // Use cheapest model
 		Messages: []anthropic.MessageParam{
@@ -292,7 +293,7 @@ func TestMiddlewareIntegrationStreaming(t *testing.T) {
 
 	// Make a streaming API call
 	timer := oteltest.NewTimer()
-	ctx := t.Context()
+	ctx := context.Background()
 	stream := client.Messages.NewStreaming(ctx, anthropic.MessageNewParams{
 		Model: anthropic.Model("claude-3-haiku-20240307"), // Use cheapest model
 		Messages: []anthropic.MessageParam{

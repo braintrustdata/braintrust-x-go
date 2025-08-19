@@ -1,6 +1,7 @@
 package traceopenai
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -29,7 +30,7 @@ func TestOpenAIChatCompletions(t *testing.T) {
 	}
 
 	timer := oteltest.NewTimer()
-	resp, err := client.Chat.Completions.New(t.Context(), params)
+	resp, err := client.Chat.Completions.New(context.Background(), params)
 	timeRange := timer.Tick()
 	require.NoError(err)
 	require.NotNil(resp)
@@ -116,7 +117,7 @@ func TestOpenAIChatCompletionsStreaming(t *testing.T) {
 	}
 
 	timer := oteltest.NewTimer()
-	stream := client.Chat.Completions.NewStreaming(t.Context(), params)
+	stream := client.Chat.Completions.NewStreaming(context.Background(), params)
 
 	var fullContent string
 	var hasValidChunks bool
@@ -212,7 +213,7 @@ func TestOpenAIChatCompletionsWithTools(t *testing.T) {
 	}
 
 	timer := oteltest.NewTimer()
-	resp, err := client.Chat.Completions.New(t.Context(), params)
+	resp, err := client.Chat.Completions.New(context.Background(), params)
 	timeRange := timer.Tick()
 	require.NoError(err)
 	require.NotNil(resp)
@@ -284,7 +285,7 @@ func TestOpenAIChatCompletionsWithSystemMessage(t *testing.T) {
 	}
 
 	timer := oteltest.NewTimer()
-	resp, err := client.Chat.Completions.New(t.Context(), params)
+	resp, err := client.Chat.Completions.New(context.Background(), params)
 	timeRange := timer.Tick()
 	require.NoError(err)
 	require.NotNil(resp)
@@ -375,7 +376,7 @@ func TestOpenAIChatCompletionsStreamingToolCalls(t *testing.T) {
 	}
 
 	timer := oteltest.NewTimer()
-	stream := client.Chat.Completions.NewStreaming(t.Context(), params)
+	stream := client.Chat.Completions.NewStreaming(context.Background(), params)
 
 	for stream.Next() {
 		chunk := stream.Current()
@@ -721,7 +722,7 @@ func TestChatCompletionsStructuredAssertions(t *testing.T) {
 		MaxTokens:   openai.Int(50),
 	}
 
-	resp, err := client.Chat.Completions.New(t.Context(), params)
+	resp, err := client.Chat.Completions.New(context.Background(), params)
 	require.NoError(err)
 	require.NotNil(resp)
 
@@ -808,7 +809,7 @@ func TestToolCallsStructuredAssertions(t *testing.T) {
 		},
 	}
 
-	stream := client.Chat.Completions.NewStreaming(t.Context(), params)
+	stream := client.Chat.Completions.NewStreaming(context.Background(), params)
 	for stream.Next() {
 		// Just consume the stream
 	}

@@ -7,29 +7,28 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go-version: [1.23.x, 1.24.x, 1.25.x]
+        # FIXME[matt] add windows testing, we need to fix some timing
+        # tests.
+        os: [ubuntu-latest, macos-latest]
     env:
+      CGO_ENABLED: 0
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY}}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY}}
       BRAINTRUST_API_KEY: ${{ secrets.BRAINTRUST_API_KEY}}
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - name: Install mise
-        uses: jdx/mise-action@v2
+      - name: Set up Go
+        uses: actions/setup-go@v5.5.0
         with:
-          install: true # install our dependencies
+          go-version: ${{ matrix.go-version }}
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.1.6
 
       - name: Lint, vet, tests, etc.
-        run: make ci
-
-      - name: Generate coverage report
-        if: success()
-        run: make cover
-
-      - name: Upload coverage report
-        uses: actions/upload-artifact@v4
-        if: success()
-        with:
-          name: coverage-report
-          path: coverage.html
-          retention-days: 7
+        run: make ci cover

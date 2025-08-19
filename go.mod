@@ -1,6 +1,6 @@
 module github.com/braintrustdata/braintrust-x-go
 
-go 1.24.2
+go 1.23.0
 
 require (
 	github.com/anthropics/anthropic-sdk-go v1.4.0
