@@ -1,0 +1,2 @@
+# Disable automatic line ending conversion for Go files
+*.go -text
