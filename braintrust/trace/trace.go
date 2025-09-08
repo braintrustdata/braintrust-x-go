@@ -20,14 +20,17 @@
 //	// ... do work ...
 //	span.End()
 //
-// For existing OpenTelemetry setups, you must add our SpanProcessor to your tracer provider.
+// For existing OpenTelemetry setups, use Enable() to add Braintrust tracing to your tracer provider:
 //
-//	defaultProjectID := "your-project-id"
-//	processor := trace.NewSpanProcessor(defaultProjectID)
-//	tp := sdktrace.NewTracerProvider(
-//		sdktrace.WithSpanProcessor(processor),
-//		// ... your other processors
+//	tp := trace.NewTracerProvider(
+//		// ... your existing processors
 //	)
+//	teardown, err := trace.Enable(tp, trace.WithDefaultProjectID("your-project-id"))
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+//	defer teardown()
+//	otel.SetTracerProvider(tp)
 //
 // For automatic instrumentation of external libraries like OpenAI, see the
 // traceopenai subpackage for ready-to-use middleware.
@@ -49,29 +52,41 @@ import (
 	"github.com/braintrustdata/braintrust-x-go/braintrust/log"
 )
 
-// Quickstart configures OpenTelemetry tracing for Braintrust and provides
-// an easy way of getting up and running if you are new to OpenTelemetry. It
-// returns a teardown function that should be called before your program exits.
+// Enable configures an existing OpenTelemetry tracer provider with Braintrust
+// tracing capabilities. This function adds the necessary span processors and
+// exporters to send trace data to Braintrust.
+//
+// Note: This function does not take ownership of the tracer provider and will
+// not shut it down. The caller is responsible for managing the tracer provider
+// lifecycle.
 //
 // Example:
 //
-//	// Use default project
-//	teardown, err := trace.Quickstart()
+//	// Create your own tracer provider
+//	tp := trace.NewTracerProvider()
 //
-//	// Use specific project
-//	teardown, err := trace.Quickstart(trace.WithDefaultProjectID("my-project"))
-func Quickstart(opts ...braintrust.Option) (teardown func(), err error) {
-
+//	// Enable Braintrust tracing on it
+//	err := trace.Enable(tp)
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+//
+//	// Set it as the global tracer provider
+//	otel.SetTracerProvider(tp)
+//
+//	// You are responsible for shutting down the tracer provider
+//	defer tp.Shutdown(context.Background())
+func Enable(tp *trace.TracerProvider, opts ...braintrust.Option) error {
 	config := braintrust.GetConfig(opts...)
 	url := config.APIURL
 	apiKey := config.APIKey
 
-	log.Debugf("Initializing OpenTelemetry tracer with config: %s", config.String())
+	log.Debugf("Enabling Braintrust tracing with config: %s", config.String())
 
 	// split url and protocol
 	parts := strings.Split(url, "://")
 	if len(parts) != 2 {
-		return nil, fmt.Errorf("invalid url: %s", url)
+		return fmt.Errorf("invalid url: %s", url)
 	}
 	protocol := parts[0]
 	url = parts[1]
@@ -94,7 +109,7 @@ func Quickstart(opts ...braintrust.Option) (teardown func(), err error) {
 		otlptracehttp.NewClient(otelOpts...),
 	)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// If we have a default project ID, set it on the span processor.
@@ -109,10 +124,9 @@ func Quickstart(opts ...braintrust.Option) (teardown func(), err error) {
 		log.Debugf("No default project ID or name set. Untagged spans will be dropped")
 	}
 
-	tracerOpts := []trace.TracerProviderOption{
-		trace.WithBatcher(exporter),
-		trace.WithSpanProcessor(NewSpanProcessor(spanProcessorOpt)),
-	}
+	// Add Braintrust span processor
+	tp.RegisterSpanProcessor(trace.NewBatchSpanProcessor(exporter))
+	tp.RegisterSpanProcessor(NewSpanProcessor(spanProcessorOpt))
 
 	// Add console debug exporter if BRAINTRUST_ENABLE_TRACE_DEBUG_LOG is set
 	if config.EnableTraceConsoleLog {
@@ -120,16 +134,39 @@ func Quickstart(opts ...braintrust.Option) (teardown func(), err error) {
 		if err != nil {
 			log.Warnf("failed to create console exporter: %v", err)
 		} else {
-			tracerOpts = append(tracerOpts, trace.WithBatcher(consoleExporter))
+			tp.RegisterSpanProcessor(trace.NewBatchSpanProcessor(consoleExporter))
 			log.Debugf("OTEL console debug enabled")
 		}
-
 	}
 
-	// Create a tracer provider with all exporters
-	tp := trace.NewTracerProvider(tracerOpts...)
+	return nil
+}
+
+// Quickstart configures OpenTelemetry tracing for Braintrust and provides
+// an easy way of getting up and running if you are new to OpenTelemetry. It
+// returns a teardown function that should be called before your program exits.
+//
+// Example:
+//
+//	// Use default project
+//	teardown, err := trace.Quickstart()
+//
+//	// Use specific project
+//	teardown, err := trace.Quickstart(trace.WithDefaultProjectID("my-project"))
+func Quickstart(opts ...braintrust.Option) (teardown func(), err error) {
+	// Create a tracer provider
+	tp := trace.NewTracerProvider()
+
+	// Enable Braintrust tracing on it
+	err = Enable(tp, opts...)
+	if err != nil {
+		return nil, err
+	}
+
+	// Set it as the global tracer provider
 	otel.SetTracerProvider(tp)
 
+	// Return teardown function that shuts down the tracer provider we created
 	teardown = func() {
 		err := tp.Shutdown(context.Background())
 		if err != nil {
