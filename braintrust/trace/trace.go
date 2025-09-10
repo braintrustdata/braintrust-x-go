@@ -3,7 +3,8 @@
 // This package is built on OpenTelemetry and provides an easy way to integrate
 // Braintrust tracing into your applications.
 //
-// For new applications, use Quickstart() to get up and running quickly:
+// If your application doesn't use OpenTelemetry, use Quickstart() to enable
+// tracing:
 //
 //	// First, set your API key: export BRAINTRUST_API_KEY="your-api-key-here"
 //	teardown, err := trace.Quickstart()
@@ -12,28 +13,25 @@
 //	}
 //	defer teardown()
 //
+// For existing OpenTelemetry setups, use Enable() to add Braintrust to your tracer provider:
+//
+//	tracerProvider := otel.GetTracerProvider()
+//	teardown, err := trace.Enable(tracerProvider)
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+//	defer teardown()
+
 // Once you have the tracer set up, get a tracer instance and create spans:
 //
 //	tracer := otel.Tracer("my-app")
 //	ctx, span := tracer.Start(ctx, "my-operation")
 //	span.SetAttributes(attribute.String("user.id", "123"))
-//	// ... do work ...
 //	span.End()
-//
-// For existing OpenTelemetry setups, use Enable() to add Braintrust tracing to your tracer provider:
-//
-//	tp := trace.NewTracerProvider(
-//		// ... your existing processors
-//	)
-//	teardown, err := trace.Enable(tp, trace.WithDefaultProjectID("your-project-id"))
-//	if err != nil {
-//		log.Fatal(err)
-//	}
-//	defer teardown()
-//	otel.SetTracerProvider(tp)
 //
 // For automatic instrumentation of external libraries like OpenAI, see the
 // traceopenai subpackage for ready-to-use middleware.
+
 package trace
 
 import (
