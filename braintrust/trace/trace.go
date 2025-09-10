@@ -27,7 +27,6 @@
 //
 // For automatic instrumentation of external libraries like OpenAI, see the
 // traceopenai subpackage for ready-to-use middleware.
-
 package trace
 
 import (
@@ -239,10 +238,6 @@ type spanProcessor struct {
 
 // SpanProcessorOption configures the span processor.
 type SpanProcessorOption func(*spanProcessor)
-
-func noopSpanProcessorOption() SpanProcessorOption {
-	return func(p *spanProcessor) {}
-}
 
 // WithDefaultParent sets the default parent for all spans that don't explicitly have one.
 func WithDefaultParent(parent Parent) SpanProcessorOption {

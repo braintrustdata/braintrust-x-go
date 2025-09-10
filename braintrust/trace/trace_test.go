@@ -119,7 +119,8 @@ func TestEnableOptions(t *testing.T) {
 
 			_, span := tp.Tracer("test").Start(context.Background(), "test-span")
 			span.End()
-			tp.ForceFlush(context.Background())
+			err = tp.ForceFlush(context.Background())
+			assert.NoError(t, err)
 
 			span1 := exporter.FlushOne()
 			span1.AssertAttrEquals(ParentOtelAttrKey, tt.wantAttr)

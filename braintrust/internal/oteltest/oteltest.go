@@ -62,6 +62,7 @@ type Exporter struct {
 }
 
 func NewExporter(t *testing.T) *Exporter {
+	t.Helper()
 	return &Exporter{exporter: tracetest.NewInMemoryExporter(), t: t}
 }
 
