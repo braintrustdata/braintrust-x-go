@@ -16,12 +16,8 @@
 // For existing OpenTelemetry setups, use Enable() to add Braintrust to your tracer provider:
 //
 //	tracerProvider := otel.GetTracerProvider()
-//	teardown, err := trace.Enable(tracerProvider)
-//	if err != nil {
-//		log.Fatal(err)
-//	}
-//	defer teardown()
-
+//	err := trace.Enable(tracerProvider)
+//
 // Once you have the tracer set up, get a tracer instance and create spans:
 //
 //	tracer := otel.Tracer("my-app")
