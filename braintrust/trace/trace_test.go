@@ -89,102 +89,71 @@ func TestSpanProcessorWithDefaultProjectName(t *testing.T) {
 	span.AssertAttrEquals(ParentOtelAttrKey, "project_name:12345")
 }
 
-func TestEnable(t *testing.T) {
-	assert := assert.New(t)
-
-	// Test that Enable fails with invalid URL format
+func TestEnableErrors(t *testing.T) {
 	tp := sdktrace.NewTracerProvider()
-
-	// Test with malformed URL (missing protocol separator)
-	err := Enable(tp,
-		braintrust.WithAPIKey("test-api-key"),
-		braintrust.WithAPIURL("invalid-url"),
-	)
-	assert.Error(err)
-	assert.Contains(err.Error(), "invalid url")
-
-	// Test that Enable successfully configures tracer provider with memory exporter
-	tp2 := sdktrace.NewTracerProvider()
 	memoryExporter := tracetest.NewInMemoryExporter()
-	err = Enable(tp2,
-		braintrust.WithDefaultProjectID("test-project-123"),
-		withSpanExporter(memoryExporter),
-	)
-	assert.NoError(err)
 
-	// Create a span and verify it gets the correct attributes
-	tracer := tp2.Tracer("test-tracer")
-	_, span := tracer.Start(context.Background(), "test-span")
-	span.End()
+	err := Enable(tp, braintrust.WithAPIURL("invalid-url"), withSpanExporter(memoryExporter))
+	assert.Error(t, err)
+}
 
-	// Force flush and verify the span was captured with correct attributes
-	err = tp2.ForceFlush(context.Background())
-	assert.NoError(err)
-
-	spans := memoryExporter.GetSpans()
-	assert.Len(spans, 1)
-	if len(spans) > 0 {
-		capturedSpan := spans[0]
-		assert.Equal("test-span", capturedSpan.Name)
-		// Verify the Braintrust span processor added the parent attribute
-		found := false
-		for _, attr := range capturedSpan.Attributes {
-			if string(attr.Key) == ParentOtelAttrKey && attr.Value.AsString() == "project_id:test-project-123" {
-				found = true
-				break
-			}
-		}
-		assert.True(found)
+func TestEnableOptions(t *testing.T) {
+	tests := []struct {
+		name     string
+		opts     []braintrust.Option
+		wantAttr string
+	}{
+		{"project id", []braintrust.Option{braintrust.WithDefaultProjectID("test-123")}, "project_id:test-123"},
+		{"project name", []braintrust.Option{braintrust.WithDefaultProject("test-name")}, "project_name:test-name"},
+		{"no project", []braintrust.Option{}, "project_name:default-go-project"},
 	}
 
-	// Test Enable with project name instead of project ID
-	tp3 := sdktrace.NewTracerProvider()
-	err = Enable(tp3, braintrust.WithDefaultProject("test-project-name"))
-	assert.NoError(err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tp := sdktrace.NewTracerProvider()
+			exporter := oteltest.NewExporter(t)
+			opts := append(tt.opts, withSpanExporter(exporter.InMemoryExporter()))
 
-	// Test Enable without any default project (should still work)
-	tp4 := sdktrace.NewTracerProvider()
-	err = Enable(tp4)
-	assert.NoError(err)
+			err := Enable(tp, opts...)
+			assert.NoError(t, err)
+
+			_, span := tp.Tracer("test").Start(context.Background(), "test-span")
+			span.End()
+			tp.ForceFlush(context.Background())
+
+			span1 := exporter.FlushOne()
+			span1.AssertAttrEquals(ParentOtelAttrKey, tt.wantAttr)
+		})
+	}
 }
 
 func TestEnableWithExistingProcessors(t *testing.T) {
 	assert := assert.New(t)
 
-	// Create a tracer provider and register two existing processors
 	tp := sdktrace.NewTracerProvider()
-
 	m1 := oteltest.NewExporter(t)
 	m2 := oteltest.NewExporter(t)
 
 	// Add one "existing" processor (e.g. a customer's APM processor)
 	tp.RegisterSpanProcessor(sdktrace.NewBatchSpanProcessor(m1.InMemoryExporter()))
 
-	// Now add Braintrusts
+	// Add Braintrust's span processor
 	err := Enable(tp,
 		braintrust.WithDefaultProjectID("test-project-existing"),
 		withSpanExporter(m2.InMemoryExporter()),
 	)
 	assert.NoError(err)
 
-	// Create a span - it should go to all three processors
 	tracer := tp.Tracer("test-tracer")
 	_, span := tracer.Start(context.Background(), "test-span-existing")
 	span.End()
 
-	// Force flush to ensure all processors receive the span
 	err = tp.ForceFlush(context.Background())
 	assert.NoError(err)
 
-	// Verify all three exporters received the span
 	span1, span2 := m1.FlushOne(), m2.FlushOne()
-
-	// Verify all spans have the same name
 	assert.Equal("test-span-existing", span1.Name())
 	assert.Equal("test-span-existing", span2.Name())
-
-	// Verify all spans have the parent attribute
-	// (all processors get the same span data with Braintrust attributes)
 	span1.AssertAttrEquals(ParentOtelAttrKey, "project_id:test-project-existing")
 	span2.AssertAttrEquals(ParentOtelAttrKey, "project_id:test-project-existing")
 }
