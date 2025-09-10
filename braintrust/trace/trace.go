@@ -50,30 +50,18 @@ import (
 	"github.com/braintrustdata/braintrust-x-go/braintrust/log"
 )
 
-// Enable configures an existing OpenTelemetry tracer provider with Braintrust
-// tracing capabilities. This function adds the necessary span processors and
-// exporters to send trace data to Braintrust.
-//
-// Note: This function does not take ownership of the tracer provider and will
-// not shut it down. The caller is responsible for managing the tracer provider
-// lifecycle.
+// Enable configures adds Braintrust tracing to an existing OpenTelemetry tracer provider.
 //
 // Example:
 //
-//	// Create your own tracer provider
-//	tp := trace.NewTracerProvider()
+//	// Get the configured global OTel TracerProvider
+//	tp := trace.GetTracerProvider()
 //
 //	// Enable Braintrust tracing on it
 //	err := trace.Enable(tp)
 //	if err != nil {
 //		log.Fatal(err)
 //	}
-//
-//	// Set it as the global tracer provider
-//	otel.SetTracerProvider(tp)
-//
-//	// You are responsible for shutting down the tracer provider
-//	defer tp.Shutdown(context.Background())
 func Enable(tp *trace.TracerProvider, opts ...braintrust.Option) error {
 	config := braintrust.GetConfig(opts...)
 	url := config.APIURL
@@ -101,28 +89,36 @@ func Enable(tp *trace.TracerProvider, opts ...braintrust.Option) error {
 		otelOpts = append(otelOpts, otlptracehttp.WithInsecure())
 	}
 
-	// Create Braintrust OTLP exporter
-	exporter, err := otlptrace.New(
-		context.Background(),
-		otlptracehttp.NewClient(otelOpts...),
-	)
-	if err != nil {
-		return err
+	// Use provided exporter or create Braintrust OTLP exporter
+	exporter := config.SpanExporter
+	if exporter == nil {
+		var err error
+		exporter, err = otlptrace.New(
+			context.Background(),
+			otlptracehttp.NewClient(otelOpts...),
+		)
+		if err != nil {
+			return fmt.Errorf("failed to create OTLP exporter: %w", err)
+		}
 	}
 
-	// If we have a default project ID, set it on the span processor.
-	spanProcessorOpt := noopSpanProcessorOption()
-	if config.DefaultProjectID != "" {
-		parent := Parent{Type: ParentTypeProjectID, ID: config.DefaultProjectID}
-		spanProcessorOpt = WithDefaultParent(parent)
-	} else if config.DefaultProjectName != "" {
-		parent := Parent{Type: ParentTypeProject, ID: config.DefaultProjectName}
-		spanProcessorOpt = WithDefaultParent(parent)
-	} else {
-		log.Debugf("No default project ID or name set. Untagged spans will be dropped")
+	// Figure out our default parent (defaulting to some random thing so users can still
+	// see data flowing with no default project set)
+	parentType := ParentTypeProject
+	parentID := "go-otel-default-project"
+	switch {
+	case config.DefaultProjectID != "":
+		parentType = ParentTypeProjectID
+		parentID = config.DefaultProjectID
+	case config.DefaultProjectName != "":
+		parentType = ParentTypeProject
+		parentID = config.DefaultProjectName
 	}
 
-	// Add Braintrust span processor
+	parent := Parent{Type: parentType, ID: parentID}
+	spanProcessorOpt := WithDefaultParent(parent)
+
+	// FIXME[matt] the NewSpanProcessor is only registered for the effect of mutating spans.
 	tp.RegisterSpanProcessor(trace.NewBatchSpanProcessor(exporter))
 	tp.RegisterSpanProcessor(NewSpanProcessor(spanProcessorOpt))
 
@@ -140,17 +136,20 @@ func Enable(tp *trace.TracerProvider, opts ...braintrust.Option) error {
 	return nil
 }
 
-// Quickstart configures OpenTelemetry tracing for Braintrust and provides
-// an easy way of getting up and running if you are new to OpenTelemetry. It
-// returns a teardown function that should be called before your program exits.
+// Quickstart configures OpenTelemetry tracing and returns a teardown function that should
+// be called before your program exits.
+//
+// Quickstart is an easy way of getting up and running if you are new to OpenTelemetry. Use
+// `Enable` instead if you are integrating Braintrust into an application that
+// already uses OpenTelemetry.
 //
 // Example:
 //
-//	// Use default project
 //	teardown, err := trace.Quickstart()
-//
-//	// Use specific project
-//	teardown, err := trace.Quickstart(trace.WithDefaultProjectID("my-project"))
+//	if err != nil {
+//			log.Fatal(err)
+//	}
+//	defer teardown()
 func Quickstart(opts ...braintrust.Option) (teardown func(), err error) {
 	// Create a tracer provider
 	tp := trace.NewTracerProvider()

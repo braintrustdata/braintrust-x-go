@@ -61,6 +61,14 @@ type Exporter struct {
 	t        *testing.T
 }
 
+func NewExporter(t *testing.T) *Exporter {
+	return &Exporter{exporter: tracetest.NewInMemoryExporter(), t: t}
+}
+
+func (e *Exporter) InMemoryExporter() *tracetest.InMemoryExporter {
+	return e.exporter
+}
+
 // Flush returns the spans buffered in memory.
 func (e *Exporter) Flush() []Span {
 	stubs := e.exporter.GetSpans()

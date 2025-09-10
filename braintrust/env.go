@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"go.opentelemetry.io/otel/sdk/trace"
 )
 
 // Option is used to configure the Braintrust GetConfig function.
@@ -30,6 +32,13 @@ func WithAPIKey(apiKey string) Option {
 	}
 }
 
+// WithAPIURL sets the API URL for the Braintrust SDK.
+func WithAPIURL(apiURL string) Option {
+	return func(c *Config) {
+		c.APIURL = apiURL
+	}
+}
+
 // Config holds the configuration for the Braintrust SDK
 type Config struct {
 	APIKey                string
@@ -38,6 +47,9 @@ type Config struct {
 	DefaultProjectID      string
 	DefaultProjectName    string
 	EnableTraceConsoleLog bool
+
+	// SpanExporter allows overriding the default OTLP exporter (primarily for testing)
+	SpanExporter trace.SpanExporter
 }
 
 // String returns a pretty-printed representation of the config with the API key redacted
