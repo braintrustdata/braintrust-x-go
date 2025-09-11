@@ -244,3 +244,136 @@ func TestQuickstart(t *testing.T) {
 
 	teardown()
 }
+
+func TestSpanFilterFunc_WithAttributes(t *testing.T) {
+	assert := assert.New(t)
+
+	tp := sdktrace.NewTracerProvider()
+	exporter := tracetest.NewInMemoryExporter()
+	processor := sdktrace.NewSimpleSpanProcessor(exporter)
+
+	// Custom filter that keeps spans with "important" attribute
+	customFilter := func(span sdktrace.ReadOnlySpan) int {
+		for _, attr := range span.Attributes() {
+			if string(attr.Key) == "importance" && attr.Value.AsString() == "high" {
+				return 1 // Keep
+			}
+			if string(attr.Key) == "noise" && attr.Value.AsBool() {
+				return -1 // Drop
+			}
+		}
+		return 0 // Don't influence
+	}
+
+	err := Enable(tp,
+		braintrust.WithDefaultProjectID("filter-test"),
+		braintrust.WithSpanFilterFuncs(customFilter),
+		withSpanProcessor(processor),
+	)
+	assert.NoError(err)
+
+	tracer := tp.Tracer("test")
+
+	// Span with high importance - should be kept
+	_, span1 := tracer.Start(context.Background(), "important-operation", trace.WithAttributes(
+		attribute.String("importance", "high"),
+	))
+	span1.End()
+
+	// Span marked as noise - should be dropped
+	_, span2 := tracer.Start(context.Background(), "noisy-operation", trace.WithAttributes(
+		attribute.Bool("noise", true),
+	))
+	span2.End()
+
+	// Span with no special attributes - should go through other filters
+	_, span3 := tracer.Start(context.Background(), "normal-operation")
+	span3.End()
+
+	_ = tp.ForceFlush(context.Background())
+	spans := exporter.GetSpans()
+
+	// Should have 2 spans: important-operation (kept) and normal-operation (no influence = kept by default)
+	// noisy-operation should be dropped
+	assert.Len(spans, 2)
+
+	spanNames := make([]string, len(spans))
+	for i, span := range spans {
+		spanNames[i] = span.Name
+	}
+
+	assert.Contains(spanNames, "important-operation")
+	assert.Contains(spanNames, "normal-operation")
+	assert.NotContains(spanNames, "noisy-operation")
+}
+
+func TestSpanProcessor_FilteringWithMultipleProcessors(t *testing.T) {
+	assert := assert.New(t)
+
+	tp := sdktrace.NewTracerProvider()
+
+	// Add a non-Braintrust processor that should receive all spans
+	allSpansExporter := tracetest.NewInMemoryExporter()
+	allSpansProcessor := sdktrace.NewSimpleSpanProcessor(allSpansExporter)
+	tp.RegisterSpanProcessor(allSpansProcessor)
+
+	// Add Braintrust processor with filtering using Enable
+	braintrustExporter := tracetest.NewInMemoryExporter()
+	braintrustProcessor := sdktrace.NewSimpleSpanProcessor(braintrustExporter)
+
+	dropNoisyFilter := func(span sdktrace.ReadOnlySpan) int {
+		for _, attr := range span.Attributes() {
+			if string(attr.Key) == "noise" && attr.Value.AsBool() {
+				return -1 // Drop
+			}
+		}
+		return 0 // Don't influence
+	}
+
+	err := Enable(tp,
+		braintrust.WithDefaultProjectID("multi-processor-test"),
+		braintrust.WithSpanFilterFuncs(dropNoisyFilter),
+		withSpanProcessor(braintrustProcessor), // Use test helper to inject our test exporter
+	)
+	assert.NoError(err)
+
+	tracer := tp.Tracer("test")
+
+	// Create spans
+	_, span1 := tracer.Start(context.Background(), "important-operation")
+	span1.End()
+
+	_, span2 := tracer.Start(context.Background(), "noisy-operation", trace.WithAttributes(
+		attribute.Bool("noise", true),
+	))
+	span2.End()
+
+	_, span3 := tracer.Start(context.Background(), "normal-operation")
+	span3.End()
+
+	_ = tp.ForceFlush(context.Background())
+
+	// All spans processor should receive all 3 spans
+	allSpans := allSpansExporter.GetSpans()
+	assert.Len(allSpans, 3)
+
+	allSpanNames := make([]string, len(allSpans))
+	for i, span := range allSpans {
+		allSpanNames[i] = span.Name
+	}
+	assert.Contains(allSpanNames, "important-operation")
+	assert.Contains(allSpanNames, "noisy-operation")
+	assert.Contains(allSpanNames, "normal-operation")
+
+	// Braintrust processor should only receive 2 spans (noisy-operation dropped)
+	braintrustSpans := braintrustExporter.GetSpans()
+	assert.Len(braintrustSpans, 2)
+
+	braintrustSpanNames := make([]string, len(braintrustSpans))
+	for i, span := range braintrustSpans {
+		braintrustSpanNames[i] = span.Name
+	}
+	assert.Contains(braintrustSpanNames, "important-operation")
+	assert.Contains(braintrustSpanNames, "normal-operation")
+	assert.NotContains(braintrustSpanNames, "noisy-operation")
+}

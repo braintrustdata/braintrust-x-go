@@ -39,6 +39,17 @@ func WithAPIURL(apiURL string) Option {
 	}
 }
 
+// SpanFilterFunc is a function that you can use to decide which spans to send to Braintrust.
+// Return >1 to keep the span, <1 to drop the span, or 0 to not influence the decision.
+type SpanFilterFunc func(span trace.ReadOnlySpan) int
+
+// WithSpanFilterFuncs sets the SpanFilterFuncs for the Braintrust SDK.
+func WithSpanFilterFuncs(filterFuncs ...SpanFilterFunc) Option {
+	return func(c *Config) {
+		c.SpanFilterFuncs = filterFuncs
+	}
+}
+
 // Config holds the configuration for the Braintrust SDK
 type Config struct {
 	APIKey                string
@@ -47,6 +58,7 @@ type Config struct {
 	DefaultProjectID      string
 	DefaultProjectName    string
 	EnableTraceConsoleLog bool
+	SpanFilterFuncs       []SpanFilterFunc
 
 	// SpanProcessor allows overriding the default SpanProcessor (primarily for testing)
 	SpanProcessor trace.SpanProcessor

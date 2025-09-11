@@ -87,7 +87,7 @@ func Enable(tp *trace.TracerProvider, opts ...braintrust.Option) error {
 
 	// Wrap the raw OTEL span processor with the bt span processor (which labels the parents,
 	// filters data, etc)
-	tp.RegisterSpanProcessor(newSpanProcessor(processor, parent))
+	tp.RegisterSpanProcessor(newSpanProcessor(processor, parent, config.SpanFilterFuncs))
 
 	// Add console debug exporter if BRAINTRUST_ENABLE_TRACE_DEBUG_LOG is set
 	if config.EnableTraceConsoleLog {
@@ -200,15 +200,17 @@ type spanProcessor struct {
 	wrapped       trace.SpanProcessor
 	defaultParent Parent
 	defaultAttr   attribute.KeyValue
+	filters       []braintrust.SpanFilterFunc
 }
 
 // newSpanProcessor creates a new span processor that wraps another processor and adds parent labeling.
-func newSpanProcessor(processor trace.SpanProcessor, defaultParent Parent) *spanProcessor {
+func newSpanProcessor(proc trace.SpanProcessor, defaultParent Parent, filters []braintrust.SpanFilterFunc) *spanProcessor {
 	log.Debugf("Creating span processor with default parent: %s:%s", defaultParent.Type, defaultParent.ID)
 	return &spanProcessor{
-		wrapped:       processor,
+		wrapped:       proc,
 		defaultParent: defaultParent,
 		defaultAttr:   defaultParent.Attr(),
+		filters:       filters,
 	}
 }
 
@@ -235,7 +237,33 @@ func (p *spanProcessor) OnStart(ctx context.Context, span trace.ReadWriteSpan) {
 
 // OnEnd is called when a span ends.
 func (p *spanProcessor) OnEnd(span trace.ReadOnlySpan) {
-	p.wrapped.OnEnd(span)
+	// Apply filters to determine if we should forward this span
+	if p.shouldForwardSpan(span) {
+		p.wrapped.OnEnd(span)
+	}
+}
+
+// shouldForwardSpan applies filter functions to determine if a span should be forwarded.
+func (p *spanProcessor) shouldForwardSpan(span trace.ReadOnlySpan) bool {
+	// If no filters, forward everything
+	if len(p.filters) == 0 {
+		return true
+	}
+
+	// Apply each filter function
+	for _, filter := range p.filters {
+		result := filter(span)
+		switch {
+		case result > 0:
+			return true
+		case result < 0:
+			return false
+		case result == 0:
+			continue
+		}
+	}
+
+	return true
 }
 
 // Shutdown shuts down the span processor.
