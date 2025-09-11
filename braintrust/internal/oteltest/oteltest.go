@@ -16,12 +16,20 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	oteltrace "go.opentelemetry.io/otel/trace"
 
+	"github.com/braintrustdata/braintrust-x-go/braintrust"
 	"github.com/braintrustdata/braintrust-x-go/braintrust/internal"
+	"github.com/braintrustdata/braintrust-x-go/braintrust/trace"
 )
+
+func withSpanProcessor(processor sdktrace.SpanProcessor) braintrust.Option {
+	return func(c *braintrust.Config) {
+		c.SpanProcessor = processor
+	}
+}
 
 // Setup sets up otel tracing for testing (no sampling, sync, stores spans in memory)
 // and returns a Tracer and an Exporter that can be used to flush the spans.
-func Setup(t *testing.T, opts ...sdktrace.TracerProviderOption) (oteltrace.Tracer, *Exporter) {
+func Setup(t *testing.T, opts ...braintrust.Option) (oteltrace.Tracer, *Exporter) {
 	t.Helper()
 	internal.FailTestsOnWarnings(t)
 
@@ -29,16 +37,15 @@ func Setup(t *testing.T, opts ...sdktrace.TracerProviderOption) (oteltrace.Trace
 	exporter := tracetest.NewInMemoryExporter()
 	processor := sdktrace.NewSimpleSpanProcessor(exporter)
 
-	opts = append(opts,
-		sdktrace.WithSampler(sdktrace.AlwaysSample()),
-		sdktrace.WithSpanProcessor(processor), // flushes immediately
-	)
-
-	tp := sdktrace.NewTracerProvider(opts...)
-
+	tp := sdktrace.NewTracerProvider()
 	original := otel.GetTracerProvider()
 	otel.SetTracerProvider(tp)
 	tracer := otel.GetTracerProvider().Tracer(t.Name())
+
+	err := trace.Enable(tp, append(opts, withSpanProcessor(processor))...)
+	if err != nil {
+		t.Fatalf("Failed to enable Braintrust tracing: %v", err)
+	}
 
 	t.Cleanup(func() {
 		// Use background context for cleanup
@@ -59,20 +66,6 @@ func Setup(t *testing.T, opts ...sdktrace.TracerProviderOption) (oteltrace.Trace
 type Exporter struct {
 	exporter *tracetest.InMemoryExporter
 	t        *testing.T
-}
-
-func NewExporter(t *testing.T) *Exporter {
-	t.Helper()
-	return &Exporter{exporter: tracetest.NewInMemoryExporter(), t: t}
-}
-
-// NewProcessor creates a simple span processor wrapping a memory exporter and returns both.
-// This is useful for testing when you need a processor to pass to Enable().
-func NewProcessor(t *testing.T) (sdktrace.SpanProcessor, *Exporter) {
-	t.Helper()
-	exporter := NewExporter(t)
-	processor := sdktrace.NewSimpleSpanProcessor(exporter.InMemoryExporter())
-	return processor, exporter
 }
 
 func (e *Exporter) InMemoryExporter() *tracetest.InMemoryExporter {

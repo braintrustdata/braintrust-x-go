@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/codes"
 
+	"github.com/braintrustdata/braintrust-x-go/braintrust"
 	"github.com/braintrustdata/braintrust-x-go/braintrust/internal/oteltest"
 )
 
@@ -759,7 +760,11 @@ func TestEval_BraintrustParentWithAndWithoutDefaultProject(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, exporter := oteltest.Setup(t)
+			var opts []braintrust.Option
+			if tt.projectID != "" {
+				opts = append(opts, braintrust.WithDefaultProjectID(tt.projectID))
+			}
+			_, exporter := oteltest.Setup(t, opts...)
 
 			task := func(ctx context.Context, x int) (int, error) {
 				return x * 2, nil
