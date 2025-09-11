@@ -47,11 +47,11 @@ var Middleware = internal.Middleware(openaiRouter)
 
 // openaiRouter maps OpenAI API paths to their corresponding tracers.
 func openaiRouter(path string) internal.MiddlewareTracer {
-	if path.HasSuffix("/v1/chat/completions") {
+	if strings.HasSuffix(path, "/v1/chat/completions") {
 		return newChatCompletionsTracer()
 	}
 
-	if path.HasSuffix("/v1/responses") {
+	if strings.HasSuffix(path, "/v1/responses") {
 		return newResponsesTracer()
 	}
 
