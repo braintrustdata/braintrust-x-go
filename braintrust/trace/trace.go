@@ -179,16 +179,13 @@ type contextKey string
 // a context key that cannot possibly collide with any other keys
 var parentContextKey contextKey = ParentOtelAttrKey
 
-// SetParent will set the parent to the given Parent for any span created from the returned context.
+// SetParent will add a parent to the given context. Any span started with that context will
+// be marked with that parent, and sent to the given project or experiment in Braintrust.
+//
 // Example:
 //
-//	projectID := "123-456-789"
-//	project := trace.NewProject(projectID)
-//	ctx = trace.SetParent(ctx, project)
-//
-//	// All spans created from this context will be assigned to project 123-456-789
-//	_, span := tracer.Start(ctx, "database-query")
-//	defer span.End()
+//	ctx = trace.SetParent(ctx, trace.Parent{Type: "project_name", ID: "test"})
+//	span := tracer.Start(ctx, "database-query")
 func SetParent(ctx context.Context, parent Parent) context.Context {
 	return context.WithValue(ctx, parentContextKey, parent)
 }
@@ -199,7 +196,8 @@ func GetParent(ctx context.Context) (bool, Parent) {
 	return ok, parent
 }
 
-// ParentType is the type of parent.
+// ParentType represents the different places spans can be sent to
+// in Braintrust - projects, experiments, etc.
 type ParentType string
 
 const (
