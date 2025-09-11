@@ -66,6 +66,15 @@ func NewExporter(t *testing.T) *Exporter {
 	return &Exporter{exporter: tracetest.NewInMemoryExporter(), t: t}
 }
 
+// NewProcessor creates a simple span processor wrapping a memory exporter and returns both.
+// This is useful for testing when you need a processor to pass to Enable().
+func NewProcessor(t *testing.T) (sdktrace.SpanProcessor, *Exporter) {
+	t.Helper()
+	exporter := NewExporter(t)
+	processor := sdktrace.NewSimpleSpanProcessor(exporter.InMemoryExporter())
+	return processor, exporter
+}
+
 func (e *Exporter) InMemoryExporter() *tracetest.InMemoryExporter {
 	return e.exporter
 }

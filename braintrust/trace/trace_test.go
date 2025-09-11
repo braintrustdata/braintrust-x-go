@@ -7,17 +7,16 @@ import (
 	"github.com/stretchr/testify/assert"
 	"go.opentelemetry.io/otel/attribute"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/braintrustdata/braintrust-x-go/braintrust"
 	"github.com/braintrustdata/braintrust-x-go/braintrust/internal/oteltest"
 )
 
-// withSpanExporter is a test-only option for setting a custom span exporter
-func withSpanExporter(exporter sdktrace.SpanExporter) braintrust.Option {
+// withSpanProcessor is a test-only option for setting a custom span processor
+func withSpanProcessor(processor sdktrace.SpanProcessor) braintrust.Option {
 	return func(c *braintrust.Config) {
-		c.SpanExporter = exporter
+		c.SpanProcessor = processor
 	}
 }
 
@@ -25,19 +24,24 @@ func newProjectIDParent(projectID string) Parent {
 	return Parent{Type: ParentTypeProjectID, ID: projectID}
 }
 
-func newProjectNameParent(projectName string) Parent {
-	return Parent{Type: ParentTypeProject, ID: projectName}
-}
-
 func TestSpanProcessor(t *testing.T) {
 	assert := assert.New(t)
 
-	processor := NewSpanProcessor(WithDefaultParent(newProjectIDParent("12345")))
-	tracer, exporter := oteltest.Setup(t, sdktrace.WithSpanProcessor(processor))
+	tp := sdktrace.NewTracerProvider()
+	processor, exporter := oteltest.NewProcessor(t)
+
+	err := Enable(tp,
+		braintrust.WithDefaultProjectID("12345"),
+		withSpanProcessor(processor),
+	)
+	assert.NoError(err)
+
+	tracer := tp.Tracer("test")
 
 	// Assert we use the default parent if none is set.
 	_, span1 := tracer.Start(context.Background(), "test")
 	span1.End()
+	_ = tp.ForceFlush(context.Background())
 	span := exporter.FlushOne()
 
 	assert.Equal(span.Name(), "test")
@@ -48,6 +52,7 @@ func TestSpanProcessor(t *testing.T) {
 	ctx = SetParent(ctx, newProjectIDParent("67890"))
 	_, span2 := tracer.Start(ctx, "test")
 	span2.End()
+	_ = tp.ForceFlush(context.Background())
 	span = exporter.FlushOne()
 	span.AssertAttrEquals(ParentOtelAttrKey, "project_id:67890")
 
@@ -56,33 +61,53 @@ func TestSpanProcessor(t *testing.T) {
 	ctx = SetParent(ctx, newProjectIDParent("77777"))
 	_, span4 := tracer.Start(ctx, "test", trace.WithAttributes(attribute.String(ParentOtelAttrKey, "project_id:88888")))
 	span4.End()
+	_ = tp.ForceFlush(context.Background())
 	span = exporter.FlushOne()
 	span.AssertAttrEquals(ParentOtelAttrKey, "project_id:88888")
 }
 func TestSpanProcessorNoDefaultProjectID(t *testing.T) {
 	assert := assert.New(t)
 
-	processor := NewSpanProcessor()
-	tracer, exporter := oteltest.Setup(t, sdktrace.WithSpanProcessor(processor))
+	tp := sdktrace.NewTracerProvider()
+	processor, exporter := oteltest.NewProcessor(t)
 
-	// Assert we don't set a parent if none is set.
+	// Don't set a default project - should use the fallback
+	err := Enable(tp,
+		braintrust.WithDefaultProject(""), // Empty project name
+		withSpanProcessor(processor),
+	)
+	assert.NoError(err)
+
+	tracer := tp.Tracer("test")
+
+	// Assert we use the fallback default parent
 	_, span1 := tracer.Start(context.Background(), "test")
 	span1.End()
+	_ = tp.ForceFlush(context.Background())
 	span := exporter.FlushOne()
 
 	assert.Equal(span.Name(), "test")
-	assert.False(span.HasAttr(ParentOtelAttrKey))
+	span.AssertAttrEquals(ParentOtelAttrKey, "project_name:go-otel-default-project")
 }
 
 func TestSpanProcessorWithDefaultProjectName(t *testing.T) {
 	assert := assert.New(t)
 
-	processor := NewSpanProcessor(WithDefaultParent(newProjectNameParent("12345")))
-	tracer, exporter := oteltest.Setup(t, sdktrace.WithSpanProcessor(processor))
+	tp := sdktrace.NewTracerProvider()
+	processor, exporter := oteltest.NewProcessor(t)
+
+	err := Enable(tp,
+		braintrust.WithDefaultProject("12345"),
+		withSpanProcessor(processor),
+	)
+	assert.NoError(err)
+
+	tracer := tp.Tracer("test")
 
 	// Assert we use the default parent if none is set.
 	_, span1 := tracer.Start(context.Background(), "test")
 	span1.End()
+	_ = tp.ForceFlush(context.Background())
 	span := exporter.FlushOne()
 
 	assert.Equal(span.Name(), "test")
@@ -91,9 +116,7 @@ func TestSpanProcessorWithDefaultProjectName(t *testing.T) {
 
 func TestEnableErrors(t *testing.T) {
 	tp := sdktrace.NewTracerProvider()
-	memoryExporter := tracetest.NewInMemoryExporter()
-
-	err := Enable(tp, braintrust.WithAPIURL("invalid-url"), withSpanExporter(memoryExporter))
+	err := Enable(tp, braintrust.WithAPIURL("invalid-url"))
 	assert.Error(t, err)
 }
 
@@ -111,8 +134,8 @@ func TestEnableOptions(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tp := sdktrace.NewTracerProvider()
-			exporter := oteltest.NewExporter(t)
-			opts := append(tt.opts, withSpanExporter(exporter.InMemoryExporter()))
+			processor, exporter := oteltest.NewProcessor(t)
+			opts := append(tt.opts, withSpanProcessor(processor))
 
 			err := Enable(tp, opts...)
 			assert.NoError(t, err)
@@ -133,15 +156,15 @@ func TestEnableWithExistingProcessors(t *testing.T) {
 
 	tp := sdktrace.NewTracerProvider()
 	m1 := oteltest.NewExporter(t)
-	m2 := oteltest.NewExporter(t)
 
 	// Add one "existing" processor (e.g. a customer's APM processor)
 	tp.RegisterSpanProcessor(sdktrace.NewBatchSpanProcessor(m1.InMemoryExporter()))
 
 	// Add Braintrust's span processor
+	processor2, m2 := oteltest.NewProcessor(t)
 	err := Enable(tp,
 		braintrust.WithDefaultProjectID("test-project-existing"),
-		withSpanExporter(m2.InMemoryExporter()),
+		withSpanProcessor(processor2),
 	)
 	assert.NoError(err)
 

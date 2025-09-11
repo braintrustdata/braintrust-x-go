@@ -48,8 +48,8 @@ type Config struct {
 	DefaultProjectName    string
 	EnableTraceConsoleLog bool
 
-	// SpanExporter allows overriding the default OTLP exporter (primarily for testing)
-	SpanExporter trace.SpanExporter
+	// SpanProcessor allows overriding the default SpanProcessor (primarily for testing)
+	SpanProcessor trace.SpanProcessor
 }
 
 // String returns a pretty-printed representation of the config with the API key redacted

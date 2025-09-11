@@ -64,58 +64,30 @@ func Enable(tp *trace.TracerProvider, opts ...braintrust.Option) error {
 
 	log.Debugf("Enabling Braintrust tracing with config: %s", config.String())
 
-	// split url and protocol
-	parts := strings.Split(url, "://")
-	if len(parts) != 2 {
-		return fmt.Errorf("invalid url: %s", url)
-	}
-	protocol := parts[0]
-	url = parts[1]
+	processor := config.SpanProcessor
+	if processor == nil {
+		otelOpts, err := getHTTPOtelOpts(url, apiKey)
+		if err != nil {
+			return err
+		}
 
-	otelOpts := []otlptracehttp.Option{
-		otlptracehttp.WithEndpoint(url),
-		otlptracehttp.WithURLPath("/otel/v1/traces"),
-		otlptracehttp.WithHeaders(map[string]string{
-			"Authorization": "Bearer " + apiKey,
-		}),
-	}
-
-	if protocol == "http" {
-		otelOpts = append(otelOpts, otlptracehttp.WithInsecure())
-	}
-
-	// Use provided exporter or create Braintrust OTLP exporter
-	exporter := config.SpanExporter
-	if exporter == nil {
-		var err error
-		exporter, err = otlptrace.New(
+		// By default, we use an otlp exporter in batch mode.
+		exporter, err := otlptrace.New(
 			context.Background(),
 			otlptracehttp.NewClient(otelOpts...),
 		)
 		if err != nil {
 			return fmt.Errorf("failed to create OTLP exporter: %w", err)
 		}
+		processor = trace.NewBatchSpanProcessor(exporter)
 	}
 
-	// Figure out our default parent (defaulting to some random thing so users can still
-	// see data flowing with no default project set)
-	parentType := ParentTypeProject
-	parentID := "go-otel-default-project"
-	switch {
-	case config.DefaultProjectID != "":
-		parentType = ParentTypeProjectID
-		parentID = config.DefaultProjectID
-	case config.DefaultProjectName != "":
-		parentType = ParentTypeProject
-		parentID = config.DefaultProjectName
-	}
+	// Figure out our default parent from the config.
+	parent := getParent(config)
 
-	parent := Parent{Type: parentType, ID: parentID}
-	spanProcessorOpt := WithDefaultParent(parent)
-
-	// FIXME[matt] the NewSpanProcessor is only registered for the effect of mutating spans.
-	tp.RegisterSpanProcessor(trace.NewBatchSpanProcessor(exporter))
-	tp.RegisterSpanProcessor(NewSpanProcessor(spanProcessorOpt))
+	// Wrap the raw OTEL span processor with the bt span processor (which labels the parents,
+	// filters data, etc)
+	tp.RegisterSpanProcessor(newSpanProcessor(processor, parent))
 
 	// Add console debug exporter if BRAINTRUST_ENABLE_TRACE_DEBUG_LOG is set
 	if config.EnableTraceConsoleLog {
@@ -220,87 +192,116 @@ func (p Parent) Attr() attribute.KeyValue {
 	return attribute.String(ParentOtelAttrKey, p.String())
 }
 
-func (p Parent) valid() bool {
-	return p.Type != "" && p.ID != ""
-}
-
 func (p Parent) String() string {
 	return fmt.Sprintf("%s:%s", p.Type, p.ID)
 }
 
-// SpanProcessor is an OTel span processor that labels spans with their parent key.
-// It must be included in the OTel pipeline to send data to Braintrust.
-type SpanProcessor interface {
-	trace.SpanProcessor
-}
-
 type spanProcessor struct {
+	wrapped       trace.SpanProcessor
 	defaultParent Parent
 	defaultAttr   attribute.KeyValue
 }
 
-// SpanProcessorOption configures the span processor.
-type SpanProcessorOption func(*spanProcessor)
-
-// WithDefaultParent sets the default parent for all spans that don't explicitly have one.
-func WithDefaultParent(parent Parent) SpanProcessorOption {
-	log.Debugf("Setting default parent: %s:%s", parent.Type, parent.ID)
-	return func(p *spanProcessor) {
-		p.defaultParent = parent
+// newSpanProcessor creates a new span processor that wraps another processor and adds parent labeling.
+func newSpanProcessor(processor trace.SpanProcessor, defaultParent Parent) *spanProcessor {
+	log.Debugf("Creating span processor with default parent: %s:%s", defaultParent.Type, defaultParent.ID)
+	return &spanProcessor{
+		wrapped:       processor,
+		defaultParent: defaultParent,
+		defaultAttr:   defaultParent.Attr(),
 	}
-}
-
-// NewSpanProcessor creates a new span processor. All spans must be tagged with a parent (e.g. an experiment_id or project_id).
-func NewSpanProcessor(opts ...SpanProcessorOption) SpanProcessor {
-	p := &spanProcessor{}
-	for _, opt := range opts {
-		opt(p)
-	}
-
-	if p.defaultParent.valid() {
-		p.defaultAttr = p.defaultParent.Attr()
-	}
-
-	return p
 }
 
 // OnStart is called when a span is started and assigns parent attributes.
 // It assigns spans to projects or experiments based on context or default parent.
 func (p *spanProcessor) OnStart(ctx context.Context, span trace.ReadWriteSpan) {
 	// If that span already has a parent, don't override
-	for _, attr := range span.Attributes() {
-		if attr.Key == ParentOtelAttrKey && attr.Value.AsString() != "" {
-			log.Debugf("SpanProcessor.OnStart: noop. Span has parent %s", attr.Value.AsString())
-			return
+	if !hasParent(span) {
+		// if the context has a parent, use it.
+		ok, parent := GetParent(ctx)
+		if ok {
+			setParentOnSpan(span, parent)
+			log.Debugf("SpanProcessor.OnStart: setting parent from context: %s", parent)
+		} else {
+			// otherwise use the default parent
+			span.SetAttributes(p.defaultAttr)
+			log.Debugf("SpanProcessor.OnStart: setting default parent: %s", p.defaultParent)
 		}
 	}
 
-	// if the context has a parent, use it.
-	ok, parent := GetParent(ctx)
-	if ok {
-		setParentOnSpan(span, parent)
-		log.Debugf("SpanProcessor.OnStart: setting parent from context: %s", parent)
-		return
-	}
-
-	// otherwise use the default parent
-	if p.defaultParent.valid() {
-		span.SetAttributes(p.defaultAttr)
-		log.Debugf("SpanProcessor.OnStart: setting default parent: %s", p.defaultParent)
-	}
+	// Delegate to wrapped processor
+	p.wrapped.OnStart(ctx, span)
 }
 
 // OnEnd is called when a span ends.
-func (*spanProcessor) OnEnd(_ trace.ReadOnlySpan) {}
+func (p *spanProcessor) OnEnd(span trace.ReadOnlySpan) {
+	p.wrapped.OnEnd(span)
+}
 
 // Shutdown shuts down the span processor.
-func (*spanProcessor) Shutdown(_ context.Context) error { return nil }
+func (p *spanProcessor) Shutdown(ctx context.Context) error {
+	return p.wrapped.Shutdown(ctx)
+}
 
 // ForceFlush forces a flush of the span processor.
-func (*spanProcessor) ForceFlush(_ context.Context) error { return nil }
+func (p *spanProcessor) ForceFlush(ctx context.Context) error {
+	return p.wrapped.ForceFlush(ctx)
+}
 
 var _ trace.SpanProcessor = &spanProcessor{}
 
 func setParentOnSpan(span trace.ReadWriteSpan, parent Parent) {
 	span.SetAttributes(parent.Attr())
+}
+
+// getParent determines the default parent from the config
+func getParent(config braintrust.Config) Parent {
+	// Figure out our default parent (defaulting to some random thing so users can still
+	// see data flowing with no default project set)
+	parentType := ParentTypeProject
+	parentID := "go-otel-default-project"
+	switch {
+	case config.DefaultProjectID != "":
+		parentType = ParentTypeProjectID
+		parentID = config.DefaultProjectID
+	case config.DefaultProjectName != "":
+		parentType = ParentTypeProject
+		parentID = config.DefaultProjectName
+	}
+
+	return Parent{Type: parentType, ID: parentID}
+}
+
+// getHTTPOtelOpts parses the URL and creates OTLP HTTP options with proper security settings
+func getHTTPOtelOpts(fullURL, apiKey string) ([]otlptracehttp.Option, error) {
+	// split url and protocol
+	parts := strings.Split(fullURL, "://")
+	if len(parts) != 2 {
+		return nil, fmt.Errorf("invalid url: %s", fullURL)
+	}
+	protocol := parts[0]
+	url := parts[1]
+
+	otelOpts := []otlptracehttp.Option{
+		otlptracehttp.WithEndpoint(url),
+		otlptracehttp.WithURLPath("/otel/v1/traces"),
+		otlptracehttp.WithHeaders(map[string]string{
+			"Authorization": "Bearer " + apiKey,
+		}),
+	}
+
+	if protocol == "http" {
+		otelOpts = append(otelOpts, otlptracehttp.WithInsecure())
+	}
+
+	return otelOpts, nil
+}
+
+func hasParent(span trace.ReadWriteSpan) bool {
+	for _, attr := range span.Attributes() {
+		if attr.Key == ParentOtelAttrKey {
+			return true
+		}
+	}
+	return false
 }
