@@ -52,6 +52,7 @@ func WithSpanFilterFuncs(filterFuncs ...SpanFilterFunc) Option {
 
 // WithFilterAISpans enables filtering to keep only AI-related spans.
 // When enabled, only spans with AI-related names or attributes will be sent to Braintrust.
+// Environment variable: BRAINTRUST_OTEL_FILTER_AI_SPANS
 func WithFilterAISpans(enabled bool) Option {
 	return func(c *Config) {
 		c.FilterAISpans = enabled
@@ -108,7 +109,7 @@ func GetConfig(opts ...Option) Config {
 		DefaultProjectID:      getEnvString("BRAINTRUST_DEFAULT_PROJECT_ID", ""),
 		DefaultProjectName:    getEnvString("BRAINTRUST_DEFAULT_PROJECT", "default-go-project"),
 		EnableTraceConsoleLog: getEnvBool("BRAINTRUST_ENABLE_TRACE_CONSOLE_LOG", false),
-		FilterAISpans:         getEnvBool("BRAINTRUST_FILTER_AI_SPANS", false),
+		FilterAISpans:         getEnvBool("BRAINTRUST_OTEL_FILTER_AI_SPANS", false),
 	}
 	for _, opt := range opts {
 		opt(&config)
