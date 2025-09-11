@@ -85,9 +85,16 @@ func Enable(tp *trace.TracerProvider, opts ...braintrust.Option) error {
 	// Figure out our default parent from the config.
 	parent := getParent(config)
 
+	// Build filter functions list - user filters first, then automatic AI filter
+	var filters []braintrust.SpanFilterFunc
+	filters = append(filters, config.SpanFilterFuncs...)
+	if config.FilterAISpans {
+		filters = append(filters, aiSpanFilterFunc)
+	}
+
 	// Wrap the raw OTEL span processor with the bt span processor (which labels the parents,
 	// filters data, etc)
-	tp.RegisterSpanProcessor(newSpanProcessor(processor, parent, config.SpanFilterFuncs))
+	tp.RegisterSpanProcessor(newSpanProcessor(processor, parent, filters))
 
 	// Add console debug exporter if BRAINTRUST_ENABLE_TRACE_DEBUG_LOG is set
 	if config.EnableTraceConsoleLog {
@@ -244,13 +251,14 @@ func (p *spanProcessor) OnEnd(span trace.ReadOnlySpan) {
 }
 
 // shouldForwardSpan applies filter functions to determine if a span should be forwarded.
+// Filter functions are applied in order, with the first filters having priority.
 func (p *spanProcessor) shouldForwardSpan(span trace.ReadOnlySpan) bool {
-	// If no filters, forward everything
+	// If no filters, keep everything
 	if len(p.filters) == 0 {
 		return true
 	}
 
-	// Apply each filter function
+	// Apply filter functions in order - first filter wins
 	for _, filter := range p.filters {
 		result := filter(span)
 		switch {
@@ -259,10 +267,12 @@ func (p *spanProcessor) shouldForwardSpan(span trace.ReadOnlySpan) bool {
 		case result < 0:
 			return false
 		case result == 0:
+			// No influence, continue to next filter
 			continue
 		}
 	}
 
+	// All filters returned 0 (no influence), default to keep
 	return true
 }
 
@@ -332,4 +342,40 @@ func hasParent(span trace.ReadWriteSpan) bool {
 		}
 	}
 	return false
+}
+
+var aiOtelPrefixes = []string{
+	"gen_ai.",
+	"braintrust.",
+	"llm.",
+	"ai.",
+	"traceloop.",
+}
+
+// aiSpanFilterFunc is a SpanFilterFunc that keeps ai spans and drops non-AI spans.
+func aiSpanFilterFunc(span trace.ReadOnlySpan) int {
+	// Check span name for AI prefixes
+	spanName := span.Name()
+	for _, prefix := range aiOtelPrefixes {
+		if strings.HasPrefix(spanName, prefix) {
+			return 1 // Keep AI spans
+		}
+	}
+
+	// Check attributes for AI prefixes (exclude the braintrust.parent attribute we automatically add)
+	for _, attr := range span.Attributes() {
+		attrKey := string(attr.Key)
+		// Skip the braintrust.parent attribute that we automatically add to all spans
+		if attrKey == ParentOtelAttrKey {
+			continue
+		}
+		for _, prefix := range aiOtelPrefixes {
+			if strings.HasPrefix(attrKey, prefix) {
+				return 1 // Keep AI spans
+			}
+		}
+	}
+
+	// Drop non-AI spans
+	return -1
 }

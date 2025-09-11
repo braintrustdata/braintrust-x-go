@@ -377,3 +377,249 @@ func TestSpanProcessor_FilteringWithMultipleProcessors(t *testing.T) {
 	assert.Contains(braintrustSpanNames, "normal-operation")
 	assert.NotContains(braintrustSpanNames, "noisy-operation")
 }
+
+func TestAISpanFilterFunc_WithAIPrefixes(t *testing.T) {
+	assert := assert.New(t)
+
+	tp := sdktrace.NewTracerProvider()
+	exporter := tracetest.NewInMemoryExporter()
+	processor := sdktrace.NewSimpleSpanProcessor(exporter)
+
+	// Test the aiSpanFilterFunc directly
+	err := Enable(tp,
+		braintrust.WithDefaultProjectID("ai-filter-test"),
+		braintrust.WithSpanFilterFuncs(aiSpanFilterFunc),
+		withSpanProcessor(processor),
+	)
+	assert.NoError(err)
+
+	tracer := tp.Tracer("test")
+
+	// Spans with AI-related attributes - should be kept
+	_, span1 := tracer.Start(context.Background(), "openai-call", trace.WithAttributes(
+		attribute.String("gen_ai.system", "openai"),
+		attribute.String("gen_ai.request.model", "gpt-4"),
+	))
+	span1.End()
+
+	_, span2 := tracer.Start(context.Background(), "braintrust-log", trace.WithAttributes(
+		attribute.String("braintrust.log.id", "12345"),
+	))
+	span2.End()
+
+	_, span3 := tracer.Start(context.Background(), "llm-call", trace.WithAttributes(
+		attribute.String("llm.request.type", "completion"),
+	))
+	span3.End()
+
+	_, span4 := tracer.Start(context.Background(), "ai-service", trace.WithAttributes(
+		attribute.String("ai.model.name", "claude"),
+	))
+	span4.End()
+
+	_, span5 := tracer.Start(context.Background(), "traceloop-span", trace.WithAttributes(
+		attribute.String("traceloop.span.kind", "llm"),
+	))
+	span5.End()
+
+	// Non-AI spans - should be filtered out (aiSpanFilterFunc returns 0)
+	_, span6 := tracer.Start(context.Background(), "database-query", trace.WithAttributes(
+		attribute.String("db.statement", "SELECT * FROM users"),
+	))
+	span6.End()
+
+	_, span7 := tracer.Start(context.Background(), "http-request")
+	span7.End()
+
+	_ = tp.ForceFlush(context.Background())
+	spans := exporter.GetSpans()
+
+	// Should only have the 5 AI-related spans
+	assert.Len(spans, 5)
+
+	spanNames := make([]string, len(spans))
+	for i, span := range spans {
+		spanNames[i] = span.Name
+	}
+
+	assert.Contains(spanNames, "openai-call")
+	assert.Contains(spanNames, "braintrust-log")
+	assert.Contains(spanNames, "llm-call")
+	assert.Contains(spanNames, "ai-service")
+	assert.Contains(spanNames, "traceloop-span")
+	assert.NotContains(spanNames, "database-query")
+	assert.NotContains(spanNames, "http-request")
+}
+
+func TestAISpanFilterFunc_WithSpanNames(t *testing.T) {
+	assert := assert.New(t)
+
+	tp := sdktrace.NewTracerProvider()
+	exporter := tracetest.NewInMemoryExporter()
+	processor := sdktrace.NewSimpleSpanProcessor(exporter)
+
+	err := Enable(tp,
+		braintrust.WithDefaultProjectID("ai-name-filter-test"),
+		braintrust.WithSpanFilterFuncs(aiSpanFilterFunc),
+		withSpanProcessor(processor),
+	)
+	assert.NoError(err)
+
+	tracer := tp.Tracer("test")
+
+	// Spans with AI-related names - should be kept
+	_, span1 := tracer.Start(context.Background(), "gen_ai.completion")
+	span1.End()
+
+	_, span2 := tracer.Start(context.Background(), "braintrust.experiment.log")
+	span2.End()
+
+	_, span3 := tracer.Start(context.Background(), "llm.chat_completion")
+	span3.End()
+
+	// Non-AI span names - should be filtered out
+	_, span4 := tracer.Start(context.Background(), "user.login")
+	span4.End()
+
+	_ = tp.ForceFlush(context.Background())
+	spans := exporter.GetSpans()
+
+	// Should only have the 3 AI-related spans
+	assert.Len(spans, 3)
+
+	spanNames := make([]string, len(spans))
+	for i, span := range spans {
+		spanNames[i] = span.Name
+	}
+
+	assert.Contains(spanNames, "gen_ai.completion")
+	assert.Contains(spanNames, "braintrust.experiment.log")
+	assert.Contains(spanNames, "llm.chat_completion")
+	assert.NotContains(spanNames, "user.login")
+}
+
+func TestWithFilterAISpans_Option(t *testing.T) {
+	assert := assert.New(t)
+
+	tp := sdktrace.NewTracerProvider()
+	exporter := tracetest.NewInMemoryExporter()
+	processor := sdktrace.NewSimpleSpanProcessor(exporter)
+
+	// Use the WithFilterAISpans option
+	err := Enable(tp,
+		braintrust.WithDefaultProjectID("ai-option-test"),
+		braintrust.WithFilterAISpans(true),
+		withSpanProcessor(processor),
+	)
+	assert.NoError(err)
+
+	tracer := tp.Tracer("test")
+
+	// AI-related spans - should be kept
+	_, span1 := tracer.Start(context.Background(), "gen_ai.completion", trace.WithAttributes(
+		attribute.String("gen_ai.request.model", "gpt-4"),
+	))
+	span1.End()
+
+	_, span2 := tracer.Start(context.Background(), "normal-http-call", trace.WithAttributes(
+		attribute.String("llm.provider", "openai"),
+	))
+	span2.End()
+
+	// Non-AI spans - should be filtered out
+	_, span3 := tracer.Start(context.Background(), "database-query", trace.WithAttributes(
+		attribute.String("db.statement", "SELECT * FROM users"),
+	))
+	span3.End()
+
+	_, span4 := tracer.Start(context.Background(), "http.request")
+	span4.End()
+
+	_ = tp.ForceFlush(context.Background())
+	spans := exporter.GetSpans()
+
+	// Should only have the 2 AI-related spans
+	assert.Len(spans, 2)
+
+	spanNames := make([]string, len(spans))
+	for i, span := range spans {
+		spanNames[i] = span.Name
+	}
+
+	assert.Contains(spanNames, "gen_ai.completion")
+	assert.Contains(spanNames, "normal-http-call") // kept because of llm.provider attribute
+	assert.NotContains(spanNames, "database-query")
+	assert.NotContains(spanNames, "http.request")
+}
+
+func TestWithFilterAISpans_CombinedWithCustomFilters(t *testing.T) {
+	assert := assert.New(t)
+
+	tp := sdktrace.NewTracerProvider()
+	exporter := tracetest.NewInMemoryExporter()
+	processor := sdktrace.NewSimpleSpanProcessor(exporter)
+
+	// Custom filter that keeps "important" spans and drops "low" importance
+	customFilter := func(span sdktrace.ReadOnlySpan) int {
+		for _, attr := range span.Attributes() {
+			if string(attr.Key) == "importance" {
+				switch attr.Value.AsString() {
+				case "high":
+					return 1 // Keep
+				case "low":
+					return -1 // Drop (this will override AI filter)
+				}
+			}
+		}
+		return 0 // Don't influence
+	}
+
+	// Use both AI filtering and custom filter
+	err := Enable(tp,
+		braintrust.WithDefaultProjectID("combined-filter-test"),
+		braintrust.WithFilterAISpans(true),
+		braintrust.WithSpanFilterFuncs(customFilter),
+		withSpanProcessor(processor),
+	)
+	assert.NoError(err)
+
+	tracer := tp.Tracer("test")
+
+	// AI span - should be kept by AI filter
+	_, span1 := tracer.Start(context.Background(), "gen_ai.completion")
+	span1.End()
+
+	// Important span - should be kept by custom filter
+	_, span2 := tracer.Start(context.Background(), "critical-operation", trace.WithAttributes(
+		attribute.String("importance", "high"),
+	))
+	span2.End()
+
+	// Neither AI nor important - should be filtered out
+	_, span3 := tracer.Start(context.Background(), "routine-operation")
+	span3.End()
+
+	// Test priority: custom filter overrides AI filter
+	// This span has AI attributes but custom filter should drop it (custom filter has priority)
+	_, span4 := tracer.Start(context.Background(), "gen_ai.bad_completion", trace.WithAttributes(
+		attribute.String("gen_ai.request.model", "gpt-4"),
+		attribute.String("importance", "low"), // Custom filter will return 0, AI filter would return 1, but custom comes first
+	))
+	span4.End()
+
+	_ = tp.ForceFlush(context.Background())
+	spans := exporter.GetSpans()
+
+	// Should have both AI span and important span, but not the routine or bad completion
+	assert.Len(spans, 2)
+
+	spanNames := make([]string, len(spans))
+	for i, span := range spans {
+		spanNames[i] = span.Name
+	}
+
+	assert.Contains(spanNames, "gen_ai.completion")
+	assert.Contains(spanNames, "critical-operation")
+	assert.NotContains(spanNames, "routine-operation")
+	assert.NotContains(spanNames, "gen_ai.bad_completion") // AI span but custom filter had priority
+}

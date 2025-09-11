@@ -50,6 +50,14 @@ func WithSpanFilterFuncs(filterFuncs ...SpanFilterFunc) Option {
 	}
 }
 
+// WithFilterAISpans enables filtering to keep only AI-related spans.
+// When enabled, only spans with AI-related names or attributes will be sent to Braintrust.
+func WithFilterAISpans(enabled bool) Option {
+	return func(c *Config) {
+		c.FilterAISpans = enabled
+	}
+}
+
 // Config holds the configuration for the Braintrust SDK
 type Config struct {
 	APIKey                string
@@ -58,6 +66,7 @@ type Config struct {
 	DefaultProjectID      string
 	DefaultProjectName    string
 	EnableTraceConsoleLog bool
+	FilterAISpans         bool
 	SpanFilterFuncs       []SpanFilterFunc
 
 	// SpanProcessor allows overriding the default SpanProcessor (primarily for testing)
@@ -99,6 +108,7 @@ func GetConfig(opts ...Option) Config {
 		DefaultProjectID:      getEnvString("BRAINTRUST_DEFAULT_PROJECT_ID", ""),
 		DefaultProjectName:    getEnvString("BRAINTRUST_DEFAULT_PROJECT", "default-go-project"),
 		EnableTraceConsoleLog: getEnvBool("BRAINTRUST_ENABLE_TRACE_CONSOLE_LOG", false),
+		FilterAISpans:         getEnvBool("BRAINTRUST_FILTER_AI_SPANS", false),
 	}
 	for _, opt := range opts {
 		opt(&config)
