@@ -215,6 +215,11 @@ type Parent struct {
 	ID   string
 }
 
+// Attr returns the OTel attribute for this parent.
+func (p Parent) Attr() attribute.KeyValue {
+	return attribute.String(ParentOtelAttrKey, p.String())
+}
+
 func (p Parent) valid() bool {
 	return p.Type != "" && p.ID != ""
 }
@@ -253,7 +258,7 @@ func NewSpanProcessor(opts ...SpanProcessorOption) SpanProcessor {
 	}
 
 	if p.defaultParent.valid() {
-		p.defaultAttr = attribute.String(ParentOtelAttrKey, p.defaultParent.String())
+		p.defaultAttr = p.defaultParent.Attr()
 	}
 
 	return p
@@ -297,5 +302,5 @@ func (*spanProcessor) ForceFlush(_ context.Context) error { return nil }
 var _ trace.SpanProcessor = &spanProcessor{}
 
 func setParentOnSpan(span trace.ReadWriteSpan, parent Parent) {
-	span.SetAttributes(attribute.String(ParentOtelAttrKey, parent.String()))
+	span.SetAttributes(parent.Attr())
 }
