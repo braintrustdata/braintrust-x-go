@@ -9,10 +9,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/codes"
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
+	"github.com/braintrustdata/braintrust-x-go/braintrust"
 	"github.com/braintrustdata/braintrust-x-go/braintrust/internal/oteltest"
-	"github.com/braintrustdata/braintrust-x-go/braintrust/trace"
 )
 
 var (
@@ -761,18 +760,9 @@ func TestEval_BraintrustParentWithAndWithoutDefaultProject(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			opts := []sdktrace.TracerProviderOption{}
-			if tt.withProcessor {
-				spanProcessorOpts := []trace.SpanProcessorOption{}
-				if tt.projectID != "" {
-					parent := trace.Parent{
-						Type: trace.ParentTypeProjectID,
-						ID:   tt.projectID,
-					}
-					spanProcessorOpts = append(spanProcessorOpts, trace.WithDefaultParent(parent))
-				}
-				processor := trace.NewSpanProcessor(spanProcessorOpts...)
-				opts = append(opts, sdktrace.WithSpanProcessor(processor))
+			var opts []braintrust.Option
+			if tt.projectID != "" {
+				opts = append(opts, braintrust.WithDefaultProjectID(tt.projectID))
 			}
 			_, exporter := oteltest.Setup(t, opts...)
 

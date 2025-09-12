@@ -5,19 +5,20 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
 
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+
 	"github.com/braintrustdata/braintrust-x-go/braintrust"
-	"github.com/braintrustdata/braintrust-x-go/braintrust/internal/oteltest"
 )
 
-// withSpanExporter is a test-only option for setting a custom span exporter
-func withSpanExporter(exporter sdktrace.SpanExporter) braintrust.Option {
+// withSpanProcessor is a test-only option for setting a custom span processor
+func withSpanProcessor(processor sdktrace.SpanProcessor) braintrust.Option {
 	return func(c *braintrust.Config) {
-		c.SpanExporter = exporter
+		c.SpanProcessor = processor
 	}
 }
 
@@ -25,75 +26,122 @@ func newProjectIDParent(projectID string) Parent {
 	return Parent{Type: ParentTypeProjectID, ID: projectID}
 }
 
-func newProjectNameParent(projectName string) Parent {
-	return Parent{Type: ParentTypeProject, ID: projectName}
+// Helper functions for testing
+func flushOne(t *testing.T, exporter *tracetest.InMemoryExporter) tracetest.SpanStub {
+	t.Helper()
+	spans := exporter.GetSpans()
+	exporter.Reset()
+	if len(spans) != 1 {
+		t.Fatalf("Expected 1 span, got %d", len(spans))
+	}
+	return spans[0]
+}
+
+func attrEquals(span tracetest.SpanStub, key, expectedValue string) bool {
+	for _, attr := range span.Attributes {
+		if string(attr.Key) == key && attr.Value.AsString() == expectedValue {
+			return true
+		}
+	}
+	return false
+}
+
+func assertAttrEquals(t *testing.T, span tracetest.SpanStub, key, expectedValue string) {
+	t.Helper()
+	assert.True(t, attrEquals(span, key, expectedValue))
 }
 
 func TestSpanProcessor(t *testing.T) {
 	assert := assert.New(t)
 
-	processor := NewSpanProcessor(WithDefaultParent(newProjectIDParent("12345")))
-	tracer, exporter := oteltest.Setup(t, sdktrace.WithSpanProcessor(processor))
+	tp := sdktrace.NewTracerProvider()
+	exporter := tracetest.NewInMemoryExporter()
+	processor := sdktrace.NewSimpleSpanProcessor(exporter)
 
-	// Assert we use the default parent if none is set.
+	err := Enable(tp,
+		braintrust.WithDefaultProjectID("12345"),
+		withSpanProcessor(processor),
+	)
+	assert.NoError(err)
+
+	tracer := tp.Tracer("test")
+
 	_, span1 := tracer.Start(context.Background(), "test")
 	span1.End()
-	span := exporter.FlushOne()
+	_ = tp.ForceFlush(context.Background())
+	span := flushOne(t, exporter)
 
-	assert.Equal(span.Name(), "test")
-	span.AssertAttrEquals(ParentOtelAttrKey, "project_id:12345")
+	assert.Equal(span.Name, "test")
+	assertAttrEquals(t, span, ParentOtelAttrKey, "project_id:12345")
 
-	// Assert we use the parent from the context if it is set.
 	ctx := context.Background()
 	ctx = SetParent(ctx, newProjectIDParent("67890"))
 	_, span2 := tracer.Start(ctx, "test")
 	span2.End()
-	span = exporter.FlushOne()
-	span.AssertAttrEquals(ParentOtelAttrKey, "project_id:67890")
+	_ = tp.ForceFlush(context.Background())
+	span = flushOne(t, exporter)
+	assertAttrEquals(t, span, ParentOtelAttrKey, "project_id:67890")
 
-	// assert that if a span already has a parent, it is not overridden
+	// Existing parent attributes should not be overridden
 	ctx = context.Background()
 	ctx = SetParent(ctx, newProjectIDParent("77777"))
 	_, span4 := tracer.Start(ctx, "test", trace.WithAttributes(attribute.String(ParentOtelAttrKey, "project_id:88888")))
 	span4.End()
-	span = exporter.FlushOne()
-	span.AssertAttrEquals(ParentOtelAttrKey, "project_id:88888")
+	_ = tp.ForceFlush(context.Background())
+	span = flushOne(t, exporter)
+	assertAttrEquals(t, span, ParentOtelAttrKey, "project_id:88888")
 }
 func TestSpanProcessorNoDefaultProjectID(t *testing.T) {
 	assert := assert.New(t)
 
-	processor := NewSpanProcessor()
-	tracer, exporter := oteltest.Setup(t, sdktrace.WithSpanProcessor(processor))
+	tp := sdktrace.NewTracerProvider()
+	exporter := tracetest.NewInMemoryExporter()
+	processor := sdktrace.NewSimpleSpanProcessor(exporter)
 
-	// Assert we don't set a parent if none is set.
+	err := Enable(tp,
+		braintrust.WithDefaultProject(""),
+		withSpanProcessor(processor),
+	)
+	assert.NoError(err)
+
+	tracer := tp.Tracer("test")
+
 	_, span1 := tracer.Start(context.Background(), "test")
 	span1.End()
-	span := exporter.FlushOne()
+	_ = tp.ForceFlush(context.Background())
+	span := flushOne(t, exporter)
 
-	assert.Equal(span.Name(), "test")
-	assert.False(span.HasAttr(ParentOtelAttrKey))
+	assert.Equal(span.Name, "test")
+	assertAttrEquals(t, span, ParentOtelAttrKey, "project_name:go-otel-default-project")
 }
 
 func TestSpanProcessorWithDefaultProjectName(t *testing.T) {
 	assert := assert.New(t)
 
-	processor := NewSpanProcessor(WithDefaultParent(newProjectNameParent("12345")))
-	tracer, exporter := oteltest.Setup(t, sdktrace.WithSpanProcessor(processor))
+	tp := sdktrace.NewTracerProvider()
+	exporter := tracetest.NewInMemoryExporter()
+	processor := sdktrace.NewSimpleSpanProcessor(exporter)
 
-	// Assert we use the default parent if none is set.
+	err := Enable(tp,
+		braintrust.WithDefaultProject("12345"),
+		withSpanProcessor(processor),
+	)
+	assert.NoError(err)
+
+	tracer := tp.Tracer("test")
+
 	_, span1 := tracer.Start(context.Background(), "test")
 	span1.End()
-	span := exporter.FlushOne()
+	_ = tp.ForceFlush(context.Background())
+	span := flushOne(t, exporter)
 
-	assert.Equal(span.Name(), "test")
-	span.AssertAttrEquals(ParentOtelAttrKey, "project_name:12345")
+	assert.Equal(span.Name, "test")
+	assertAttrEquals(t, span, ParentOtelAttrKey, "project_name:12345")
 }
 
 func TestEnableErrors(t *testing.T) {
 	tp := sdktrace.NewTracerProvider()
-	memoryExporter := tracetest.NewInMemoryExporter()
-
-	err := Enable(tp, braintrust.WithAPIURL("invalid-url"), withSpanExporter(memoryExporter))
+	err := Enable(tp, braintrust.WithAPIURL("invalid-url"))
 	assert.Error(t, err)
 }
 
@@ -111,8 +159,9 @@ func TestEnableOptions(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tp := sdktrace.NewTracerProvider()
-			exporter := oteltest.NewExporter(t)
-			opts := append(tt.opts, withSpanExporter(exporter.InMemoryExporter()))
+			exporter := tracetest.NewInMemoryExporter()
+			processor := sdktrace.NewSimpleSpanProcessor(exporter)
+			opts := append(tt.opts, withSpanProcessor(processor))
 
 			err := Enable(tp, opts...)
 			assert.NoError(t, err)
@@ -122,8 +171,8 @@ func TestEnableOptions(t *testing.T) {
 			err = tp.ForceFlush(context.Background())
 			assert.NoError(t, err)
 
-			span1 := exporter.FlushOne()
-			span1.AssertAttrEquals(ParentOtelAttrKey, tt.wantAttr)
+			span1 := flushOne(t, exporter)
+			assertAttrEquals(t, span1, ParentOtelAttrKey, tt.wantAttr)
 		})
 	}
 }
@@ -132,16 +181,15 @@ func TestEnableWithExistingProcessors(t *testing.T) {
 	assert := assert.New(t)
 
 	tp := sdktrace.NewTracerProvider()
-	m1 := oteltest.NewExporter(t)
-	m2 := oteltest.NewExporter(t)
+	m1 := tracetest.NewInMemoryExporter()
 
-	// Add one "existing" processor (e.g. a customer's APM processor)
-	tp.RegisterSpanProcessor(sdktrace.NewBatchSpanProcessor(m1.InMemoryExporter()))
+	tp.RegisterSpanProcessor(sdktrace.NewBatchSpanProcessor(m1))
 
-	// Add Braintrust's span processor
+	m2 := tracetest.NewInMemoryExporter()
+	processor2 := sdktrace.NewSimpleSpanProcessor(m2)
 	err := Enable(tp,
 		braintrust.WithDefaultProjectID("test-project-existing"),
-		withSpanExporter(m2.InMemoryExporter()),
+		withSpanProcessor(processor2),
 	)
 	assert.NoError(err)
 
@@ -152,9 +200,464 @@ func TestEnableWithExistingProcessors(t *testing.T) {
 	err = tp.ForceFlush(context.Background())
 	assert.NoError(err)
 
-	span1, span2 := m1.FlushOne(), m2.FlushOne()
-	assert.Equal("test-span-existing", span1.Name())
-	assert.Equal("test-span-existing", span2.Name())
-	span1.AssertAttrEquals(ParentOtelAttrKey, "project_id:test-project-existing")
-	span2.AssertAttrEquals(ParentOtelAttrKey, "project_id:test-project-existing")
+	span1, span2 := flushOne(t, m1), flushOne(t, m2)
+	assert.Equal("test-span-existing", span1.Name)
+	assert.Equal("test-span-existing", span2.Name)
+	assertAttrEquals(t, span1, ParentOtelAttrKey, "project_id:test-project-existing")
+	assertAttrEquals(t, span2, ParentOtelAttrKey, "project_id:test-project-existing")
+}
+
+func TestQuickstart(t *testing.T) {
+	original := otel.GetTracerProvider()
+	defer otel.SetTracerProvider(original)
+
+	exporter := tracetest.NewInMemoryExporter()
+	processor := sdktrace.NewSimpleSpanProcessor(exporter)
+
+	teardown, err := Quickstart(
+		braintrust.WithDefaultProject("test-quickstart"),
+		withSpanProcessor(processor),
+	)
+	assert.NoError(t, err)
+	assert.NotNil(t, teardown)
+
+	tp := otel.GetTracerProvider()
+	assert.NotEqual(t, original, tp)
+
+	tracer := otel.Tracer("test-tracer")
+	_, span := tracer.Start(context.Background(), "test-span")
+	span.End()
+
+	spans := exporter.GetSpans()
+	assert.Len(t, spans, 1)
+	capturedSpan := spans[0]
+	assert.Equal(t, "test-span", capturedSpan.Name)
+	assertAttrEquals(t, capturedSpan, ParentOtelAttrKey, "project_name:test-quickstart")
+
+	teardown()
+}
+
+func TestSpanFilterFunc_WithAttributes(t *testing.T) {
+	assert := assert.New(t)
+
+	tp := sdktrace.NewTracerProvider()
+	exporter := tracetest.NewInMemoryExporter()
+	processor := sdktrace.NewSimpleSpanProcessor(exporter)
+
+	customFilter := func(span sdktrace.ReadOnlySpan) int {
+		for _, attr := range span.Attributes() {
+			if string(attr.Key) == "importance" && attr.Value.AsString() == "high" {
+				return 1
+			}
+			if string(attr.Key) == "noise" && attr.Value.AsBool() {
+				return -1
+			}
+		}
+		return 0
+	}
+
+	err := Enable(tp,
+		braintrust.WithDefaultProjectID("filter-test"),
+		braintrust.WithSpanFilterFuncs(customFilter),
+		withSpanProcessor(processor),
+	)
+	assert.NoError(err)
+
+	tracer := tp.Tracer("test")
+
+	rootCtx, rootSpan := tracer.Start(context.Background(), "root-operation")
+	rootSpan.End()
+
+	_, span1 := tracer.Start(rootCtx, "important-operation", trace.WithAttributes(
+		attribute.String("importance", "high"),
+	))
+	span1.End()
+
+	_, span2 := tracer.Start(rootCtx, "noisy-operation", trace.WithAttributes(
+		attribute.Bool("noise", true),
+	))
+	span2.End()
+
+	_, span3 := tracer.Start(rootCtx, "normal-operation")
+	span3.End()
+
+	_ = tp.ForceFlush(context.Background())
+	spans := exporter.GetSpans()
+
+	assert.Len(spans, 3)
+
+	spanNames := make([]string, len(spans))
+	for i, span := range spans {
+		spanNames[i] = span.Name
+	}
+
+	assert.Contains(spanNames, "root-operation")
+	assert.Contains(spanNames, "important-operation")
+	assert.Contains(spanNames, "normal-operation")
+	assert.NotContains(spanNames, "noisy-operation")
+}
+
+func TestSpanProcessor_FilteringWithMultipleProcessors(t *testing.T) {
+	assert := assert.New(t)
+
+	tp := sdktrace.NewTracerProvider()
+
+	allSpansExporter := tracetest.NewInMemoryExporter()
+	allSpansProcessor := sdktrace.NewSimpleSpanProcessor(allSpansExporter)
+	tp.RegisterSpanProcessor(allSpansProcessor)
+
+	braintrustExporter := tracetest.NewInMemoryExporter()
+	braintrustProcessor := sdktrace.NewSimpleSpanProcessor(braintrustExporter)
+
+	dropNoisyFilter := func(span sdktrace.ReadOnlySpan) int {
+		for _, attr := range span.Attributes() {
+			if string(attr.Key) == "noise" && attr.Value.AsBool() {
+				return -1
+			}
+		}
+		return 0
+	}
+
+	err := Enable(tp,
+		braintrust.WithDefaultProjectID("multi-processor-test"),
+		braintrust.WithSpanFilterFuncs(dropNoisyFilter),
+		withSpanProcessor(braintrustProcessor),
+	)
+	assert.NoError(err)
+
+	tracer := tp.Tracer("test")
+
+	rootCtx, rootSpan := tracer.Start(context.Background(), "root-operation")
+	rootSpan.End()
+
+	_, span1 := tracer.Start(rootCtx, "important-operation")
+	span1.End()
+
+	_, span2 := tracer.Start(rootCtx, "noisy-operation", trace.WithAttributes(
+		attribute.Bool("noise", true),
+	))
+	span2.End()
+
+	_, span3 := tracer.Start(rootCtx, "normal-operation")
+	span3.End()
+
+	_ = tp.ForceFlush(context.Background())
+
+	allSpans := allSpansExporter.GetSpans()
+	assert.Len(allSpans, 4)
+
+	allSpanNames := make([]string, len(allSpans))
+	for i, span := range allSpans {
+		allSpanNames[i] = span.Name
+	}
+	assert.Contains(allSpanNames, "root-operation")
+	assert.Contains(allSpanNames, "important-operation")
+	assert.Contains(allSpanNames, "noisy-operation")
+	assert.Contains(allSpanNames, "normal-operation")
+
+	braintrustSpans := braintrustExporter.GetSpans()
+	assert.Len(braintrustSpans, 3)
+
+	braintrustSpanNames := make([]string, len(braintrustSpans))
+	for i, span := range braintrustSpans {
+		braintrustSpanNames[i] = span.Name
+	}
+	assert.Contains(braintrustSpanNames, "root-operation")
+	assert.Contains(braintrustSpanNames, "important-operation")
+	assert.Contains(braintrustSpanNames, "normal-operation")
+	assert.NotContains(braintrustSpanNames, "noisy-operation")
+}
+
+func TestAISpanFilterFunc_WithAIPrefixes(t *testing.T) {
+	assert := assert.New(t)
+
+	tp := sdktrace.NewTracerProvider()
+	exporter := tracetest.NewInMemoryExporter()
+	processor := sdktrace.NewSimpleSpanProcessor(exporter)
+
+	err := Enable(tp,
+		braintrust.WithDefaultProjectID("ai-filter-test"),
+		braintrust.WithSpanFilterFuncs(aiSpanFilterFunc),
+		withSpanProcessor(processor),
+	)
+	assert.NoError(err)
+
+	tracer := tp.Tracer("test")
+
+	rootCtx, rootSpan := tracer.Start(context.Background(), "root-operation")
+	rootSpan.End()
+
+	_, span1 := tracer.Start(rootCtx, "openai-call", trace.WithAttributes(
+		attribute.String("gen_ai.system", "openai"),
+		attribute.String("gen_ai.request.model", "gpt-4"),
+	))
+	span1.End()
+
+	_, span2 := tracer.Start(rootCtx, "braintrust-log", trace.WithAttributes(
+		attribute.String("braintrust.log.id", "12345"),
+	))
+	span2.End()
+
+	_, span3 := tracer.Start(rootCtx, "llm-call", trace.WithAttributes(
+		attribute.String("llm.request.type", "completion"),
+	))
+	span3.End()
+
+	_, span4 := tracer.Start(rootCtx, "ai-service", trace.WithAttributes(
+		attribute.String("ai.model.name", "claude"),
+	))
+	span4.End()
+
+	_, span5 := tracer.Start(rootCtx, "traceloop-span", trace.WithAttributes(
+		attribute.String("traceloop.span.kind", "llm"),
+	))
+	span5.End()
+
+	_, span6 := tracer.Start(rootCtx, "database-query", trace.WithAttributes(
+		attribute.String("db.statement", "SELECT * FROM users"),
+	))
+	span6.End()
+
+	_, span7 := tracer.Start(rootCtx, "http-request")
+	span7.End()
+
+	_ = tp.ForceFlush(context.Background())
+	spans := exporter.GetSpans()
+
+	assert.Len(spans, 6)
+
+	spanNames := make([]string, len(spans))
+	for i, span := range spans {
+		spanNames[i] = span.Name
+	}
+
+	assert.Contains(spanNames, "root-operation")
+	assert.Contains(spanNames, "openai-call")
+	assert.Contains(spanNames, "braintrust-log")
+	assert.Contains(spanNames, "llm-call")
+	assert.Contains(spanNames, "ai-service")
+	assert.Contains(spanNames, "traceloop-span")
+	assert.NotContains(spanNames, "database-query")
+	assert.NotContains(spanNames, "http-request")
+}
+
+func TestAISpanFilterFunc_WithSpanNames(t *testing.T) {
+	assert := assert.New(t)
+
+	tp := sdktrace.NewTracerProvider()
+	exporter := tracetest.NewInMemoryExporter()
+	processor := sdktrace.NewSimpleSpanProcessor(exporter)
+
+	err := Enable(tp,
+		braintrust.WithDefaultProjectID("ai-name-filter-test"),
+		braintrust.WithSpanFilterFuncs(aiSpanFilterFunc),
+		withSpanProcessor(processor),
+	)
+	assert.NoError(err)
+
+	tracer := tp.Tracer("test")
+
+	rootCtx, rootSpan := tracer.Start(context.Background(), "root-operation")
+	rootSpan.End()
+
+	_, span1 := tracer.Start(rootCtx, "gen_ai.completion")
+	span1.End()
+
+	_, span2 := tracer.Start(rootCtx, "braintrust.experiment.log")
+	span2.End()
+
+	_, span3 := tracer.Start(rootCtx, "llm.chat_completion")
+	span3.End()
+
+	_, span4 := tracer.Start(rootCtx, "user.login")
+	span4.End()
+
+	_ = tp.ForceFlush(context.Background())
+	spans := exporter.GetSpans()
+
+	assert.Len(spans, 4)
+
+	spanNames := make([]string, len(spans))
+	for i, span := range spans {
+		spanNames[i] = span.Name
+	}
+
+	assert.Contains(spanNames, "root-operation")
+	assert.Contains(spanNames, "gen_ai.completion")
+	assert.Contains(spanNames, "braintrust.experiment.log")
+	assert.Contains(spanNames, "llm.chat_completion")
+	assert.NotContains(spanNames, "user.login")
+}
+
+func TestWithFilterAISpans_Option(t *testing.T) {
+	assert := assert.New(t)
+
+	tp := sdktrace.NewTracerProvider()
+	exporter := tracetest.NewInMemoryExporter()
+	processor := sdktrace.NewSimpleSpanProcessor(exporter)
+
+	err := Enable(tp,
+		braintrust.WithDefaultProjectID("ai-option-test"),
+		braintrust.WithFilterAISpans(true),
+		withSpanProcessor(processor),
+	)
+	assert.NoError(err)
+
+	tracer := tp.Tracer("test")
+
+	rootCtx, rootSpan := tracer.Start(context.Background(), "root-operation")
+	rootSpan.End()
+
+	_, span1 := tracer.Start(rootCtx, "gen_ai.completion", trace.WithAttributes(
+		attribute.String("gen_ai.request.model", "gpt-4"),
+	))
+	span1.End()
+
+	_, span2 := tracer.Start(rootCtx, "normal-http-call", trace.WithAttributes(
+		attribute.String("llm.provider", "openai"),
+	))
+	span2.End()
+
+	_, span3 := tracer.Start(rootCtx, "database-query", trace.WithAttributes(
+		attribute.String("db.statement", "SELECT * FROM users"),
+	))
+	span3.End()
+
+	_, span4 := tracer.Start(rootCtx, "http.request")
+	span4.End()
+
+	_ = tp.ForceFlush(context.Background())
+	spans := exporter.GetSpans()
+
+	assert.Len(spans, 3)
+
+	spanNames := make([]string, len(spans))
+	for i, span := range spans {
+		spanNames[i] = span.Name
+	}
+
+	assert.Contains(spanNames, "root-operation")
+	assert.Contains(spanNames, "gen_ai.completion")
+	assert.Contains(spanNames, "normal-http-call")
+	assert.NotContains(spanNames, "database-query")
+	assert.NotContains(spanNames, "http.request")
+}
+
+func TestWithFilterAISpans_CombinedWithCustomFilters(t *testing.T) {
+	assert := assert.New(t)
+
+	tp := sdktrace.NewTracerProvider()
+	exporter := tracetest.NewInMemoryExporter()
+	processor := sdktrace.NewSimpleSpanProcessor(exporter)
+
+	customFilter := func(span sdktrace.ReadOnlySpan) int {
+		for _, attr := range span.Attributes() {
+			if string(attr.Key) == "importance" {
+				switch attr.Value.AsString() {
+				case "high":
+					return 1
+				case "low":
+					return -1
+				}
+			}
+		}
+		return 0
+	}
+
+	err := Enable(tp,
+		braintrust.WithDefaultProjectID("combined-filter-test"),
+		braintrust.WithFilterAISpans(true),
+		braintrust.WithSpanFilterFuncs(customFilter),
+		withSpanProcessor(processor),
+	)
+	assert.NoError(err)
+
+	tracer := tp.Tracer("test")
+
+	rootCtx, rootSpan := tracer.Start(context.Background(), "root-operation")
+	rootSpan.End()
+
+	_, span1 := tracer.Start(rootCtx, "gen_ai.completion")
+	span1.End()
+
+	_, span2 := tracer.Start(rootCtx, "critical-operation", trace.WithAttributes(
+		attribute.String("importance", "high"),
+	))
+	span2.End()
+
+	_, span3 := tracer.Start(rootCtx, "routine-operation")
+	span3.End()
+
+	// Test priority: custom filter overrides AI filter
+	// This span has AI attributes but custom filter should drop it (custom filter has priority)
+	_, span4 := tracer.Start(rootCtx, "gen_ai.bad_completion", trace.WithAttributes(
+		attribute.String("gen_ai.request.model", "gpt-4"),
+		attribute.String("importance", "low"),
+	))
+	span4.End()
+
+	_ = tp.ForceFlush(context.Background())
+	spans := exporter.GetSpans()
+
+	assert.Len(spans, 3)
+
+	spanNames := make([]string, len(spans))
+	for i, span := range spans {
+		spanNames[i] = span.Name
+	}
+
+	assert.Contains(spanNames, "root-operation")
+	assert.Contains(spanNames, "gen_ai.completion")
+	assert.Contains(spanNames, "critical-operation")
+	assert.NotContains(spanNames, "routine-operation")
+	assert.NotContains(spanNames, "gen_ai.bad_completion")
+}
+
+func TestAISpanFilterFunc_KeepsRootSpans(t *testing.T) {
+	assert := assert.New(t)
+
+	tp := sdktrace.NewTracerProvider()
+	exporter := tracetest.NewInMemoryExporter()
+	processor := sdktrace.NewSimpleSpanProcessor(exporter)
+
+	err := Enable(tp,
+		braintrust.WithDefaultProjectID("root-spans-test"),
+		braintrust.WithFilterAISpans(true),
+		withSpanProcessor(processor),
+	)
+	assert.NoError(err)
+
+	tracer := tp.Tracer("test")
+
+	_, rootSpan1 := tracer.Start(context.Background(), "http-server-request")
+	rootSpan1.End()
+
+	_, rootSpan2 := tracer.Start(context.Background(), "gen_ai.root_completion")
+	rootSpan2.End()
+
+	rootCtx, rootSpan3 := tracer.Start(context.Background(), "parent-operation")
+
+	_, childAI := tracer.Start(rootCtx, "llm.child_completion")
+	childAI.End()
+
+	_, childNonAI := tracer.Start(rootCtx, "database-query")
+	childNonAI.End()
+
+	rootSpan3.End()
+
+	_ = tp.ForceFlush(context.Background())
+	spans := exporter.GetSpans()
+
+	assert.Len(spans, 4)
+
+	spanNames := make([]string, len(spans))
+	for i, span := range spans {
+		spanNames[i] = span.Name
+	}
+
+	assert.Contains(spanNames, "http-server-request")
+	assert.Contains(spanNames, "gen_ai.root_completion")
+	assert.Contains(spanNames, "parent-operation")
+	assert.Contains(spanNames, "llm.child_completion")
+	assert.NotContains(spanNames, "database-query")
 }

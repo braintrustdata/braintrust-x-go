@@ -39,6 +39,26 @@ func WithAPIURL(apiURL string) Option {
 	}
 }
 
+// SpanFilterFunc is a function that you can use to decide which spans to send to Braintrust.
+// Return >1 to keep the span, <1 to drop the span, or 0 to not influence the decision.
+type SpanFilterFunc func(span trace.ReadOnlySpan) int
+
+// WithSpanFilterFuncs sets the SpanFilterFuncs for the Braintrust SDK.
+func WithSpanFilterFuncs(filterFuncs ...SpanFilterFunc) Option {
+	return func(c *Config) {
+		c.SpanFilterFuncs = filterFuncs
+	}
+}
+
+// WithFilterAISpans enables filtering to keep only AI-related spans.
+// When enabled, only spans with AI-related names or attributes will be sent to Braintrust.
+// Environment variable: BRAINTRUST_OTEL_FILTER_AI_SPANS
+func WithFilterAISpans(enabled bool) Option {
+	return func(c *Config) {
+		c.FilterAISpans = enabled
+	}
+}
+
 // Config holds the configuration for the Braintrust SDK
 type Config struct {
 	APIKey                string
@@ -47,9 +67,11 @@ type Config struct {
 	DefaultProjectID      string
 	DefaultProjectName    string
 	EnableTraceConsoleLog bool
+	FilterAISpans         bool
+	SpanFilterFuncs       []SpanFilterFunc
 
-	// SpanExporter allows overriding the default OTLP exporter (primarily for testing)
-	SpanExporter trace.SpanExporter
+	// SpanProcessor allows overriding the default SpanProcessor (primarily for testing)
+	SpanProcessor trace.SpanProcessor
 }
 
 // String returns a pretty-printed representation of the config with the API key redacted
@@ -87,6 +109,7 @@ func GetConfig(opts ...Option) Config {
 		DefaultProjectID:      getEnvString("BRAINTRUST_DEFAULT_PROJECT_ID", ""),
 		DefaultProjectName:    getEnvString("BRAINTRUST_DEFAULT_PROJECT", "default-go-project"),
 		EnableTraceConsoleLog: getEnvBool("BRAINTRUST_ENABLE_TRACE_CONSOLE_LOG", false),
+		FilterAISpans:         getEnvBool("BRAINTRUST_OTEL_FILTER_AI_SPANS", false),
 	}
 	for _, opt := range opts {
 		opt(&config)
