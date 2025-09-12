@@ -251,8 +251,13 @@ func (p *spanProcessor) OnEnd(span trace.ReadOnlySpan) {
 }
 
 // shouldForwardSpan applies filter functions to determine if a span should be forwarded.
-// Filter functions are applied in order, with the first filters having priority.
+// Root spans are always kept. Filter functions are applied in order, with the first filters having priority.
 func (p *spanProcessor) shouldForwardSpan(span trace.ReadOnlySpan) bool {
+	// Always keep root spans (spans with no parent)
+	if !span.Parent().IsValid() {
+		return true
+	}
+
 	// If no filters, keep everything
 	if len(p.filters) == 0 {
 		return true
@@ -352,7 +357,8 @@ var aiOtelPrefixes = []string{
 	"traceloop.",
 }
 
-// aiSpanFilterFunc is a SpanFilterFunc that keeps ai spans and drops non-AI spans.
+// aiSpanFilterFunc is a SpanFilterFunc that keeps AI spans, drops non-AI spans.
+// Root spans are always kept by the core filtering logic.
 func aiSpanFilterFunc(span trace.ReadOnlySpan) int {
 	// Check span name for AI prefixes
 	spanName := span.Name()
