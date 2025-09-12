@@ -66,7 +66,6 @@ func TestSpanProcessor(t *testing.T) {
 
 	tracer := tp.Tracer("test")
 
-	// Assert we use the default parent if none is set.
 	_, span1 := tracer.Start(context.Background(), "test")
 	span1.End()
 	_ = tp.ForceFlush(context.Background())
@@ -75,7 +74,6 @@ func TestSpanProcessor(t *testing.T) {
 	assert.Equal(span.Name, "test")
 	assertAttrEquals(t, span, ParentOtelAttrKey, "project_id:12345")
 
-	// Assert we use the parent from the context if it is set.
 	ctx := context.Background()
 	ctx = SetParent(ctx, newProjectIDParent("67890"))
 	_, span2 := tracer.Start(ctx, "test")
@@ -84,7 +82,7 @@ func TestSpanProcessor(t *testing.T) {
 	span = flushOne(t, exporter)
 	assertAttrEquals(t, span, ParentOtelAttrKey, "project_id:67890")
 
-	// assert that if a span already has a parent, it is not overridden
+	// Existing parent attributes should not be overridden
 	ctx = context.Background()
 	ctx = SetParent(ctx, newProjectIDParent("77777"))
 	_, span4 := tracer.Start(ctx, "test", trace.WithAttributes(attribute.String(ParentOtelAttrKey, "project_id:88888")))
@@ -100,16 +98,14 @@ func TestSpanProcessorNoDefaultProjectID(t *testing.T) {
 	exporter := tracetest.NewInMemoryExporter()
 	processor := sdktrace.NewSimpleSpanProcessor(exporter)
 
-	// Don't set a default project - should use the fallback
 	err := Enable(tp,
-		braintrust.WithDefaultProject(""), // Empty project name
+		braintrust.WithDefaultProject(""),
 		withSpanProcessor(processor),
 	)
 	assert.NoError(err)
 
 	tracer := tp.Tracer("test")
 
-	// Assert we use the fallback default parent
 	_, span1 := tracer.Start(context.Background(), "test")
 	span1.End()
 	_ = tp.ForceFlush(context.Background())
@@ -134,7 +130,6 @@ func TestSpanProcessorWithDefaultProjectName(t *testing.T) {
 
 	tracer := tp.Tracer("test")
 
-	// Assert we use the default parent if none is set.
 	_, span1 := tracer.Start(context.Background(), "test")
 	span1.End()
 	_ = tp.ForceFlush(context.Background())
@@ -188,10 +183,8 @@ func TestEnableWithExistingProcessors(t *testing.T) {
 	tp := sdktrace.NewTracerProvider()
 	m1 := tracetest.NewInMemoryExporter()
 
-	// Add one "existing" processor (e.g. a customer's APM processor)
 	tp.RegisterSpanProcessor(sdktrace.NewBatchSpanProcessor(m1))
 
-	// Add Braintrust's span processor
 	m2 := tracetest.NewInMemoryExporter()
 	processor2 := sdktrace.NewSimpleSpanProcessor(m2)
 	err := Enable(tp,
@@ -231,7 +224,6 @@ func TestQuickstart(t *testing.T) {
 	tp := otel.GetTracerProvider()
 	assert.NotEqual(t, original, tp)
 
-	// Test that we can create spans with the global tracer
 	tracer := otel.Tracer("test-tracer")
 	_, span := tracer.Start(context.Background(), "test-span")
 	span.End()
@@ -252,17 +244,16 @@ func TestSpanFilterFunc_WithAttributes(t *testing.T) {
 	exporter := tracetest.NewInMemoryExporter()
 	processor := sdktrace.NewSimpleSpanProcessor(exporter)
 
-	// Custom filter that keeps spans with "important" attribute
 	customFilter := func(span sdktrace.ReadOnlySpan) int {
 		for _, attr := range span.Attributes() {
 			if string(attr.Key) == "importance" && attr.Value.AsString() == "high" {
-				return 1 // Keep
+				return 1
 			}
 			if string(attr.Key) == "noise" && attr.Value.AsBool() {
-				return -1 // Drop
+				return -1
 			}
 		}
-		return 0 // Don't influence
+		return 0
 	}
 
 	err := Enable(tp,
@@ -274,31 +265,25 @@ func TestSpanFilterFunc_WithAttributes(t *testing.T) {
 
 	tracer := tp.Tracer("test")
 
-	// Create a root span first
 	rootCtx, rootSpan := tracer.Start(context.Background(), "root-operation")
 	rootSpan.End()
 
-	// Span with high importance - should be kept
 	_, span1 := tracer.Start(rootCtx, "important-operation", trace.WithAttributes(
 		attribute.String("importance", "high"),
 	))
 	span1.End()
 
-	// Span marked as noise - should be dropped
 	_, span2 := tracer.Start(rootCtx, "noisy-operation", trace.WithAttributes(
 		attribute.Bool("noise", true),
 	))
 	span2.End()
 
-	// Span with no special attributes - should go through other filters
 	_, span3 := tracer.Start(rootCtx, "normal-operation")
 	span3.End()
 
 	_ = tp.ForceFlush(context.Background())
 	spans := exporter.GetSpans()
 
-	// Should have 3 spans: root-operation (always kept) + important-operation (kept) and normal-operation (no influence = kept by default)
-	// noisy-operation should be dropped
 	assert.Len(spans, 3)
 
 	spanNames := make([]string, len(spans))
@@ -317,38 +302,34 @@ func TestSpanProcessor_FilteringWithMultipleProcessors(t *testing.T) {
 
 	tp := sdktrace.NewTracerProvider()
 
-	// Add a non-Braintrust processor that should receive all spans
 	allSpansExporter := tracetest.NewInMemoryExporter()
 	allSpansProcessor := sdktrace.NewSimpleSpanProcessor(allSpansExporter)
 	tp.RegisterSpanProcessor(allSpansProcessor)
 
-	// Add Braintrust processor with filtering using Enable
 	braintrustExporter := tracetest.NewInMemoryExporter()
 	braintrustProcessor := sdktrace.NewSimpleSpanProcessor(braintrustExporter)
 
 	dropNoisyFilter := func(span sdktrace.ReadOnlySpan) int {
 		for _, attr := range span.Attributes() {
 			if string(attr.Key) == "noise" && attr.Value.AsBool() {
-				return -1 // Drop
+				return -1
 			}
 		}
-		return 0 // Don't influence
+		return 0
 	}
 
 	err := Enable(tp,
 		braintrust.WithDefaultProjectID("multi-processor-test"),
 		braintrust.WithSpanFilterFuncs(dropNoisyFilter),
-		withSpanProcessor(braintrustProcessor), // Use test helper to inject our test exporter
+		withSpanProcessor(braintrustProcessor),
 	)
 	assert.NoError(err)
 
 	tracer := tp.Tracer("test")
 
-	// Create a root span first
 	rootCtx, rootSpan := tracer.Start(context.Background(), "root-operation")
 	rootSpan.End()
 
-	// Create spans
 	_, span1 := tracer.Start(rootCtx, "important-operation")
 	span1.End()
 
@@ -362,7 +343,6 @@ func TestSpanProcessor_FilteringWithMultipleProcessors(t *testing.T) {
 
 	_ = tp.ForceFlush(context.Background())
 
-	// All spans processor should receive all 4 spans (including root)
 	allSpans := allSpansExporter.GetSpans()
 	assert.Len(allSpans, 4)
 
@@ -375,7 +355,6 @@ func TestSpanProcessor_FilteringWithMultipleProcessors(t *testing.T) {
 	assert.Contains(allSpanNames, "noisy-operation")
 	assert.Contains(allSpanNames, "normal-operation")
 
-	// Braintrust processor should receive 3 spans (root + important + normal, noisy-operation dropped)
 	braintrustSpans := braintrustExporter.GetSpans()
 	assert.Len(braintrustSpans, 3)
 
@@ -396,7 +375,6 @@ func TestAISpanFilterFunc_WithAIPrefixes(t *testing.T) {
 	exporter := tracetest.NewInMemoryExporter()
 	processor := sdktrace.NewSimpleSpanProcessor(exporter)
 
-	// Test the aiSpanFilterFunc directly
 	err := Enable(tp,
 		braintrust.WithDefaultProjectID("ai-filter-test"),
 		braintrust.WithSpanFilterFuncs(aiSpanFilterFunc),
@@ -406,11 +384,9 @@ func TestAISpanFilterFunc_WithAIPrefixes(t *testing.T) {
 
 	tracer := tp.Tracer("test")
 
-	// Create a root span first
 	rootCtx, rootSpan := tracer.Start(context.Background(), "root-operation")
 	rootSpan.End()
 
-	// Spans with AI-related attributes - should be kept
 	_, span1 := tracer.Start(rootCtx, "openai-call", trace.WithAttributes(
 		attribute.String("gen_ai.system", "openai"),
 		attribute.String("gen_ai.request.model", "gpt-4"),
@@ -437,7 +413,6 @@ func TestAISpanFilterFunc_WithAIPrefixes(t *testing.T) {
 	))
 	span5.End()
 
-	// Non-AI spans - should be filtered out (aiSpanFilterFunc returns -1)
 	_, span6 := tracer.Start(rootCtx, "database-query", trace.WithAttributes(
 		attribute.String("db.statement", "SELECT * FROM users"),
 	))
@@ -449,7 +424,6 @@ func TestAISpanFilterFunc_WithAIPrefixes(t *testing.T) {
 	_ = tp.ForceFlush(context.Background())
 	spans := exporter.GetSpans()
 
-	// Should have the root span + 5 AI-related spans = 6 total
 	assert.Len(spans, 6)
 
 	spanNames := make([]string, len(spans))
@@ -483,11 +457,9 @@ func TestAISpanFilterFunc_WithSpanNames(t *testing.T) {
 
 	tracer := tp.Tracer("test")
 
-	// Create a root span first
 	rootCtx, rootSpan := tracer.Start(context.Background(), "root-operation")
 	rootSpan.End()
 
-	// Spans with AI-related names - should be kept
 	_, span1 := tracer.Start(rootCtx, "gen_ai.completion")
 	span1.End()
 
@@ -497,14 +469,12 @@ func TestAISpanFilterFunc_WithSpanNames(t *testing.T) {
 	_, span3 := tracer.Start(rootCtx, "llm.chat_completion")
 	span3.End()
 
-	// Non-AI span names - should be filtered out
 	_, span4 := tracer.Start(rootCtx, "user.login")
 	span4.End()
 
 	_ = tp.ForceFlush(context.Background())
 	spans := exporter.GetSpans()
 
-	// Should have the root span + 3 AI-related spans = 4 total
 	assert.Len(spans, 4)
 
 	spanNames := make([]string, len(spans))
@@ -526,7 +496,6 @@ func TestWithFilterAISpans_Option(t *testing.T) {
 	exporter := tracetest.NewInMemoryExporter()
 	processor := sdktrace.NewSimpleSpanProcessor(exporter)
 
-	// Use the WithFilterAISpans option
 	err := Enable(tp,
 		braintrust.WithDefaultProjectID("ai-option-test"),
 		braintrust.WithFilterAISpans(true),
@@ -536,11 +505,9 @@ func TestWithFilterAISpans_Option(t *testing.T) {
 
 	tracer := tp.Tracer("test")
 
-	// Create a root span first
 	rootCtx, rootSpan := tracer.Start(context.Background(), "root-operation")
 	rootSpan.End()
 
-	// AI-related spans - should be kept
 	_, span1 := tracer.Start(rootCtx, "gen_ai.completion", trace.WithAttributes(
 		attribute.String("gen_ai.request.model", "gpt-4"),
 	))
@@ -551,7 +518,6 @@ func TestWithFilterAISpans_Option(t *testing.T) {
 	))
 	span2.End()
 
-	// Non-AI spans - should be filtered out
 	_, span3 := tracer.Start(rootCtx, "database-query", trace.WithAttributes(
 		attribute.String("db.statement", "SELECT * FROM users"),
 	))
@@ -563,7 +529,6 @@ func TestWithFilterAISpans_Option(t *testing.T) {
 	_ = tp.ForceFlush(context.Background())
 	spans := exporter.GetSpans()
 
-	// Should have root span + 2 AI-related spans = 3 total
 	assert.Len(spans, 3)
 
 	spanNames := make([]string, len(spans))
@@ -573,7 +538,7 @@ func TestWithFilterAISpans_Option(t *testing.T) {
 
 	assert.Contains(spanNames, "root-operation")
 	assert.Contains(spanNames, "gen_ai.completion")
-	assert.Contains(spanNames, "normal-http-call") // kept because of llm.provider attribute
+	assert.Contains(spanNames, "normal-http-call")
 	assert.NotContains(spanNames, "database-query")
 	assert.NotContains(spanNames, "http.request")
 }
@@ -585,22 +550,20 @@ func TestWithFilterAISpans_CombinedWithCustomFilters(t *testing.T) {
 	exporter := tracetest.NewInMemoryExporter()
 	processor := sdktrace.NewSimpleSpanProcessor(exporter)
 
-	// Custom filter that keeps "important" spans and drops "low" importance
 	customFilter := func(span sdktrace.ReadOnlySpan) int {
 		for _, attr := range span.Attributes() {
 			if string(attr.Key) == "importance" {
 				switch attr.Value.AsString() {
 				case "high":
-					return 1 // Keep
+					return 1
 				case "low":
-					return -1 // Drop (this will override AI filter)
+					return -1
 				}
 			}
 		}
-		return 0 // Don't influence
+		return 0
 	}
 
-	// Use both AI filtering and custom filter
 	err := Enable(tp,
 		braintrust.WithDefaultProjectID("combined-filter-test"),
 		braintrust.WithFilterAISpans(true),
@@ -611,21 +574,17 @@ func TestWithFilterAISpans_CombinedWithCustomFilters(t *testing.T) {
 
 	tracer := tp.Tracer("test")
 
-	// Create a root span first
 	rootCtx, rootSpan := tracer.Start(context.Background(), "root-operation")
 	rootSpan.End()
 
-	// AI span - should be kept by AI filter
 	_, span1 := tracer.Start(rootCtx, "gen_ai.completion")
 	span1.End()
 
-	// Important span - should be kept by custom filter
 	_, span2 := tracer.Start(rootCtx, "critical-operation", trace.WithAttributes(
 		attribute.String("importance", "high"),
 	))
 	span2.End()
 
-	// Neither AI nor important - should be filtered out
 	_, span3 := tracer.Start(rootCtx, "routine-operation")
 	span3.End()
 
@@ -633,14 +592,13 @@ func TestWithFilterAISpans_CombinedWithCustomFilters(t *testing.T) {
 	// This span has AI attributes but custom filter should drop it (custom filter has priority)
 	_, span4 := tracer.Start(rootCtx, "gen_ai.bad_completion", trace.WithAttributes(
 		attribute.String("gen_ai.request.model", "gpt-4"),
-		attribute.String("importance", "low"), // Custom filter will return -1, AI filter would return 1, but custom comes first
+		attribute.String("importance", "low"),
 	))
 	span4.End()
 
 	_ = tp.ForceFlush(context.Background())
 	spans := exporter.GetSpans()
 
-	// Should have root span + AI span + important span = 3 total (routine and bad completion filtered out)
 	assert.Len(spans, 3)
 
 	spanNames := make([]string, len(spans))
@@ -652,7 +610,7 @@ func TestWithFilterAISpans_CombinedWithCustomFilters(t *testing.T) {
 	assert.Contains(spanNames, "gen_ai.completion")
 	assert.Contains(spanNames, "critical-operation")
 	assert.NotContains(spanNames, "routine-operation")
-	assert.NotContains(spanNames, "gen_ai.bad_completion") // AI span but custom filter had priority
+	assert.NotContains(spanNames, "gen_ai.bad_completion")
 }
 
 func TestAISpanFilterFunc_KeepsRootSpans(t *testing.T) {
@@ -671,22 +629,17 @@ func TestAISpanFilterFunc_KeepsRootSpans(t *testing.T) {
 
 	tracer := tp.Tracer("test")
 
-	// Root span without AI attributes - should be kept (root spans always kept)
 	_, rootSpan1 := tracer.Start(context.Background(), "http-server-request")
 	rootSpan1.End()
 
-	// Root span with AI attributes - should be kept (both root and AI)
 	_, rootSpan2 := tracer.Start(context.Background(), "gen_ai.root_completion")
 	rootSpan2.End()
 
-	// Create child spans by starting them with a parent context
 	rootCtx, rootSpan3 := tracer.Start(context.Background(), "parent-operation")
 
-	// Child AI span - should be kept (AI span)
 	_, childAI := tracer.Start(rootCtx, "llm.child_completion")
 	childAI.End()
 
-	// Child non-AI span - should be dropped (not AI, not root)
 	_, childNonAI := tracer.Start(rootCtx, "database-query")
 	childNonAI.End()
 
@@ -695,8 +648,6 @@ func TestAISpanFilterFunc_KeepsRootSpans(t *testing.T) {
 	_ = tp.ForceFlush(context.Background())
 	spans := exporter.GetSpans()
 
-	// Should have: 2 root spans + 1 AI child span = 3 spans
-	// (parent-operation root, http-server-request root, gen_ai.root_completion root, llm.child_completion AI child)
 	assert.Len(spans, 4)
 
 	spanNames := make([]string, len(spans))
@@ -704,9 +655,9 @@ func TestAISpanFilterFunc_KeepsRootSpans(t *testing.T) {
 		spanNames[i] = span.Name
 	}
 
-	assert.Contains(spanNames, "http-server-request")    // Root non-AI - kept
-	assert.Contains(spanNames, "gen_ai.root_completion") // Root AI - kept
-	assert.Contains(spanNames, "parent-operation")       // Root - kept
-	assert.Contains(spanNames, "llm.child_completion")   // Child AI - kept
-	assert.NotContains(spanNames, "database-query")      // Child non-AI - dropped
+	assert.Contains(spanNames, "http-server-request")
+	assert.Contains(spanNames, "gen_ai.root_completion")
+	assert.Contains(spanNames, "parent-operation")
+	assert.Contains(spanNames, "llm.child_completion")
+	assert.NotContains(spanNames, "database-query")
 }
