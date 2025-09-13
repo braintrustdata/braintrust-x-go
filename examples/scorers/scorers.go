@@ -1,4 +1,6 @@
-// Simple example to test online scorers with static data
+// This example shows how to use http scorers (e.g. scorers defined on
+// braintrust.dev) and code scorers.
+
 package main
 
 import (
