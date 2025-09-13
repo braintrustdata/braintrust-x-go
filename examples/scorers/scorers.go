@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math/rand"
 
 	"github.com/braintrustdata/braintrust-x-go/braintrust/autoevals"
 	"github.com/braintrustdata/braintrust-x-go/braintrust/eval"
@@ -22,28 +23,48 @@ func main() {
 	}
 	defer teardown()
 
-	// Simple task that just echoes the input
-	task := func(ctx context.Context, input string) (string, error) {
-		return "Echo: " + input, nil
+	// Simple task that just returns the input doubled
+	task := func(ctx context.Context, input int) (int, error) {
+		return input * 2, nil
 	}
 
 	// Static test cases
-	cases := []eval.Case[string, string]{
-		{Input: "hello", Expected: "hello"},
-		{Input: "world", Expected: "world"},
-		{Input: "test", Expected: "test"},
+	cases := []eval.Case[int, int]{
+		{Input: 5, Expected: 10},
+		{Input: 3, Expected: 6},
+		{Input: 7, Expected: 14},
 	}
 
-	// Get online scorer - fail if it's not available
-	onlineScorer, err := functions.GetScorer[string, string]("test-go-functions", "fail-scorer-d879")
+	// an example of a scorer that returns a single number
+	randomScorer := eval.NewScorer[int, int]("random", func(ctx context.Context, input, expected, result int, _ eval.Metadata) (eval.Scores, error) {
+		score := rand.Float64()
+		return eval.S(score), nil
+	})
+
+	// an example of a scorer that returns more than one score.
+	listScorer := eval.NewScorer[int, int]("list", func(ctx context.Context, input, expected, result int, _ eval.Metadata) (eval.Scores, error) {
+		return eval.Scores{
+			{Name: "poor", Score: 0},
+			{Name: "average", Score: 0.5},
+			{Name: "excellent", Score: 1},
+		}, nil
+	})
+
+	// Build scorers list with local scorers
+	scorers := []eval.Scorer[int, int]{
+		autoevals.NewEquals[int, int](),
+		randomScorer,
+		listScorer,
+	}
+
+	// Try to get online scorer - add if available
+	onlineScorer, err := functions.GetScorer[int, int]("test-go-functions", "fail-scorer-d879")
 	if err != nil {
-		log.Fatalf("❌ Failed to create online scorer: %v", err)
-	}
-
-	// Build scorers list with both local and online scorers
-	scorers := []eval.Scorer[string, string]{
-		autoevals.NewEquals[string, string](),
-		onlineScorer,
+		log.Printf("⚠️ Online scorer not available: %v", err)
+		log.Println("📊 Running with local scorers only...")
+	} else {
+		log.Println("✅ Online scorer available, adding to list")
+		scorers = append(scorers, onlineScorer)
 	}
 
 	// Create evaluation
