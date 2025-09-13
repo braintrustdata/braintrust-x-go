@@ -1,4 +1,5 @@
-// This example demonstrates basic evaluation functionality with Braintrust.
+// This example demonstrates basic evals with Braintrust.
+
 package main
 
 import (
