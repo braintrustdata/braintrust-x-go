@@ -57,18 +57,7 @@ godoc:
 
 examples:
 	@echo "Running all examples..."
-	@echo "Running email-evals..."
-	cd examples/email-evals && go run .
-	@echo "Running evals..."
-	cd examples/evals && go run .
-	@echo "Running kitchen-sink..."
-	cd examples/kitchen-sink && go run .
-	@echo "Running struct-dataset-eval..."
-	cd examples/struct-dataset-eval && go run .
-	@echo "Running traceopenai..."
-	cd examples/traceopenai && go run .
-	@echo "Running anthropic-tracer..."
-	cd examples/anthropic-tracer && go run .
+	@find examples -name "*.go" -exec sh -c 'echo "Running $$(dirname "{}")..." && cd "$$(dirname "{}")" && go run .' \;
 	@echo "All examples completed!"
 
 precommit: fmt ci

@@ -1,6 +1,7 @@
 // This example demonstrates adding Braintrust tracing to an existing OpenTelemetry setup.
 // It shows how to use trace.Enable() to add Braintrust to an app that already has
 // other exporters (console exporter in this case).
+
 package main
 
 import (
@@ -8,7 +9,6 @@ import (
 	"log"
 
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
 	"github.com/braintrustdata/braintrust-x-go/braintrust/trace"
@@ -23,8 +23,6 @@ func main() {
 		_ = tp.Shutdown(context.Background())
 	}()
 
-	exporter, _ := stdouttrace.New(stdouttrace.WithPrettyPrint())
-	tp.RegisterSpanProcessor(sdktrace.NewBatchSpanProcessor(exporter))
 	otel.SetTracerProvider(tp)
 
 	// Enable Braintrust tracing
