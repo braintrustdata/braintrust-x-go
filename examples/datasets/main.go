@@ -1,4 +1,6 @@
-// Package main demonstrates struct-based dataset evaluation examples.
+// This example shows how to run an eval against a dataset downloaded
+// from braintrust.dev.
+
 package main
 
 import (
