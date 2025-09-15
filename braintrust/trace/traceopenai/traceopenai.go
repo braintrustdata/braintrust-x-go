@@ -45,8 +45,13 @@ func tracer() trace.Tracer {
 // Ensure OpenTelemetry is properly configured before using this middleware.
 var Middleware = internal.Middleware(openaiRouter)
 
-// openaiRouter maps OpenAI API paths to their corresponding tracers.
 func openaiRouter(path string) internal.MiddlewareTracer {
+
+	// we map suffix => tracer because some OpenAI compatible endpoints have a different BaseURL and
+	// therefore a different path here. For example:
+	// 	- OpenAI has /v1/chat/completions
+	//  - OpenRouter has /api/v1/chat/completions.
+	// See https://github.com/braintrustdata/braintrust-x-go/issues/36
 	if strings.HasSuffix(path, "/v1/chat/completions") {
 		return newChatCompletionsTracer()
 	}
