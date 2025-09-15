@@ -1,4 +1,4 @@
-.PHONY: help ci build clean test cover lint fmt mod-tidy mod-verify fix godoc examples
+.PHONY: help ci build clean test cover lint fmt mod-verify fix godoc examples release
 
 help:
 	@echo "Available commands:"
@@ -10,11 +10,11 @@ help:
 	@echo "  fmt           - Format Go code"
 	@echo "  lint          - Run golangci-lint"
 	@echo "  fix           - Run golangci-lint with auto-fix"
-	@echo "  mod-tidy      - Tidy and verify Go modules"
 	@echo "  godoc         - Start godoc server"
 	@echo "  examples      - Run all examples"
 	@echo "  ci            - Run CI pipeline (clean, lint, test, build)"
 	@echo "  precommit     - Run fmt then ci"
+	@echo "  release       - Create and push a new release with GoReleaser"
 
 ci: clean lint mod-verify test build
 
@@ -23,7 +23,7 @@ build:
 
 clean:
 	go clean
-	rm -f coverage.out coverage.html
+	rm -rf coverage.out coverage.html dist
 
 test:
 	go test ./...
@@ -45,9 +45,6 @@ mod-verify:
 	git diff --exit-code go.mod go.sum
 	go mod verify
 
-mod-tidy:
-	go mod tidy
-
 fix: fmt
 	golangci-lint run --fix
 
@@ -61,3 +58,6 @@ examples:
 	@echo "All examples completed!"
 
 precommit: fmt ci
+
+release:
+	goreleaser release --clean
