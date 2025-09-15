@@ -19,18 +19,5 @@ changelog:
   sort: asc
   filters:
     exclude:
-      - '^chore:'
-      - '^test:'
-      - '^docs?:'
       - '^ci:'
-  groups:
-    - title: "Features"
-      regexp: "^feat"
-    - title: "Fixes"
-      regexp: "^fix"
-    - title: "Refactors"
-      regexp: "^(refactor|perf)"
-    - title: "Docs"
-      regexp: "^docs?"
-    - title: "Tests"
-      regexp: "^test"
+      - 'merge pull request'
