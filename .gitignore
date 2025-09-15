@@ -46,3 +46,6 @@ examples/traceopenai/traceopenai
 
 **/.claude/settings.local.json
 *.DS_Store
+/dist
+# Added by goreleaser init:
+dist/

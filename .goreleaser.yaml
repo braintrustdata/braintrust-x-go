@@ -1,0 +1,36 @@
+version: 2
+project_name: braintrust-x-go
+
+builds:
+  - skip: true
+
+release:
+  github:
+    owner: braintrustdata
+    name: braintrust-x-go
+  draft: false
+  prerelease: auto
+  footer: |
+    ## Thanks
+    Thanks to everyone who contributed to {{ .Tag }}.
+
+changelog:
+  use: git
+  sort: asc
+  filters:
+    exclude:
+      - '^chore:'
+      - '^test:'
+      - '^docs?:'
+      - '^ci:'
+  groups:
+    - title: "Features"
+      regexp: "^feat"
+    - title: "Fixes"
+      regexp: "^fix"
+    - title: "Refactors"
+      regexp: "^(refactor|perf)"
+    - title: "Docs"
+      regexp: "^docs?"
+    - title: "Tests"
+      regexp: "^test"
