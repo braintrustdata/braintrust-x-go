@@ -42,8 +42,6 @@ func main() {
 		option.WithHeader("X-Title", "Braintrust Go SDK Example"),
 	)
 
-	fmt.Println("Using api key", os.Getenv("OPENROUTER_API_KEY")[0:6]+"...")
-
 	params := openai.ChatCompletionNewParams{
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.SystemMessage("You are a helpful assistant."),
