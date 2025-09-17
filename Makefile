@@ -1,4 +1,4 @@
-.PHONY: help ci build clean test cover lint fmt mod-verify fix godoc examples release
+.PHONY: help ci build clean test cover lint fmt mod-verify fix godoc examples
 
 help:
 	@echo "Available commands:"
@@ -14,7 +14,6 @@ help:
 	@echo "  examples      - Run all examples"
 	@echo "  ci            - Run CI pipeline (clean, lint, test, build)"
 	@echo "  precommit     - Run fmt then ci"
-	@echo "  release       - Create and push a new release with GoReleaser"
 
 ci: clean lint mod-verify test build
 
@@ -58,6 +57,3 @@ examples:
 	@echo "All examples completed!"
 
 precommit: fmt ci
-
-release:
-	goreleaser release --clean

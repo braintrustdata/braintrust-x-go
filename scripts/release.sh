@@ -5,11 +5,11 @@ set -euo pipefail
 
 # Usage function
 usage() {
-    echo "Usage: ./scripts/release.sh <tag> [--dry-run]"
+    echo "Usage: ./scripts/release.sh <version> [--dry-run]"
 }
 
 # Parse arguments
-TAG=""
+VERSION=""
 DRY_RUN=false
 
 while [[ $# -gt 0 ]]; do
@@ -23,8 +23,8 @@ while [[ $# -gt 0 ]]; do
             exit 0
             ;;
         *)
-            if [[ -z "$TAG" ]]; then
-                TAG="$1"
+            if [[ -z "$VERSION" ]]; then
+                VERSION="$1"
             else
                 echo "Error: Unknown argument: $1" >&2
                 usage
@@ -35,15 +35,15 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [[ -z "$TAG" ]]; then
-    echo "Error: Tag is required" >&2
+if [[ -z "$VERSION" ]]; then
+    echo "Error: Version is required" >&2
     usage
     exit 1
 fi
 
-# Validate tag format (basic semver check)
-if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?$ ]]; then
-    echo "Error: Tag must follow semantic versioning format (e.g., v1.2.3 or v1.2.3-beta.1)" >&2
+# Validate version format (basic semver check)
+if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?$ ]]; then
+    echo "Error: Version must follow semantic versioning format (e.g., v1.2.3 or v1.2.3-beta.1)" >&2
     exit 1
 fi
 
@@ -53,15 +53,15 @@ if ! git diff-index --quiet HEAD --; then
     exit 1
 fi
 
-if git tag --list | grep -q "^$TAG$"; then
-    echo "Error: Tag '$TAG' already exists locally" >&2
+if git tag --list | grep -q "^$VERSION$"; then
+    echo "Error: Version '$VERSION' already exists locally" >&2
     exit 1
 fi
 
 # Check remote tags
 git fetch --tags > /dev/null 2>&1 || true
-if git ls-remote --tags origin | grep -q "refs/tags/$TAG$"; then
-    echo "Error: Tag '$TAG' already exists on remote" >&2
+if git ls-remote --tags origin | grep -q "refs/tags/$VERSION$"; then
+    echo "Error: Version '$VERSION' already exists on remote" >&2
     exit 1
 fi
 
@@ -74,7 +74,7 @@ LAST_TAG=$(git tag --sort=-version:refname | grep -v -- '-rc' | head -n 1 2>/dev
 echo "================================================"
 echo " Go SDK Release"
 echo "================================================"
-printf "%-13s %s\n" "version:" "$TAG"
+printf "%-13s %s\n" "version:" "$VERSION"
 printf "%-13s %s\n" "commit:" "$SHORT_COMMIT"
 printf "%-13s %s\n" "code:" "$REPO_URL/commit/$COMMIT"
 if [[ -n "$LAST_TAG" ]]; then
@@ -89,7 +89,7 @@ if [[ "$DRY_RUN" == true ]]; then
     exit 0
 fi
 
-read -p "Are you ready to release version $TAG? Type 'YOLO' to continue: " -r
+read -p "Are you ready to release version $VERSION? Type 'YOLO' to continue: " -r
 echo ""
 if [[ "$REPLY" != "YOLO" ]]; then
     exit 0
@@ -100,8 +100,20 @@ if ! make ci; then
     exit 1
 fi
 
-git tag -a "$TAG" -m "Release $TAG"
-git push origin "$TAG"
+git tag -a "$VERSION" -m "Release $VERSION"
+git push origin "$VERSION"
 
-echo "Tag $TAG has been created and pushed to origin. Check GitHub Actions for build progress:"
-echo "$REPO_URL/actions"
+echo "Running goreleaser to update changelog..."
+goreleaser release --clean
+
+echo "Requesting package to be indexed..."
+curl "https://proxy.golang.org/github.com/braintrustdata/braintrust-x-go/@v/$VERSION.info"
+echo ""
+
+echo "================================================"
+echo " Release Complete!"
+echo "================================================"
+echo "Version $VERSION has been created and pushed to origin."
+echo ""
+echo "Go to https://pkg.go.dev/github.com/braintrustdata/braintrust-x-go@$VERSION/braintrust to request manually"
+echo "View changelog: $REPO_URL/releases/tag/$VERSION"
