@@ -201,7 +201,7 @@ func TestOpenAIResponsesStreaming(t *testing.T) {
 
 	for stream.Next() {
 		data := stream.Current()
-		if data.JSON.Text.IsPresent() {
+		if data.Text != "" {
 			completeText = data.Text
 		}
 	}

@@ -4,7 +4,7 @@ go 1.23.0
 
 require (
 	github.com/anthropics/anthropic-sdk-go v1.4.0
-	github.com/openai/openai-go v0.1.0-beta.10
+	github.com/openai/openai-go v1.12.0
 	github.com/stretchr/testify v1.10.0
 	go.opentelemetry.io/otel v1.36.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.35.0

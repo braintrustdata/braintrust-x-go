@@ -35,14 +35,22 @@ func Middleware(router TracerRouter) func(*http.Request, NextMiddleware) (*http.
 
 		// Intercept the request body so we can parse it and still pass it along.
 		var buf bytes.Buffer
-		reqBody := req.Body
-		defer func() {
-			if err := reqBody.Close(); err != nil {
-				log.Warnf("Error closing request body: %v", err)
-			}
-		}()
-		tee := io.TeeReader(reqBody, &buf)
-		req.Body = io.NopCloser(&buf)
+		var tee io.Reader
+
+		if req.Body != nil {
+			reqBody := req.Body
+			defer func() {
+				if err := reqBody.Close(); err != nil {
+					log.Warnf("Error closing request body: %v", err)
+				}
+			}()
+
+			// Use TeeReader - as the tracer reads from tee, it will populate buf
+			tee = io.TeeReader(reqBody, &buf)
+		} else {
+			// Handle nil body case
+			tee = bytes.NewReader([]byte{})
+		}
 
 		// Start a span with data parsed from the request.
 		var reqTracer MiddlewareTracer = NewNoopTracer()
@@ -54,6 +62,11 @@ func Middleware(router TracerRouter) func(*http.Request, NextMiddleware) (*http.
 		req = req.WithContext(ctx)
 		if err != nil {
 			log.Warnf("Error starting span: %v", err)
+		}
+
+		// After tracer has read from tee (populating buf), set request body to read from buffer
+		if req.Body != nil {
+			req.Body = io.NopCloser(&buf)
 		}
 
 		// Continue processing the request.
@@ -93,7 +106,14 @@ func NewNoopTracer() *NoopTracer {
 }
 
 // StartSpan creates a non-recording span for the NoopTracer.
-func (*NoopTracer) StartSpan(ctx context.Context, _ time.Time, _ io.Reader) (context.Context, trace.Span, error) {
+func (*NoopTracer) StartSpan(ctx context.Context, _ time.Time, request io.Reader) (context.Context, trace.Span, error) {
+	// Read and discard the entire request to populate the TeeReader's buffer
+	if request != nil {
+		if _, err := io.Copy(io.Discard, request); err != nil {
+			log.Warnf("NoopTracer: error reading request body: %v", err)
+		}
+	}
+
 	span := trace.SpanFromContext(context.Background()) // create a non-recording span
 	return ctx, span, nil
 }
