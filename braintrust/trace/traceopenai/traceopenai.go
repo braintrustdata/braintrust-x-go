@@ -60,7 +60,7 @@ func openaiRouter(path string) internal.MiddlewareTracer {
 		return newResponsesTracer()
 	}
 
-	return internal.NewNoopTracer()
+	return nil
 }
 
 // parseUsageTokens parses the usage tokens from OpenAI API responses
