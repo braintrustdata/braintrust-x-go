@@ -28,29 +28,24 @@ type TracerRouter func(path string) MiddlewareTracer
 
 // Middleware creates a shared OpenTelemetry middleware that uses the provided router
 // to determine which tracer to use for each endpoint.
-func Middleware(router TracerRouter) func(*http.Request, NextMiddleware) (*http.Response, error) {
+func Middleware(getMiddlewareTracer TracerRouter) func(*http.Request, NextMiddleware) (*http.Response, error) {
 	return func(req *http.Request, next NextMiddleware) (*http.Response, error) {
 		log.Debugf("Middleware: %s %s", req.Method, req.URL.Path)
 		start := time.Now()
 
 		// Determine which tracer to use first
-		var reqTracer MiddlewareTracer
+		var mt MiddlewareTracer
 		if req.URL != nil {
-			reqTracer = router(req.URL.Path)
+			mt = getMiddlewareTracer(req.URL.Path)
 		}
 
 		var ctx context.Context
 		var span trace.Span
 		var err error
 
-		if reqTracer == nil {
-			// Unsupported endpoint don't do any tracing
-			// But still pass the request to the next middleware
-			resp, err := next(req)
-			if err != nil {
-				return resp, err
-			}
-			return resp, nil
+		if mt == nil {
+			// Some endpoints aren't traced. Just pass them along.
+			return next(req)
 		}
 
 		// Supported endpoint, let's set up tracing
@@ -65,7 +60,7 @@ func Middleware(router TracerRouter) func(*http.Request, NextMiddleware) (*http.
 		// Use TeeReader - as the tracer reads from tee, it will populate buf
 		tee := io.TeeReader(reqBody, &buf)
 
-		ctx, span, err = reqTracer.StartSpan(req.Context(), start, tee)
+		ctx, span, err = mt.StartSpan(req.Context(), start, tee)
 		if err != nil {
 			log.Warnf("Error starting span: %v", err)
 		}
@@ -91,7 +86,7 @@ func Middleware(router TracerRouter) func(*http.Request, NextMiddleware) (*http.
 			// NOTE: this could be done in a goroutine so we don't add any extra
 			// latency to the response.
 			now := time.Now()
-			if err := reqTracer.TagSpan(span, r); err != nil {
+			if err := mt.TagSpan(span, r); err != nil {
 				log.Warnf("Error tagging span: %v\n%s", err)
 			}
 			span.End(trace.WithTimestamp(now))
