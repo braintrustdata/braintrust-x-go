@@ -260,7 +260,7 @@ func (r *Recommender) getDrinkRec(ctx context.Context, drink, vibe, zipcode stri
 	for stream.Next() {
 		data := stream.Current()
 		fmt.Print(".") // Progress indicator
-		if data.JSON.Text.IsPresent() {
+		if data.Text != "" {
 			completeText = data.Text
 		}
 	}

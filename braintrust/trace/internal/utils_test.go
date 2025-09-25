@@ -57,25 +57,6 @@ func TestSetJSONAttr(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestNoopTracer(t *testing.T) {
-	tracer := NewNoopTracer()
-	assert.NotNil(t, tracer)
-
-	ctx := context.Background()
-	start := time.Now()
-	reader := strings.NewReader("test")
-
-	// Test StartSpan
-	newCtx, span, err := tracer.StartSpan(ctx, start, reader)
-	require.NoError(t, err)
-	require.NotNil(t, span)
-	require.NotNil(t, newCtx)
-
-	// Test TagSpan
-	err = tracer.TagSpan(span, reader)
-	require.NoError(t, err)
-}
-
 // Mock tracer for testing
 type mockTracer struct {
 	startSpanCalled bool
@@ -107,7 +88,7 @@ func TestMiddleware(t *testing.T) {
 		case "/v1/test2":
 			return mockTracer2
 		default:
-			return NewNoopTracer()
+			return nil
 		}
 	}
 
@@ -163,7 +144,7 @@ func TestMiddlewareWithUnsupportedOpenAIEndpoint(t *testing.T) {
 			return &mockTracer{}
 		default:
 			// Real OpenAI endpoints not supported by traceopenai use noop tracer
-			return NewNoopTracer()
+			return nil
 		}
 	}
 

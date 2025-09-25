@@ -49,7 +49,7 @@ func anthropicRouter(path string) internal.MiddlewareTracer {
 	if path == "/v1/messages" {
 		return newMessagesTracer()
 	}
-	return internal.NewNoopTracer()
+	return nil
 }
 
 // parseUsageTokens parses the usage tokens from Anthropic API responses

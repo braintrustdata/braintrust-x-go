@@ -28,12 +28,27 @@ type TracerRouter func(path string) MiddlewareTracer
 
 // Middleware creates a shared OpenTelemetry middleware that uses the provided router
 // to determine which tracer to use for each endpoint.
-func Middleware(router TracerRouter) func(*http.Request, NextMiddleware) (*http.Response, error) {
+func Middleware(getMiddlewareTracer TracerRouter) func(*http.Request, NextMiddleware) (*http.Response, error) {
 	return func(req *http.Request, next NextMiddleware) (*http.Response, error) {
 		log.Debugf("Middleware: %s %s", req.Method, req.URL.Path)
 		start := time.Now()
 
-		// Intercept the request body so we can parse it and still pass it along.
+		// Determine which tracer to use first
+		var mt MiddlewareTracer
+		if req.URL != nil {
+			mt = getMiddlewareTracer(req.URL.Path)
+		}
+
+		var ctx context.Context
+		var span trace.Span
+		var err error
+
+		if mt == nil {
+			// Some endpoints aren't traced. Just pass them along.
+			return next(req)
+		}
+
+		// Supported endpoint, let's set up tracing
 		var buf bytes.Buffer
 		reqBody := req.Body
 		defer func() {
@@ -41,20 +56,18 @@ func Middleware(router TracerRouter) func(*http.Request, NextMiddleware) (*http.
 				log.Warnf("Error closing request body: %v", err)
 			}
 		}()
+
+		// Use TeeReader - as the tracer reads from tee, it will populate buf
 		tee := io.TeeReader(reqBody, &buf)
-		req.Body = io.NopCloser(&buf)
 
-		// Start a span with data parsed from the request.
-		var reqTracer MiddlewareTracer = NewNoopTracer()
-		if req.URL != nil {
-			reqTracer = router(req.URL.Path)
-		}
-
-		ctx, span, err := reqTracer.StartSpan(req.Context(), start, tee)
-		req = req.WithContext(ctx)
+		ctx, span, err = mt.StartSpan(req.Context(), start, tee)
 		if err != nil {
 			log.Warnf("Error starting span: %v", err)
 		}
+
+		// After tracer has read from tee, set request body to read from buffer
+		req.Body = io.NopCloser(&buf)
+		req = req.WithContext(ctx)
 
 		// Continue processing the request.
 		resp, err := next(req)
@@ -73,7 +86,7 @@ func Middleware(router TracerRouter) func(*http.Request, NextMiddleware) (*http.
 			// NOTE: this could be done in a goroutine so we don't add any extra
 			// latency to the response.
 			now := time.Now()
-			if err := reqTracer.TagSpan(span, r); err != nil {
+			if err := mt.TagSpan(span, r); err != nil {
 				log.Warnf("Error tagging span: %v\n%s", err)
 			}
 			span.End(trace.WithTimestamp(now))
@@ -83,24 +96,3 @@ func Middleware(router TracerRouter) func(*http.Request, NextMiddleware) (*http.
 		return resp, nil
 	}
 }
-
-// NoopTracer is a MiddlewareTracer that doesn't record any tracing data.
-type NoopTracer struct{}
-
-// NewNoopTracer creates a new noop tracer.
-func NewNoopTracer() *NoopTracer {
-	return &NoopTracer{}
-}
-
-// StartSpan creates a non-recording span for the NoopTracer.
-func (*NoopTracer) StartSpan(ctx context.Context, _ time.Time, _ io.Reader) (context.Context, trace.Span, error) {
-	span := trace.SpanFromContext(context.Background()) // create a non-recording span
-	return ctx, span, nil
-}
-
-// TagSpan does nothing for the NoopTracer.
-func (*NoopTracer) TagSpan(_ trace.Span, _ io.Reader) error {
-	return nil
-}
-
-var _ MiddlewareTracer = &NoopTracer{}
