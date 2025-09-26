@@ -47,8 +47,8 @@ func TestReadmeSnippets(t *testing.T) {
 func tryCompile(code string) error {
 	tmp := "snippet.go"
 	defer func() {
-		os.Remove(tmp)
-		os.Remove("snippet") // Remove binary if created
+		_ = os.Remove(tmp)
+		_ = os.Remove("snippet") // Remove binary if created
 	}()
 
 	// Don't add "package main" if it's already there
