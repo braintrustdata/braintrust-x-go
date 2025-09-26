@@ -210,7 +210,7 @@ func TestMiddlewareWithNilBody(t *testing.T) {
 		return mockTracer
 	}
 
-	middleware := Middleware(router)
+	middleware := Middleware(router) //nolint:bodyclose // false positive - response bodies are properly closed in tests
 
 	req := httptest.NewRequest("GET", "/v1/chat/completions", nil)
 	req.Body = nil
@@ -227,6 +227,10 @@ func TestMiddlewareWithNilBody(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 	assert.Equal(t, 200, resp.StatusCode)
+
+	// Close response body to satisfy bodyclose linter
+	err = resp.Body.Close()
+	require.NoError(t, err)
 }
 
 func TestToInt64(t *testing.T) {
