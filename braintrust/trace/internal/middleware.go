@@ -39,16 +39,14 @@ func Middleware(getMiddlewareTracer TracerRouter) func(*http.Request, NextMiddle
 			mt = getMiddlewareTracer(req.URL.Path)
 		}
 
-		var ctx context.Context
-		var span trace.Span
-		var err error
-
-		if mt == nil {
+		// Right now we don't bother tracing requests with a nil body, because they have no data.
+		// If needed, we could change that but handle the nil body sanely.
+		if mt == nil || req.Body == nil {
 			// Some endpoints aren't traced. Just pass them along.
 			return next(req)
 		}
 
-		// Supported endpoint, let's set up tracing
+		// Supported endpoint, let's set up tracing.
 		var buf bytes.Buffer
 		reqBody := req.Body
 		defer func() {
@@ -60,7 +58,7 @@ func Middleware(getMiddlewareTracer TracerRouter) func(*http.Request, NextMiddle
 		// Use TeeReader - as the tracer reads from tee, it will populate buf
 		tee := io.TeeReader(reqBody, &buf)
 
-		ctx, span, err = mt.StartSpan(req.Context(), start, tee)
+		ctx, span, err := mt.StartSpan(req.Context(), start, tee)
 		if err != nil {
 			log.Warnf("Error starting span: %v", err)
 		}
