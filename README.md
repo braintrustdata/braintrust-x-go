@@ -3,7 +3,7 @@
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/braintrustdata/braintrust-x-go.svg)](https://pkg.go.dev/github.com/braintrustdata/braintrust-x-go)
 
-This SDK is currently is in BETA status and APIs may change.
+This SDK is currently in BETA status and APIs may change.
 
 ## Installation
 
@@ -157,9 +157,9 @@ func main() {
 Check out the [`examples/`](./examples/) directory for complete working examples:
 
 - [`examples/evals/`](./examples/evals/) - Basic evaluation setup
-- [`examples/traceopenai/`](./examples/traceopenai/) - OpenAI tracing
-- [`examples/anthropic-tracer/`](./examples/anthropic-tracer/) - Anthropic tracing
-- [`examples/dataset-eval/`](./examples/dataset-eval/) - Dataset-based evaluations
+- [`examples/openai/`](./examples/openai/) - OpenAI tracing
+- [`examples/anthropic/`](./examples/anthropic/) - Anthropic tracing
+- [`examples/datasets/`](./examples/datasets/) - Dataset-based evaluations
 
 ## Documentation
 
