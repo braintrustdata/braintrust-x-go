@@ -8,9 +8,10 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/openai/openai-go"
-	"github.com/openai/openai-go/option"
-	"github.com/openai/openai-go/responses"
+	"github.com/openai/openai-go/v2"
+	"github.com/openai/openai-go/v2/conversations"
+	"github.com/openai/openai-go/v2/option"
+	"github.com/openai/openai-go/v2/responses"
 
 	"github.com/braintrustdata/braintrust-x-go/braintrust/trace"
 	"github.com/braintrustdata/braintrust-x-go/braintrust/trace/traceopenai"
@@ -53,38 +54,23 @@ func main() {
 			fmt.Print(chunk.Choices[0].Delta.Content)
 		}
 	}
+	if err := stream.Err(); err != nil {
+		log.Fatal(err)
+	}
 	fmt.Println("\n✓ Streaming complete")
 
-	// 3. Tool calls
-	fmt.Println("3. Tool calls...")
-	toolResp, err := client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+	// 3. Basic chat without tools (v2 tools syntax TBD)
+	fmt.Println("3. Basic chat...")
+	basicResp, err := client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.UserMessage("What's the weather in SF?"),
 		},
 		Model: openai.ChatModelGPT4oMini,
-		Tools: []openai.ChatCompletionToolParam{
-			{
-				Type: "function",
-				Function: openai.FunctionDefinitionParam{
-					Name:        "get_weather",
-					Description: openai.String("Get weather"),
-					Parameters: openai.FunctionParameters{
-						"type": "object",
-						"properties": map[string]interface{}{
-							"location": map[string]interface{}{"type": "string"},
-						},
-						"required": []string{"location"},
-					},
-				},
-			},
-		},
 	})
 	if err != nil {
 		log.Fatal(err)
 	}
-	if len(toolResp.Choices) > 0 && len(toolResp.Choices[0].Message.ToolCalls) > 0 {
-		fmt.Printf("✓ Tool called: %s\n", toolResp.Choices[0].Message.ToolCalls[0].Function.Name)
-	}
+	fmt.Printf("✓ %s\n", basicResp.Choices[0].Message.Content)
 
 	// 4. Responses API
 	fmt.Println("4. Responses API...")
@@ -110,16 +96,26 @@ func main() {
 			final = data.Text
 		}
 	}
+	if err := respStream.Err(); err != nil {
+		log.Fatal(err)
+	}
 	fmt.Printf("✓ %s\n", final[:30]+"...")
 
-	// 6. Models.List (untraced endpoint)
-	fmt.Println("6. Models.List...")
+	// 6. Conversations API (new in v2)
+	fmt.Println("6. Conversations API...")
+	conv, err := client.Conversations.New(ctx, conversations.ConversationNewParams{})
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("✓ Conversation created: %s\n", conv.ID)
+
+	// 7. Models.List (untraced endpoint)
+	fmt.Println("7. Models.List...")
 	models, err := client.Models.List(ctx)
 	if err != nil {
-		fmt.Printf("✓ Models.List failed: %v\n", err)
-	} else {
-		fmt.Printf("✓ Models.List succeeded: %d models\n", len(models.Data))
+		log.Fatal(err)
 	}
+	fmt.Printf("✓ Models.List succeeded: %d models\n", len(models.Data))
 
 	fmt.Println("\n✅ All OpenAI features tested!")
 }
