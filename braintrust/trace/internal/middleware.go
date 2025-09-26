@@ -39,8 +39,8 @@ func Middleware(getMiddlewareTracer TracerRouter) func(*http.Request, NextMiddle
 			mt = getMiddlewareTracer(req.URL.Path)
 		}
 
-		// Right now we don't bother tracing requests with a nil body, becuase they have no data
-		// but that could change.
+		// Right now we don't bother tracing requests with a nil body, because they have no data.
+		// If needed, we could change that but handle the nil body sanely.
 		if mt == nil || req.Body == nil {
 			// Some endpoints aren't traced. Just pass them along.
 			return next(req)
