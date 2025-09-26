@@ -84,9 +84,11 @@ func main() {
 package main
 
 import (
+    "log"
+
     "github.com/openai/openai-go"
     "github.com/openai/openai-go/option"
-    
+
     "github.com/braintrustdata/braintrust-x-go/braintrust/trace"
     "github.com/braintrustdata/braintrust-x-go/braintrust/trace/traceopenai"
 )
@@ -105,7 +107,7 @@ func main() {
     )
 
     // Your OpenAI API calls will now be automatically traced
-    // ...
+    _ = client // Use the client for your API calls
 }
 ```
 
@@ -115,9 +117,11 @@ func main() {
 package main
 
 import (
+    "log"
+
     "github.com/anthropics/anthropic-sdk-go"
     "github.com/anthropics/anthropic-sdk-go/option"
-    
+
     "github.com/braintrustdata/braintrust-x-go/braintrust/trace"
     "github.com/braintrustdata/braintrust-x-go/braintrust/trace/traceanthropic"
 )
@@ -136,7 +140,7 @@ func main() {
     )
 
     // Your Anthropic API calls will now be automatically traced
-    // ...
+    _ = client // Use the client for your API calls
 }
 ```
 
