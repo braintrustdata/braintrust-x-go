@@ -1,4 +1,6 @@
-// OpenAI kitchen sink - tests all major OpenAI features with minimal code
+// OpenAI kitchen sink - tests all major OpenAI features with minimal code. It
+// uses v2 of the openai API.
+
 package main
 
 import (
