@@ -1,3 +1,7 @@
+<<<<<<< HEAD
+=======
+// Anthropic kitchen sink - tests all the Anthropic features with minimal code
+>>>>>>> c5672b8 (make examples readable by customers)
 package main
 
 import (
