@@ -200,6 +200,35 @@ func TestMiddlewareWithUnsupportedOpenAIEndpoint(t *testing.T) {
 	require.NoError(t, closeErr)
 }
 
+func TestMiddlewareWithNilBody(t *testing.T) {
+	// This test reproduces the panic that occurs when middleware encounters
+	// a traced endpoint with a nil body (like GET requests)
+
+	mockTracer := &mockTracer{}
+
+	router := func(path string) MiddlewareTracer {
+		return mockTracer
+	}
+
+	middleware := Middleware(router)
+
+	req := httptest.NewRequest("GET", "/v1/chat/completions", nil)
+	req.Body = nil
+
+	next := func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: 200,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"data": []}`)),
+		}, nil
+	}
+
+	resp, err := middleware(req, next)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	assert.Equal(t, 200, resp.StatusCode)
+}
+
 func TestToInt64(t *testing.T) {
 	tests := []struct {
 		name     string
