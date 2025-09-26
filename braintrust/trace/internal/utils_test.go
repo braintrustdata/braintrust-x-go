@@ -228,7 +228,6 @@ func TestMiddlewareWithNilBody(t *testing.T) {
 	require.NotNil(t, resp)
 	assert.Equal(t, 200, resp.StatusCode)
 
-	// Close response body to satisfy bodyclose linter
 	err = resp.Body.Close()
 	require.NoError(t, err)
 }
