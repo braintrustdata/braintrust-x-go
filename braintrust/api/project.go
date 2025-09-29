@@ -18,13 +18,12 @@ type ProjectRequest struct {
 
 // Project represents a project from the API
 type Project struct {
-	ID        string            `json:"id"`
-	OrgID     string            `json:"org_id"`
-	Name      string            `json:"name"`
-	Created   time.Time         `json:"created"`
-	DeletedAt *time.Time        `json:"deleted_at,omitempty"`
-	UserID    string            `json:"user_id"`
-	Settings  map[string]string `json:"settings,omitempty"`
+	ID        string     `json:"id"`
+	OrgID     string     `json:"org_id"`
+	Name      string     `json:"name"`
+	Created   time.Time  `json:"created"`
+	DeletedAt *time.Time `json:"deleted_at,omitempty"`
+	UserID    string     `json:"user_id"`
 }
 
 // RegisterProject creates a new project via the Braintrust API.
