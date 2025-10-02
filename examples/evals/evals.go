@@ -44,20 +44,17 @@ func main() {
 		return resp.OutputText(), nil
 	}
 
-	experimentID, err := eval.ResolveProjectExperimentID("go-eval-x", "go-eval-project")
-	if err != nil {
-		log.Fatalf("Failed to resolve experiment: %v", err)
-	}
-
-	eval1 := eval.New(experimentID,
-		eval.NewCases([]eval.Case[string, string]{
+	_, err = eval.Run(context.Background(), eval.Opts[string, string]{
+		Project:    "go-eval-project",
+		Experiment: "go-eval-x",
+		Cases: eval.NewCases([]eval.Case[string, string]{
 			{Input: "strawberry", Expected: "fruit"},
 			{Input: "asparagus", Expected: "vegetable"},
 			{Input: "apple", Expected: "fruit"},
 			{Input: "banana", Expected: "fruit"},
 		}),
-		getFoodType,
-		[]eval.Scorer[string, string]{
+		Task: getFoodType,
+		Scorers: []eval.Scorer[string, string]{
 			eval.NewScorer("fruit_scorer", func(_ context.Context, _, _, result string, _ eval.Metadata) (eval.Scores, error) {
 				v := 0.0
 				if result == "fruit" {
@@ -73,8 +70,7 @@ func main() {
 				return eval.S(v), nil
 			}),
 		},
-	)
-	err = eval1.Run(context.Background())
+	})
 	if err != nil {
 		log.Fatalf("Error running eval: %v", err)
 	}

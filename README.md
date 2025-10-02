@@ -40,38 +40,26 @@ func main() {
     }
     defer teardown()
 
-    // Define your AI function to evaluate
-    greetingTask := func(ctx context.Context, input string) (string, error) {
-        return "Hello " + input, nil
-    }
-
-    // Define scoring function
-    exactMatch := func(ctx context.Context, input, expected, result string, _ eval.Metadata) (eval.Scores, error) {
-        if expected == result {
-            return eval.S(1.0), nil // Perfect match
-        }
-        return eval.S(0.0), nil // No match
-    }
-
-    // Create an evaluation
-    experimentID, err := eval.ResolveProjectExperimentID("greeting-experiment", "my-project")
-    if err != nil {
-        log.Fatal(err)
-    }
-
-    evaluation := eval.New(experimentID,
-        eval.NewCases([]eval.Case[string, string]{
+    // Run an evaluation
+    _, err = eval.Run(context.Background(), eval.Opts[string, string]{
+        Project:    "my-project",
+        Experiment: "greeting-experiment",
+        Cases: eval.NewCases([]eval.Case[string, string]{
             {Input: "World", Expected: "Hello World"},
             {Input: "Alice", Expected: "Hello Alice"},
         }),
-        greetingTask,
-        []eval.Scorer[string, string]{
-            eval.NewScorer("exact_match", exactMatch),
+        Task: func(ctx context.Context, input string) (string, error) {
+            return "Hello " + input, nil
         },
-    )
-
-    // Run the evaluation
-    err = evaluation.Run(context.Background())
+        Scorers: []eval.Scorer[string, string]{
+            eval.NewScorer("exact_match", func(ctx context.Context, input, expected, result string, _ eval.Metadata) (eval.Scores, error) {
+                if expected == result {
+                    return eval.S(1.0), nil
+                }
+                return eval.S(0.0), nil
+            }),
+        },
+    })
     if err != nil {
         log.Fatal(err)
     }

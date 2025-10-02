@@ -28,14 +28,6 @@ type AnswerExpected struct {
 	Response string `json:"response"`
 }
 
-// DatasetEvent represents the complete event structure from the dataset
-type DatasetEvent struct {
-	ID       string                 `json:"id,omitempty"`
-	Input    QuestionInput          `json:"input"`
-	Expected AnswerExpected         `json:"expected"`
-	Metadata map[string]interface{} `json:"metadata,omitempty"`
-}
-
 // initializeDataset creates a dataset with sample data and returns the dataset ID
 func initializeDataset(projectID string) (string, error) {
 	// Create a dataset with timestamp to make it unique
@@ -123,59 +115,43 @@ func main() {
 		log.Fatalf("Failed to initialize dataset: %v", err)
 	}
 
-	// Create cases using eval.GetDatasetByID with separate Input/Expected types
-	cases, err := eval.GetDatasetByID[QuestionInput, AnswerExpected](datasetID)
-	if err != nil {
-		log.Fatalf("❌ Failed to get dataset: %v", err)
-	}
-
-	// Define a task that processes the input and returns the expected structure
-	task := func(ctx context.Context, input QuestionInput) (AnswerExpected, error) {
-		// Simple example: capitalize the first letter of each word
-		fmt.Printf("🔄 Processing text: '%s' (context: %s, language: %s)\n",
-			input.Text, input.Context, input.Language)
-
-		// Simple capitalization logic - capitalize first letter of each word
-		words := strings.Fields(input.Text)
-		capitalizedWords := make([]string, len(words))
-
-		for i, word := range words {
-			if len(word) > 0 {
-				capitalizedWords[i] = strings.ToUpper(word[:1]) + strings.ToLower(word[1:])
-			} else {
-				capitalizedWords[i] = word
-			}
-		}
-
-		response := strings.Join(capitalizedWords, " ")
-
-		return AnswerExpected{
-			Response: response,
-		}, nil
-	}
-
-	// Create scorers that work with the business logic types
-	scorers := []eval.Scorer[QuestionInput, AnswerExpected]{
-		autoevals.NewEquals[QuestionInput, AnswerExpected](),
-	}
-
-	// Create and run the evaluation
-	experimentID, err := eval.ResolveExperimentID("Capitalization Task Demo", project.ID)
-	if err != nil {
-		log.Fatalf("Failed to resolve experiment: %v", err)
-	}
-
-	evaluation := eval.New(experimentID, cases, task, scorers)
-
 	fmt.Println("\n🚀 Running evaluation with struct-based dataset...")
-	err = evaluation.Run(context.Background())
+	_, err = eval.Run(context.Background(), eval.Opts[QuestionInput, AnswerExpected]{
+		ProjectID:  project.ID,
+		Experiment: "Capitalization Task Demo",
+		DatasetID:  datasetID, // Use DatasetID directly - eval.Run handles fetching
+		Task: func(ctx context.Context, input QuestionInput) (AnswerExpected, error) {
+			// Simple example: capitalize the first letter of each word
+			fmt.Printf("🔄 Processing text: '%s' (context: %s, language: %s)\n",
+				input.Text, input.Context, input.Language)
+
+			// Simple capitalization logic - capitalize first letter of each word
+			words := strings.Fields(input.Text)
+			capitalizedWords := make([]string, len(words))
+
+			for i, word := range words {
+				if len(word) > 0 {
+					capitalizedWords[i] = strings.ToUpper(word[:1]) + strings.ToLower(word[1:])
+				} else {
+					capitalizedWords[i] = word
+				}
+			}
+
+			response := strings.Join(capitalizedWords, " ")
+
+			return AnswerExpected{
+				Response: response,
+			}, nil
+		},
+		Scorers: []eval.Scorer[QuestionInput, AnswerExpected]{
+			autoevals.NewEquals[QuestionInput, AnswerExpected](),
+		},
+	})
 	if err != nil {
 		log.Fatalf("Evaluation failed: %v", err)
 	}
 
 	fmt.Println("\n✅ Evaluation completed successfully!")
-	fmt.Printf("🔗 View results at: http://localhost:3000/app/projects/%s\n", project.ID)
-	fmt.Printf("📊 Dataset at: http://localhost:3000/app/projects/%s/datasets/%s\n", project.ID, datasetID)
 	fmt.Printf("🏷️  Project ID: %s\n", project.ID)
 	fmt.Printf("📊 Dataset ID: %s\n", datasetID)
 }
