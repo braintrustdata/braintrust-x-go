@@ -23,38 +23,22 @@ func main() {
 	}
 	defer teardown()
 
-	// Simple task that just returns the input doubled
-	task := func(ctx context.Context, input int) (int, error) {
-		return input * 2, nil
-	}
-
-	// Static test cases
-	cases := []eval.Case[int, int]{
-		{Input: 5, Expected: 10},
-		{Input: 3, Expected: 6},
-		{Input: 7, Expected: 14},
-	}
-
-	// an example of a scorer that returns a single number
-	randomScorer := eval.NewScorer[int, int]("random", func(ctx context.Context, input, expected, result int, _ eval.Metadata) (eval.Scores, error) {
-		score := rand.Float64()
-		return eval.S(score), nil
-	})
-
-	// an example of a scorer that returns more than one score.
-	listScorer := eval.NewScorer[int, int]("list", func(ctx context.Context, input, expected, result int, _ eval.Metadata) (eval.Scores, error) {
-		return eval.Scores{
-			{Name: "poor", Score: 0},
-			{Name: "average", Score: 0.5},
-			{Name: "excellent", Score: 1},
-		}, nil
-	})
-
 	// Build scorers list with local scorers
 	scorers := []eval.Scorer[int, int]{
 		autoevals.NewEquals[int, int](),
-		randomScorer,
-		listScorer,
+		// an example of a scorer that returns a single number
+		eval.NewScorer[int, int]("random", func(ctx context.Context, input, expected, result int, _ eval.Metadata) (eval.Scores, error) {
+			score := rand.Float64()
+			return eval.S(score), nil
+		}),
+		// an example of a scorer that returns more than one score
+		eval.NewScorer[int, int]("list", func(ctx context.Context, input, expected, result int, _ eval.Metadata) (eval.Scores, error) {
+			return eval.Scores{
+				{Name: "poor", Score: 0},
+				{Name: "average", Score: 0.5},
+				{Name: "excellent", Score: 1},
+			}, nil
+		}),
 	}
 
 	// Try to get online scorer - add if available
@@ -67,16 +51,20 @@ func main() {
 		scorers = append(scorers, onlineScorer)
 	}
 
-	// Create evaluation
-	experimentID, err := eval.ResolveProjectExperimentID("test-go-functions", "test-go-functions")
-	if err != nil {
-		log.Fatalf("❌ Failed to resolve experiment: %v", err)
-	}
-
-	evaluation := eval.New(experimentID, eval.NewCases(cases), task, scorers)
-
 	log.Println("🚀 Running evaluation...")
-	err = evaluation.Run(context.Background())
+	_, err = eval.Run(context.Background(), eval.Opts[int, int]{
+		Project:    "test-go-functions",
+		Experiment: "test-go-functions",
+		Cases: eval.NewCases([]eval.Case[int, int]{
+			{Input: 5, Expected: 10},
+			{Input: 3, Expected: 6},
+			{Input: 7, Expected: 14},
+		}),
+		Task: func(ctx context.Context, input int) (int, error) {
+			return input * 2, nil
+		},
+		Scorers: scorers,
+	})
 	if err != nil {
 		log.Printf("⚠️ Eval completed with errors: %v", err)
 	} else {

@@ -193,6 +193,43 @@ func InsertDatasetEvents(datasetID string, events []DatasetEvent) error {
 	return nil
 }
 
+// DeleteDataset deletes a dataset
+func DeleteDataset(datasetID string) error {
+	config := braintrust.GetConfig()
+
+	baseURL, err := url.Parse(config.APIURL)
+	if err != nil {
+		return fmt.Errorf("error parsing base URL: %w", err)
+	}
+
+	endpoint, err := url.Parse(fmt.Sprintf("/v1/dataset/%s", datasetID))
+	if err != nil {
+		return fmt.Errorf("error parsing endpoint: %w", err)
+	}
+
+	fullURL := baseURL.ResolveReference(endpoint)
+
+	httpReq, err := http.NewRequest("DELETE", fullURL.String(), nil)
+	if err != nil {
+		return fmt.Errorf("error creating request: %w", err)
+	}
+	httpReq.Header.Set("Authorization", "Bearer "+config.APIKey)
+
+	client := &http.Client{}
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("error making request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("unexpected status code: %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
 // Dataset handles fetching raw DatasetEvents from the Braintrust API with pagination
 type Dataset struct {
 	DatasetID string

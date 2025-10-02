@@ -31,13 +31,16 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sync"
 
 	"go.opentelemetry.io/otel"
 	attr "go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/braintrustdata/braintrust-x-go/braintrust"
 	"github.com/braintrustdata/braintrust-x-go/braintrust/api"
+	"github.com/braintrustdata/braintrust-x-go/braintrust/log"
 	bttrace "github.com/braintrustdata/braintrust-x-go/braintrust/trace"
 )
 
@@ -72,11 +75,11 @@ type Eval[I, R any] struct {
 	tracer       trace.Tracer
 	parent       bttrace.Parent
 	startSpanOpt trace.SpanStartOption
+	goroutines   int
 }
 
 // New creates a new eval with the given experiment ID, cases, task, and scorers.
 func New[I, R any](experimentID string, cases Cases[I, R], task Task[I, R], scorers []Scorer[I, R]) *Eval[I, R] {
-
 	// Every span created from this eval will have the experiment ID as the parent. This _should_ be done by the SpanProcessor
 	// but just in case a user hasn't set it up, we'll do it again here just in case as it should be idempotent.
 	parent := bttrace.Parent{Type: bttrace.ParentTypeExperimentID, ID: experimentID}
@@ -87,10 +90,20 @@ func New[I, R any](experimentID string, cases Cases[I, R], task Task[I, R], scor
 		cases:        cases,
 		task:         task,
 		scorers:      scorers,
+		goroutines:   1,
 		startSpanOpt: startSpanOpt,
 		parent:       parent,
 		tracer:       otel.GetTracerProvider().Tracer("braintrust.eval"),
 	}
+}
+
+// setParallelism sets the number of goroutines used to run the eval.
+func (e *Eval[I, R]) setParallelism(goroutines int) {
+	if goroutines < 1 {
+		log.Warnf("setParallelism: goroutines must be at least 1, defaulting to 1")
+		goroutines = 1
+	}
+	e.goroutines = goroutines
 }
 
 // Run runs the eval.
@@ -101,43 +114,60 @@ func (e *Eval[I, R]) Run(ctx context.Context) error {
 
 	ctx = bttrace.SetParent(ctx, e.parent)
 
-	var errs []error
+	// Scale buffer size with parallelism to avoid blocking, but cap at 100
+	bufferSize := min(e.goroutines*2, 100)
+	nextCases := make(chan nextCase[I, R], bufferSize)
+	var errs lockedErrors
+
+	// Spawn our goroutines to run the cases.
+	var wg sync.WaitGroup
+	for i := 0; i < e.goroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				nextCase, ok := <-nextCases
+				if !ok {
+					return
+				}
+				if err := e.runNextCase(ctx, nextCase); err != nil {
+					errs.append(err)
+				}
+			}
+		}()
+	}
+
+	// Fill our channel with the cases.
 	for {
-		done, err := e.runNextCase(ctx)
-		if done {
+		c, err := e.cases.Next()
+		if err == io.EOF {
+			close(nextCases)
 			break
 		}
-		if err != nil {
-			errs = append(errs, err)
-		}
+		nextCases <- nextCase[I, R]{c: c, iterErr: err}
 	}
 
-	return errors.Join(errs...)
+	// Wait for all the goroutines to finish.
+	wg.Wait()
+
+	return errors.Join(errs.get()...)
 }
 
-// runNextCase runs the next case in the iterator. It returns true if the iterator is
-// exhausted and false otherwise, and any error that occurred while running the case.
-func (e *Eval[I, R]) runNextCase(ctx context.Context) (done bool, err error) {
-	c, err := e.cases.Next()
-	done = err == io.EOF
-	if done {
-		return done, nil
-	}
-
+func (e *Eval[I, R]) runNextCase(ctx context.Context, nextCase nextCase[I, R]) error {
 	// if we have a case or get an error, we'll create a span.
 	ctx, span := e.tracer.Start(ctx, "eval", e.startSpanOpt)
 	defer span.End()
 
 	// if our case iterator returns an error, we'll wrap it in a more
 	// specific error and short circuit.
-	if err != nil {
-		werr := fmt.Errorf("%w: %w", ErrCaseIterator, err)
+	if nextCase.iterErr != nil {
+		werr := fmt.Errorf("%w: %w", ErrCaseIterator, nextCase.iterErr)
 		recordSpanError(span, werr)
-		return done, werr
+		return werr
 	}
 
 	// otherwise let's run the case (using the existing span)
-	return done, e.runCase(ctx, span, c)
+	return e.runCase(ctx, span, nextCase.c)
 }
 
 func (e *Eval[I, R]) runCase(ctx context.Context, span trace.Span, c Case[I, R]) error {
@@ -235,6 +265,73 @@ func (e *Eval[I, R]) runTask(ctx context.Context, c Case[I, R]) (R, error) {
 	}
 
 	return result, errors.Join(encodeErrs...)
+}
+
+// Result contains the results from running an evaluation.
+type Result struct {
+	// TODO: Will be populated with span data, scores, errors, etc. in future iterations
+}
+
+// Opts contains all options for running an evaluation in a single call.
+type Opts[I, R any] struct {
+	// Provide either Project name or Project ID
+	Project   string
+	ProjectID string
+
+	// Required
+	Task       Task[I, R]
+	Scorers    []Scorer[I, R]
+	Experiment string
+
+	// Provide one of Cases, Dataset, or DatasetID
+	Cases          Cases[I, R]
+	Dataset        string
+	DatasetID      string
+	DatasetVersion string
+
+	// Options:
+	Parallelism int // Number of goroutines (default: 1)
+}
+
+// Run executes an evaluation with automatic resolution of project, experiment, and dataset.
+func Run[I, R any](ctx context.Context, opts Opts[I, R]) (*Result, error) {
+	// Validate required fields
+	if opts.Task == nil {
+		return nil, fmt.Errorf("%w: Task is required", ErrEval)
+	}
+	if len(opts.Scorers) == 0 {
+		return nil, fmt.Errorf("%w: at least one Scorer is required", ErrEval)
+	}
+	if opts.Experiment == "" {
+		return nil, fmt.Errorf("%w: Experiment is required", ErrEval)
+	}
+
+	// Resolve project ID (fall back to config defaults)
+	projectID, err := resolveProjectID(opts.ProjectID, opts.Project, braintrust.GetConfig())
+	if err != nil {
+		return nil, err
+	}
+
+	// Resolve experiment ID
+	experimentID, err := ResolveExperimentID(opts.Experiment, projectID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve experiment: %w", err)
+	}
+
+	// Resolve cases
+	cases, err := resolveCases(opts, projectID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create and run the evaluation
+	eval := New(experimentID, cases, opts.Task, opts.Scorers)
+	if opts.Parallelism > 0 {
+		eval.setParallelism(opts.Parallelism)
+	}
+	err = eval.Run(ctx)
+
+	return &Result{}, err
 }
 
 // Metadata is a map of strings to a JSON-encodable value. It is used to store arbitrary metadata about a case.
@@ -405,4 +502,113 @@ func ResolveProjectExperimentID(name string, projectName string) (string, error)
 		return "", fmt.Errorf("failed to register project %q: %w", projectName, err)
 	}
 	return ResolveExperimentID(name, project.ID)
+}
+
+// resolveProjectID resolves a project ID from the provided options and config.
+// It checks in order: explicit ProjectID, Project name, default ProjectID from config,
+// default Project name from config. Returns an error if none are provided.
+func resolveProjectID(projectID, projectName string, config braintrust.Config) (string, error) {
+	if projectID != "" {
+		return projectID, nil
+	}
+
+	if projectName != "" {
+		project, err := api.RegisterProject(projectName)
+		if err != nil {
+			return "", fmt.Errorf("failed to resolve project %q: %w", projectName, err)
+		}
+		return project.ID, nil
+	}
+
+	if config.DefaultProjectID != "" {
+		return config.DefaultProjectID, nil
+	}
+
+	if config.DefaultProjectName != "" {
+		project, err := api.RegisterProject(config.DefaultProjectName)
+		if err != nil {
+			return "", fmt.Errorf("failed to resolve default project %q: %w", config.DefaultProjectName, err)
+		}
+		return project.ID, nil
+	}
+
+	return "", fmt.Errorf("%w: Project or ProjectID is required (or set BRAINTRUST_DEFAULT_PROJECT_ID)", ErrEval)
+}
+
+// resolveCases validates and resolves cases from the provided options.
+// Exactly one of Cases, Dataset, or DatasetID must be provided.
+func resolveCases[I, R any](opts Opts[I, R], projectID string) (Cases[I, R], error) {
+	// Validate cases source (must provide exactly one)
+	paramCount := 0
+	if opts.Cases != nil {
+		paramCount++
+	}
+	if opts.Dataset != "" {
+		paramCount++
+	}
+	if opts.DatasetID != "" {
+		paramCount++
+	}
+
+	if paramCount == 0 {
+		return nil, fmt.Errorf("%w: one of Cases, Dataset, or DatasetID is required", ErrEval)
+	}
+	if paramCount > 1 {
+		return nil, fmt.Errorf("%w: only one of Cases, Dataset, or DatasetID should be provided", ErrEval)
+	}
+
+	// Resolve cases
+	if opts.Cases != nil {
+		return opts.Cases, nil
+	}
+
+	if opts.DatasetID != "" {
+		cases, err := GetDatasetByID[I, R](opts.DatasetID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get dataset by ID %q: %w", opts.DatasetID, err)
+		}
+		return cases, nil
+	}
+
+	if opts.Dataset != "" {
+		datasetOpts := DatasetOpts{
+			ProjectID:   projectID,
+			DatasetName: opts.Dataset,
+			Version:     opts.DatasetVersion,
+			Limit:       1, // Get most recent dataset
+		}
+		cases, err := QueryDataset[I, R](datasetOpts)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get dataset %q: %w", opts.Dataset, err)
+		}
+		return cases, nil
+	}
+
+	// Should never reach here due to validation above
+	return nil, fmt.Errorf("%w: no cases source provided", ErrEval)
+}
+
+// nextCase represents the result of a call to Cases.Next(). It can contain a
+// case or a legitimate error from iterator (e.g. an error paginating the dataset).
+type nextCase[I, R any] struct {
+	c       Case[I, R]
+	iterErr error
+}
+
+// lockedErrors is a thread-safe list of errors.
+type lockedErrors struct {
+	mu   sync.Mutex
+	errs []error
+}
+
+func (e *lockedErrors) append(err error) {
+	e.mu.Lock()
+	e.errs = append(e.errs, err)
+	e.mu.Unlock()
+}
+
+func (e *lockedErrors) get() []error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.errs
 }
