@@ -2,6 +2,8 @@ package eval
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"io"
 	"sync"
@@ -22,6 +24,15 @@ var (
 	evalType  = map[string]string{"type": "eval"}
 	taskType  = map[string]string{"type": "task"}
 )
+
+func entropy() string {
+	b := make([]byte, 8)
+	_, err := rand.Read(b)
+	if err != nil {
+		panic(err)
+	}
+	return hex.EncodeToString(b)
+}
 
 func TestEval_TaskErrors(t *testing.T) {
 	// a test that verifies we properly handle evals where some
@@ -1088,13 +1099,14 @@ func TestRun_WithDatasetID(t *testing.T) {
 	_, exporter := oteltest.Setup(t)
 
 	// Create a project
-	project, err := api.RegisterProject("Test Dataset Run " + time.Now().Format("20060102150405"))
+	projectName := entropy()
+	project, err := api.RegisterProject(projectName)
 	require.NoError(err)
 
 	// Create a dataset
 	datasetInfo, err := api.CreateDataset(api.DatasetRequest{
 		ProjectID:   project.ID,
-		Name:        "test-dataset-id",
+		Name:        "test-dataset-id-" + projectName,
 		Description: "Test dataset for eval.Run with DatasetID",
 	})
 	require.NoError(err)
@@ -1142,13 +1154,13 @@ func TestRun_WithDatasetName(t *testing.T) {
 
 	_, exporter := oteltest.Setup(t)
 
-	// Create a unique project name with timestamp
-	projectName := "Test Dataset Name Run " + time.Now().Format("20060102150405")
+	// Create a unique project name
+	projectName := entropy()
 	project, err := api.RegisterProject(projectName)
 	require.NoError(err)
 
 	// Create a dataset with unique name
-	datasetName := "test-dataset-name-" + time.Now().Format("20060102150405")
+	datasetName := "test-dataset-name-" + projectName
 	datasetInfo, err := api.CreateDataset(api.DatasetRequest{
 		ProjectID:   project.ID,
 		Name:        datasetName,
