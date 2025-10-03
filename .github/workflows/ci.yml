@@ -8,6 +8,7 @@ on:
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
         go-version: [1.23.x, 1.24.x, 1.25.x]
         # FIXME[matt] add windows testing, we need to fix some timing
@@ -29,6 +30,5 @@ jobs:
         uses: golangci/golangci-lint-action@v8
         with:
           version: v2.1.6
-
       - name: Lint, vet, tests, etc.
-        run: make ci cover
+        run: make ci
