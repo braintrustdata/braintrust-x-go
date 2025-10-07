@@ -21,7 +21,7 @@ import (
 )
 
 func main() {
-	fmt.Println("🧠 Manual LLM Logging Example")
+	fmt.Println("Manual LLM Logging Example")
 
 	// Initialize Braintrust tracing
 	teardown, err := bttrace.Quickstart()
@@ -41,12 +41,12 @@ func main() {
 	// Example 3: LLM call with tool/function calling
 	toolCallingExample(ctx)
 
-	fmt.Println("\n✅ All examples logged! Check your Braintrust dashboard to view the traces.")
+	fmt.Println("\nAll examples logged! Check your Braintrust dashboard to view the traces.")
 }
 
 // simpleExample shows a basic LLM call with all the key attributes
 func simpleExample(ctx context.Context) {
-	fmt.Println("\n📝 Example 1: Simple LLM Call")
+	fmt.Println("\nExample 1: Simple LLM Call")
 
 	tracer := otel.Tracer("manual-llm-example")
 	_, span := tracer.Start(ctx, "llm.chat.completions")
