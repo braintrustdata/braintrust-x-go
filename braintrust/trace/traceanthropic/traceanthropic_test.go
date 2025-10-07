@@ -424,3 +424,157 @@ func assertSpanValid(t *testing.T, span oteltest.Span, timeRange oteltest.TimeRa
 	assert.NotNil(span.Input())
 	assert.NotNil(span.Output())
 }
+
+// TestMultipleMessages tests tracing with multiple messages (conversation history)
+func TestMultipleMessages(t *testing.T) {
+	apiKey := os.Getenv("ANTHROPIC_API_KEY")
+	client, exporter := setUpTest(t, apiKey)
+
+	timer := oteltest.NewTimer()
+	ctx := context.Background()
+	resp, err := client.Messages.New(ctx, anthropic.MessageNewParams{
+		Model: anthropic.Model("claude-3-haiku-20240307"),
+		Messages: []anthropic.MessageParam{
+			anthropic.NewUserMessage(anthropic.NewTextBlock("What is the capital of France?")),
+			anthropic.NewAssistantMessage(anthropic.NewTextBlock("The capital of France is Paris.")),
+			anthropic.NewUserMessage(anthropic.NewTextBlock("What is its population?")),
+		},
+		MaxTokens: 1024,
+	})
+	timeRange := timer.Tick()
+
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+
+	// Verify response
+	assert.Equal(t, "assistant", string(resp.Role))
+	assert.NotEmpty(t, resp.Content)
+	assert.Contains(t, strings.ToLower(resp.Content[0].Text), "million")
+
+	// Validate span
+	span := exporter.FlushOne()
+	assertSpanValid(t, span, timeRange)
+
+	// Verify input contains all messages
+	input := span.Attr("braintrust.input").String()
+	assert.Contains(t, input, "What is the capital of France?")
+	assert.Contains(t, input, "The capital of France is Paris")
+	assert.Contains(t, input, "What is its population?")
+}
+
+// TestWithTools tests tracing with tool use
+func TestWithTools(t *testing.T) {
+	apiKey := os.Getenv("ANTHROPIC_API_KEY")
+	client, exporter := setUpTest(t, apiKey)
+
+	timer := oteltest.NewTimer()
+	ctx := context.Background()
+	resp, err := client.Messages.New(ctx, anthropic.MessageNewParams{
+		Model: anthropic.Model("claude-3-haiku-20240307"),
+		Messages: []anthropic.MessageParam{
+			anthropic.NewUserMessage(anthropic.NewTextBlock("What's the weather in San Francisco?")),
+		},
+		MaxTokens: 1024,
+		Tools: []anthropic.ToolUnionParam{
+			anthropic.ToolUnionParamOfTool(
+				anthropic.ToolInputSchemaParam{
+					Properties: map[string]interface{}{
+						"location": map[string]interface{}{
+							"type":        "string",
+							"description": "The city and state, e.g. San Francisco, CA",
+						},
+					},
+					Required: []string{"location"},
+				},
+				"get_weather",
+			),
+		},
+	})
+	timeRange := timer.Tick()
+
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+
+	// Verify response
+	assert.Equal(t, "assistant", string(resp.Role))
+	assert.NotEmpty(t, resp.Content)
+
+	// Check if tool was called
+	var foundToolUse bool
+	for _, content := range resp.Content {
+		if content.Type == "tool_use" {
+			foundToolUse = true
+			assert.Equal(t, "get_weather", content.Name)
+			assert.NotNil(t, content.Input)
+		}
+	}
+	assert.True(t, foundToolUse, "Expected tool_use in response")
+
+	// Validate span
+	span := exporter.FlushOne()
+	assertSpanValid(t, span, timeRange)
+
+	// Verify metadata contains tools
+	metadata := span.Metadata()
+	assert.Contains(t, metadata, "tools")
+}
+
+// TestStreamingWithTools tests tracing with streaming and tool use
+func TestStreamingWithTools(t *testing.T) {
+	apiKey := os.Getenv("ANTHROPIC_API_KEY")
+	client, exporter := setUpTest(t, apiKey)
+
+	timer := oteltest.NewTimer()
+	ctx := context.Background()
+	stream := client.Messages.NewStreaming(ctx, anthropic.MessageNewParams{
+		Model: anthropic.Model("claude-3-haiku-20240307"),
+		Messages: []anthropic.MessageParam{
+			anthropic.NewUserMessage(anthropic.NewTextBlock("What's the weather in Tokyo?")),
+		},
+		MaxTokens: 1024,
+		Tools: []anthropic.ToolUnionParam{
+			anthropic.ToolUnionParamOfTool(
+				anthropic.ToolInputSchemaParam{
+					Properties: map[string]interface{}{
+						"location": map[string]interface{}{
+							"type":        "string",
+							"description": "The city and state or country",
+						},
+					},
+					Required: []string{"location"},
+				},
+				"get_weather",
+			),
+		},
+	})
+
+	var foundToolUse bool
+	var toolName string
+
+	// Iterate through streaming events
+	for stream.Next() {
+		event := stream.Current()
+		switch eventVariant := event.AsAny().(type) {
+		case anthropic.ContentBlockStartEvent:
+			if eventVariant.ContentBlock.Type == "tool_use" {
+				foundToolUse = true
+				toolName = eventVariant.ContentBlock.Name
+			}
+		}
+	}
+	require.NoError(t, stream.Err())
+	timeRange := timer.Tick()
+
+	// Verify tool was called
+	assert.True(t, foundToolUse, "Expected tool_use in streaming response")
+	assert.Equal(t, "get_weather", toolName)
+
+	// Validate span
+	span := exporter.FlushOne()
+	assertSpanValid(t, span, timeRange)
+
+	// Verify metadata
+	metadata := span.Metadata()
+	assert.Equal(t, true, metadata["stream"])
+	assert.Contains(t, metadata, "tools")
+}

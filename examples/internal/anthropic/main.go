@@ -216,11 +216,7 @@ func main() {
 	fmt.Println("=========================================")
 
 	// Initialize braintrust tracing with a specific project
-	projectName := "traceanthropic-example-test"
-
-	opt := braintrust.WithDefaultProject(projectName)
-
-	teardown, err := trace.Quickstart(opt)
+	teardown, err := trace.Quickstart(braintrust.WithDefaultProject("go-sdk-internal-examples"))
 	if err != nil {
 		log.Fatal(err)
 	}
