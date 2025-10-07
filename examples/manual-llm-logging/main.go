@@ -49,7 +49,7 @@ func simpleExample(ctx context.Context) {
 	fmt.Println("\n📝 Example 1: Simple LLM Call")
 
 	tracer := otel.Tracer("manual-llm-example")
-	ctx, span := tracer.Start(ctx, "llm.chat.completions")
+	_, span := tracer.Start(ctx, "llm.chat.completions")
 	defer span.End()
 
 	// 1. Set input messages
@@ -101,7 +101,7 @@ func conversationExample(ctx context.Context) {
 	fmt.Println("\n💬 Example 2: Multi-turn Conversation")
 
 	tracer := otel.Tracer("manual-llm-example")
-	ctx, span := tracer.Start(ctx, "llm.chat.completions")
+	_, span := tracer.Start(ctx, "llm.chat.completions")
 	defer span.End()
 
 	// Input includes conversation history
@@ -147,7 +147,7 @@ func toolCallingExample(ctx context.Context) {
 	fmt.Println("\n🔧 Example 3: LLM with Tool Calling")
 
 	tracer := otel.Tracer("manual-llm-example")
-	ctx, span := tracer.Start(ctx, "llm.chat.completions")
+	_, span := tracer.Start(ctx, "llm.chat.completions")
 	defer span.End()
 
 	messages := []map[string]any{
