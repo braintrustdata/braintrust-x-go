@@ -10,9 +10,6 @@ release:
     name: braintrust-x-go
   draft: false
   prerelease: auto
-  footer: |
-    ## Thanks
-    Thanks to everyone who contributed to {{ .Tag }}.
 
 changelog:
   use: git

@@ -106,14 +106,17 @@ git push origin "$VERSION"
 echo "Running goreleaser to update changelog..."
 goreleaser release --clean
 
-echo "Requesting package to be indexed..."
+echo "Indexing package."
 curl "https://proxy.golang.org/github.com/braintrustdata/braintrust-x-go/@v/$VERSION.info"
 echo ""
 
 echo "================================================"
-echo " Release Complete!"
+echo " Release Complete $VERSION"
 echo "================================================"
-echo "Version $VERSION has been created and pushed to origin."
-echo ""
-echo "Go to https://pkg.go.dev/github.com/braintrustdata/braintrust-x-go@$VERSION/braintrust to request manually"
-echo "View changelog: $REPO_URL/releases/tag/$VERSION"
+echo
+echo "Note: Docs should be updated within the next hour. Request manually at the URL below"
+echo "if they don't show up"
+echo
+echo "- Index:   https://proxy.golang.org/github.com/braintrustdata/braintrust-x-go/@v/$VERSION.info"
+echo "- Docs:    https://pkg.go.dev/github.com/braintrustdata/braintrust-x-go@$VERSION/braintrust"
+echo "- Release: $REPO_URL/releases/tag/$VERSION"
