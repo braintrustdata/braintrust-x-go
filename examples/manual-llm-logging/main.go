@@ -1,6 +1,9 @@
 // This example demonstrates how to manually log LLM data to Braintrust
 // without using middleware. This is useful, for example, if you have
 // your own internal AI proxy and want to instrument that.
+//
+// All fields are documented here:
+//  https://www.braintrust.dev/docs/integrations/opentelemetry#manual-tracing
 
 package main
 
