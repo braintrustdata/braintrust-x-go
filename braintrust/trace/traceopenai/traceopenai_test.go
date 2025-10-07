@@ -2,6 +2,7 @@ package traceopenai
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"testing"
@@ -99,9 +100,10 @@ func TestOpenAIResponsesRequiredParams(t *testing.T) {
 	assertSpanValid(t, ts, timeRange)
 
 	_ = ts.Input()
-	output := ts.Attr("braintrust.output").String()
-	assert.Contains(output, "17")
-	_ = ts.Output()
+	outputRaw := ts.Output()
+	outputJSON, err := json.Marshal(outputRaw)
+	require.NoError(err)
+	assert.Contains(string(outputJSON), "17")
 
 }
 
@@ -138,8 +140,10 @@ func TestOpenAIResponsesKitchenSink(t *testing.T) {
 	assertSpanValid(t, ts, timeRange)
 
 	// Check input field
-	input := ts.Attr("braintrust.input").String()
-	assert.Contains(input, "13+4")
+	inputRaw := ts.Input()
+	inputJSON, err := json.Marshal(inputRaw)
+	require.NoError(err)
+	assert.Contains(string(inputJSON), "13+4")
 
 	// Check output field
 	output := ts.Output()
@@ -212,7 +216,10 @@ func TestOpenAIResponsesStreaming(t *testing.T) {
 
 	assertSpanValid(t, ts, timeRange)
 
-	output := ts.Attr("braintrust.output").String()
+	outputRaw := ts.Output()
+	outputJSON, err := json.Marshal(outputRaw)
+	require.NoError(err)
+	output := string(outputJSON)
 	for _, i := range []string{"1", "2", "3", "5", "8", "13"} {
 		assert.Contains(completeText, i)
 		assert.Contains(output, i)
@@ -250,7 +257,10 @@ func TestOpenAIResponsesWithListInput(t *testing.T) {
 
 	assertSpanValid(t, ts, timeRange)
 
-	input := ts.Attr("braintrust.input").String()
+	inputRaw := ts.Input()
+	inputJSON, err := json.Marshal(inputRaw)
+	require.NoError(err)
+	input := string(inputJSON)
 	assert.Contains(input, "3+125")
 	assert.Contains(input, "2+2")
 
@@ -419,4 +429,72 @@ func TestTranslateMetricPrefix(t *testing.T) {
 			assert.Equal(t, test.expected, result)
 		})
 	}
+}
+
+// TestResponsesAPIUsesCorrectAttributes verifies that the Responses API uses
+// braintrust.input_json and braintrust.output_json for proper UI display (issue #33)
+func TestResponsesAPIUsesCorrectAttributes(t *testing.T) {
+	client, exporter := setUpTest(t)
+	require := require.New(t)
+	assert := assert.New(t)
+
+	// Test with list input (array)
+	inputMessages := []responses.ResponseInputItemUnionParam{
+		responses.ResponseInputItemParamOfMessage("What is 2+2?", "user"),
+		responses.ResponseInputItemParamOfMessage("4", "assistant"),
+		responses.ResponseInputItemParamOfMessage("What is 3+5?", "user"),
+	}
+
+	params := responses.ResponseNewParams{
+		Input: responses.ResponseNewParamsInputUnion{
+			OfInputItemList: inputMessages,
+		},
+		Model: testModel,
+	}
+
+	resp, err := client.Responses.New(context.Background(), params)
+	require.NoError(err)
+	require.NotNil(resp)
+
+	ts := exporter.FlushOne()
+
+	// Verify we're using braintrust.input_json (not braintrust.input)
+	inputAttr := ts.Attr("braintrust.input_json")
+	require.NotNil(inputAttr, "should use braintrust.input_json for array input")
+	assert.Contains(inputAttr.String(), "2+2")
+	assert.Contains(inputAttr.String(), "3+5")
+
+	// Verify we're using braintrust.output_json (not braintrust.output)
+	outputAttr := ts.Attr("braintrust.output_json")
+	require.NotNil(outputAttr, "should use braintrust.output_json for output")
+	assert.Contains(outputAttr.String(), "8")
+}
+
+// TestResponsesAPIWithStringInput verifies that string inputs also work with _json attributes
+func TestResponsesAPIWithStringInput(t *testing.T) {
+	client, exporter := setUpTest(t)
+	require := require.New(t)
+	assert := assert.New(t)
+
+	// Test with string input
+	params := responses.ResponseNewParams{
+		Input: responses.ResponseNewParamsInputUnion{OfString: openai.String("What is 7+6?")},
+		Model: testModel,
+	}
+
+	resp, err := client.Responses.New(context.Background(), params)
+	require.NoError(err)
+	require.NotNil(resp)
+
+	ts := exporter.FlushOne()
+
+	// Verify string inputs also use braintrust.input_json
+	inputAttr := ts.Attr("braintrust.input_json")
+	require.NotNil(inputAttr, "should use braintrust.input_json even for string input")
+	assert.Contains(inputAttr.String(), "7+6")
+
+	// Verify output uses braintrust.output_json
+	outputAttr := ts.Attr("braintrust.output_json")
+	require.NotNil(outputAttr, "should use braintrust.output_json for output")
+	assert.Contains(outputAttr.String(), "13")
 }
