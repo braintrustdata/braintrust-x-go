@@ -4,7 +4,9 @@ package internal
 
 import (
 	"fmt"
+	"math/rand"
 	"runtime/debug"
+	"strings"
 	"testing"
 
 	"github.com/braintrustdata/braintrust-x-go/braintrust/log"
@@ -40,3 +42,24 @@ func (f *failTestLogger) Warnf(format string, args ...any) {
 }
 
 var _ log.Logger = &failTestLogger{}
+
+func randomString(length int) string {
+	charset := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	b := make([]rune, length)
+	for i := range b {
+		b[i] = rune(charset[rand.Intn(len(charset))])
+	}
+	return string(b)
+}
+
+// RandomName generates a (probably) unique name
+func RandomName(t *testing.T, suffixes ...string) string {
+	t.Helper()
+	parts := []string{
+		"go-sdk-test",
+		t.Name(),
+		randomString(6),
+	}
+	parts = append(parts, suffixes...)
+	return strings.Join(parts, "-")
+}

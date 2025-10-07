@@ -2,8 +2,6 @@ package eval
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"io"
 	"sync"
@@ -16,6 +14,7 @@ import (
 
 	"github.com/braintrustdata/braintrust-x-go/braintrust"
 	"github.com/braintrustdata/braintrust-x-go/braintrust/api"
+	"github.com/braintrustdata/braintrust-x-go/braintrust/internal"
 	"github.com/braintrustdata/braintrust-x-go/braintrust/internal/oteltest"
 )
 
@@ -24,15 +23,6 @@ var (
 	evalType  = map[string]string{"type": "eval"}
 	taskType  = map[string]string{"type": "task"}
 )
-
-func entropy() string {
-	b := make([]byte, 8)
-	_, err := rand.Read(b)
-	if err != nil {
-		panic(err)
-	}
-	return hex.EncodeToString(b)
-}
 
 func TestEval_TaskErrors(t *testing.T) {
 	// a test that verifies we properly handle evals where some
@@ -1099,14 +1089,15 @@ func TestRun_WithDatasetID(t *testing.T) {
 	_, exporter := oteltest.Setup(t)
 
 	// Create a project
-	projectName := entropy()
+	projectName := "go-sdk-dataset-tests"
 	project, err := api.RegisterProject(projectName)
 	require.NoError(err)
 
-	// Create a dataset
+	// Create a dataset with unique name
+	datasetName := internal.RandomName(t)
 	datasetInfo, err := api.CreateDataset(api.DatasetRequest{
 		ProjectID:   project.ID,
-		Name:        "test-dataset-id-" + projectName,
+		Name:        datasetName,
 		Description: "Test dataset for eval.Run with DatasetID",
 	})
 	require.NoError(err)
@@ -1131,7 +1122,7 @@ func TestRun_WithDatasetID(t *testing.T) {
 	// Run eval using DatasetID - this tests the DatasetID resolution path
 	_, err = Run(context.Background(), Opts[int, int]{
 		ProjectID:  project.ID,
-		Experiment: "test-dataset-id-experiment",
+		Experiment: internal.RandomName(t, "exp"),
 		DatasetID:  datasetInfo.ID, // Using DatasetID directly
 		Task: func(ctx context.Context, input int) (int, error) {
 			return input * 2, nil
@@ -1155,12 +1146,12 @@ func TestRun_WithDatasetName(t *testing.T) {
 	_, exporter := oteltest.Setup(t)
 
 	// Create a unique project name
-	projectName := entropy()
+	projectName := "go-sdk-dataset-tests"
 	project, err := api.RegisterProject(projectName)
 	require.NoError(err)
 
 	// Create a dataset with unique name
-	datasetName := "test-dataset-name-" + projectName
+	datasetName := internal.RandomName(t)
 	datasetInfo, err := api.CreateDataset(api.DatasetRequest{
 		ProjectID:   project.ID,
 		Name:        datasetName,
@@ -1188,7 +1179,7 @@ func TestRun_WithDatasetName(t *testing.T) {
 	// Run eval using Dataset name - this tests the Dataset name resolution path
 	_, err = Run(context.Background(), Opts[int, int]{
 		Project:    projectName,
-		Experiment: "test-dataset-name-experiment",
+		Experiment: internal.RandomName(t, "exp"),
 		Dataset:    datasetName, // Using Dataset name with automatic resolution
 		Task: func(ctx context.Context, input int) (int, error) {
 			return input * input, nil
