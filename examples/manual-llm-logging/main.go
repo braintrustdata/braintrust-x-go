@@ -1,6 +1,6 @@
 // This example demonstrates how to manually log LLM data to Braintrust
-// without using traceopenai middleware, say if you have your own internal
-// proxy and want to instrument one place.
+// without using middleware. This is useful, for example, if you have
+// your own internal AI proxy and want to instrument that.
 
 package main
 
