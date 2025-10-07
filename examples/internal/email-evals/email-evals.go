@@ -14,6 +14,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 
+	"github.com/braintrustdata/braintrust-x-go/braintrust"
 	"github.com/braintrustdata/braintrust-x-go/braintrust/eval"
 	"github.com/braintrustdata/braintrust-x-go/braintrust/trace"
 	"github.com/braintrustdata/braintrust-x-go/braintrust/trace/traceopenai"
@@ -45,7 +46,7 @@ func main() {
 		option.WithMiddleware(traceopenai.Middleware),
 	)
 
-	teardown, err := trace.Quickstart()
+	teardown, err := trace.Quickstart(braintrust.WithDefaultProject("go-sdk-internal-examples"))
 	if err != nil {
 		log.Fatalf("Error starting trace: %v", err)
 	}
