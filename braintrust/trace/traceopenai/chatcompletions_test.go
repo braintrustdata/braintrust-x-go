@@ -67,8 +67,10 @@ func TestOpenAIChatCompletions(t *testing.T) {
 	assert.Equal("openai.chat.completions.create", ts.Name())
 
 	// Check input field
-	input := ts.Attr("braintrust.input").String()
-	assert.Contains(input, "What is 2+2?")
+	inputRaw := ts.Input()
+	inputJSON, err := json.Marshal(inputRaw)
+	require.NoError(err)
+	assert.Contains(string(inputJSON), "What is 2+2?")
 
 	// Check output field
 	output := ts.Output()
@@ -168,8 +170,10 @@ func TestOpenAIChatCompletionsStreaming(t *testing.T) {
 	assert.Equal("openai.chat.completions.create", ts.Name())
 
 	// Check input field
-	input := ts.Attr("braintrust.input").String()
-	assert.Contains(input, "Count from 1 to 3")
+	inputRaw := ts.Input()
+	inputJSON, err := json.Marshal(inputRaw)
+	require.NoError(err)
+	assert.Contains(string(inputJSON), "Count from 1 to 3")
 
 	// Check output field
 	output := ts.Output()
@@ -330,9 +334,12 @@ func TestOpenAIChatCompletionsWithSystemMessage(t *testing.T) {
 	assertChatSpanValid(t, ts, timeRange)
 
 	// Check input contains both messages
-	input := ts.Attr("braintrust.input").String()
-	assert.Contains(input, "pirate")
-	assert.Contains(input, "Hello, how are you?")
+	inputRaw := ts.Input()
+	inputJSON, err := json.Marshal(inputRaw)
+	require.NoError(err)
+	inputStr := string(inputJSON)
+	assert.Contains(inputStr, "pirate")
+	assert.Contains(inputStr, "Hello, how are you?")
 
 	// Check metadata contains temperature and max_tokens
 	metadata := ts.Metadata()
@@ -1106,4 +1113,54 @@ func assertChatSpanValid(t *testing.T, span oteltest.Span, timeRange oteltest.Ti
 	assert.NotNil(span.Metadata())
 	assert.NotNil(span.Input())
 	assert.NotNil(span.Output())
+}
+
+func TestMultipleMessagesIssue33(t *testing.T) {
+	// This is a test for issue #33: https://github.com/braintrustdata/braintrust-x-go/issues/33
+	client, exporter := setUpTest(t)
+	require := require.New(t)
+	assert := assert.New(t)
+
+	// Make a chat completion request with multiple messages
+	params := openai.ChatCompletionNewParams{
+		Messages: []openai.ChatCompletionMessageParamUnion{
+			openai.SystemMessage("You are a helpful assistant."),
+			openai.UserMessage("What is the capital of France?"),
+			openai.AssistantMessage("The capital of France is Paris."),
+			openai.UserMessage("What is the population?"),
+		},
+		Model: testModel,
+	}
+
+	resp, err := client.Chat.Completions.New(context.Background(), params)
+	require.NoError(err)
+	require.NotNil(resp)
+
+	// Wait for spans to be exported
+	ts := exporter.FlushOne()
+
+	// Get the input_json field (the fix for issue #33)
+	inputAttr := ts.Attr("braintrust.input_json")
+	require.NotNil(inputAttr, "braintrust.input_json attribute should be set")
+
+	// Parse the input as JSON
+	var messages []map[string]interface{}
+	err = json.Unmarshal([]byte(inputAttr.String()), &messages)
+	require.NoError(err, "input_json should be a valid JSON array")
+
+	// Verify we have 4 separate messages
+	assert.Len(messages, 4, "should have 4 separate messages")
+
+	// Verify the structure of each message
+	assert.Equal("system", messages[0]["role"])
+	assert.Equal("You are a helpful assistant.", messages[0]["content"])
+
+	assert.Equal("user", messages[1]["role"])
+	assert.Equal("What is the capital of France?", messages[1]["content"])
+
+	assert.Equal("assistant", messages[2]["role"])
+	assert.Equal("The capital of France is Paris.", messages[2]["content"])
+
+	assert.Equal("user", messages[3]["role"])
+	assert.Equal("What is the population?", messages[3]["content"])
 }

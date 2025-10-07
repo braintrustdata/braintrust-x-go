@@ -83,7 +83,7 @@ func (ct *chatCompletionsTracer) StartSpan(ctx context.Context, t time.Time, req
 	}
 
 	if messages, ok := raw["messages"]; ok {
-		if err := internal.SetJSONAttr(span, "braintrust.input", messages); err != nil {
+		if err := internal.SetJSONAttr(span, "braintrust.input_json", messages); err != nil {
 			return ctx, span, err
 		}
 	}
@@ -135,7 +135,7 @@ func (ct *chatCompletionsTracer) parseStreamingResponse(span trace.Span, body io
 	// Post-process streaming results to match Python SDK behavior
 	output := ct.postprocessStreamingResults(allResults)
 	if output != nil {
-		if err := internal.SetJSONAttr(span, "braintrust.output", output); err != nil {
+		if err := internal.SetJSONAttr(span, "braintrust.output_json", output); err != nil {
 			return err
 		}
 	}
@@ -295,7 +295,7 @@ func (ct *chatCompletionsTracer) handleChatCompletionResponse(span trace.Span, r
 	}
 
 	if choices, ok := rawMsg["choices"]; ok {
-		if err := internal.SetJSONAttr(span, "braintrust.output", choices); err != nil {
+		if err := internal.SetJSONAttr(span, "braintrust.output_json", choices); err != nil {
 			return err
 		}
 	}

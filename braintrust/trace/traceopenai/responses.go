@@ -76,12 +76,12 @@ func (rt *responsesTracer) StartSpan(ctx context.Context, t time.Time, request i
 		}
 	}
 
-	if _, ok := raw["input"]; ok {
-		b, err := json.Marshal(raw["input"])
+	if input, ok := raw["input"]; ok {
+		b, err := json.Marshal(input)
 		if err != nil {
 			return ctx, span, err
 		}
-		span.SetAttributes(attribute.String("braintrust.input", string(b)))
+		span.SetAttributes(attribute.String("braintrust.input_json", string(b)))
 	}
 
 	b, err := json.Marshal(rt.metadata)
@@ -186,7 +186,7 @@ func (rt *responsesTracer) handleResponseCompletedMessage(span trace.Span, rawMs
 	}
 
 	if output, ok := rawMsg["output"]; ok {
-		if err := internal.SetJSONAttr(span, "braintrust.output", output); err != nil {
+		if err := internal.SetJSONAttr(span, "braintrust.output_json", output); err != nil {
 			return err
 		}
 	}
