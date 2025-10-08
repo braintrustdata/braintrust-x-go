@@ -165,6 +165,41 @@ func (a *AnthropicBot) streaming(ctx context.Context) error {
 	return nil
 }
 
+// extendedThinking demonstrates Claude's extended thinking capability
+func (a *AnthropicBot) extendedThinking(ctx context.Context) error {
+	ctx, span := tracer.Start(ctx, "extended-thinking")
+	defer span.End()
+
+	fmt.Println("\n=== Example 4: Extended Thinking ===")
+
+	msg, err := a.client.Messages.New(ctx, anthropic.MessageNewParams{
+		Model:     anthropic.ModelClaude3_7SonnetLatest,
+		MaxTokens: 16000,
+		Messages: []anthropic.MessageParam{
+			anthropic.NewUserMessage(anthropic.NewTextBlock("What is the capital of France and why is it historically significant?")),
+		},
+		Thinking: anthropic.ThinkingConfigParamOfEnabled(10000),
+	})
+	if err != nil {
+		return fmt.Errorf("extended thinking error: %v", err)
+	}
+
+	for _, content := range msg.Content {
+		switch content.Type {
+		case "thinking":
+			thinking := content.Thinking
+			if len(thinking) > 100 {
+				thinking = thinking[:100] + "..."
+			}
+			fmt.Printf("  Thinking: %s\n", thinking)
+		case "text":
+			fmt.Printf("  Response: %s\n", content.Text)
+		}
+	}
+
+	return nil
+}
+
 func main() {
 	fmt.Println("Braintrust Anthropic Tracing Examples")
 	fmt.Println("======================================")
@@ -206,6 +241,10 @@ func main() {
 	}
 
 	if err := bot.streaming(ctx); err != nil {
+		log.Printf("Error: %v", err)
+	}
+
+	if err := bot.extendedThinking(ctx); err != nil {
 		log.Printf("Error: %v", err)
 	}
 
