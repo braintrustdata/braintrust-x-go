@@ -269,7 +269,7 @@ func TestMiddlewareIntegration(t *testing.T) {
 	assertSpanValid(t, span, timeRange)
 
 	// Verify span content
-	input := span.Attr("braintrust.input").String()
+	input := span.Attr("braintrust.input_json").String()
 	assert.Contains(t, input, "What is the capital of France?")
 
 	output := span.Output()
@@ -277,8 +277,8 @@ func TestMiddlewareIntegration(t *testing.T) {
 
 	metadata := span.Metadata()
 	assert.Equal(t, "anthropic", metadata["provider"])
-	assert.Equal(t, "claude-3-haiku-20240307", metadata["model"])
 	assert.Equal(t, "/v1/messages", metadata["endpoint"])
+	assert.Equal(t, "claude-3-haiku-20240307", metadata["model"])
 	assert.Equal(t, float64(1024), metadata["max_tokens"])
 
 }
@@ -329,14 +329,14 @@ func TestMiddlewareIntegrationStreaming(t *testing.T) {
 	assertSpanValid(t, span, timeRange)
 
 	// Verify span content
-	input := span.Attr("braintrust.input").String()
+	input := span.Attr("braintrust.input_json").String()
 	assert.Contains(t, input, "Tell me a very short joke.")
 
 	output := span.Output()
 	assert.NotNil(t, output)
 
 	// The output should contain the complete streamed text in JSON format
-	outputStr := span.Attr("braintrust.output").String()
+	outputStr := span.Attr("braintrust.output_json").String()
 	// For streaming, the output is stored as JSON: [{"text":"...", "type":"text"}]
 	// So we check that both the accumulated text and the JSON contain expected content
 	assert.Contains(t, outputStr, "joke")    // Should contain the word "joke"
@@ -346,8 +346,8 @@ func TestMiddlewareIntegrationStreaming(t *testing.T) {
 
 	metadata := span.Metadata()
 	assert.Equal(t, "anthropic", metadata["provider"])
-	assert.Equal(t, "claude-3-haiku-20240307", metadata["model"])
 	assert.Equal(t, "/v1/messages", metadata["endpoint"])
+	assert.Equal(t, "claude-3-haiku-20240307", metadata["model"])
 	assert.Equal(t, float64(512), metadata["max_tokens"])
 	assert.Equal(t, 0.8, metadata["temperature"])
 	assert.Equal(t, 0.95, metadata["top_p"])
@@ -456,7 +456,7 @@ func TestMultipleMessages(t *testing.T) {
 	assertSpanValid(t, span, timeRange)
 
 	// Verify input contains all messages
-	input := span.Attr("braintrust.input").String()
+	input := span.Attr("braintrust.input_json").String()
 	assert.Contains(t, input, "What is the capital of France?")
 	assert.Contains(t, input, "The capital of France is Paris")
 	assert.Contains(t, input, "What is its population?")

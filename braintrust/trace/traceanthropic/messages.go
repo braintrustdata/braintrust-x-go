@@ -52,7 +52,6 @@ func (mt *messagesTracer) StartSpan(ctx context.Context, t time.Time, request io
 		"top_k",
 		"stop_sequences",
 		"stream",
-		"system",
 		"tools",
 		"tool_choice",
 		"metadata",
@@ -75,8 +74,24 @@ func (mt *messagesTracer) StartSpan(ctx context.Context, t time.Time, request io
 		}
 	}
 
-	if messages, ok := raw["messages"]; ok {
-		if err := internal.SetJSONAttr(span, "braintrust.input", messages); err != nil {
+	// Build input messages array, prepending system prompt if present
+	var msgs []any
+
+	// Prepend system prompt as a message if present
+	if system, ok := raw["system"]; ok {
+		msgs = append(msgs, map[string]any{
+			"role":    "system",
+			"content": system,
+		})
+	}
+
+	// Add user/assistant messages
+	if messages, ok := raw["messages"].([]any); ok {
+		msgs = append(msgs, messages...)
+	}
+
+	if len(msgs) > 0 {
+		if err := internal.SetJSONAttr(span, "braintrust.input_json", msgs); err != nil {
 			return ctx, span, err
 		}
 	}
@@ -154,8 +169,8 @@ func (mt *messagesTracer) parseStreamingResponse(span trace.Span, body io.Reader
 
 	// Post-process streaming results to match expected output format
 	output := mt.postprocessStreamingResults(allResults)
-	if output != nil {
-		if err := internal.SetJSONAttr(span, "braintrust.output", output); err != nil {
+	if len(output) > 0 {
+		if err := internal.SetJSONAttr(span, "braintrust.output_json", output); err != nil {
 			return err
 		}
 	}
@@ -171,8 +186,10 @@ func (mt *messagesTracer) parseStreamingResponse(span trace.Span, body io.Reader
 	return scanner.Err()
 }
 
-func (mt *messagesTracer) postprocessStreamingResults(allResults []map[string]any) []map[string]interface{} {
-	var content strings.Builder
+func (mt *messagesTracer) postprocessStreamingResults(allResults []map[string]any) []map[string]any {
+	// Track content blocks by index
+	contentBlocks := make(map[int]map[string]any)
+	builders := make(map[int]*strings.Builder)
 	var stopReason interface{}
 
 	for _, result := range allResults {
@@ -182,16 +199,76 @@ func (mt *messagesTracer) postprocessStreamingResults(allResults []map[string]an
 		}
 
 		switch eventType {
+		case "content_block_start":
+			// Initialize a new content block
+			indexf64, ok := result["index"].(float64)
+			if !ok {
+				continue
+			}
+			if contentBlock, ok := result["content_block"].(map[string]any); ok {
+				contentBlocks[int(indexf64)] = contentBlock
+			}
+
 		case "content_block_delta":
+			indexf64, ok := result["index"].(float64)
+			if !ok {
+				continue
+			}
+			idx := int(indexf64)
+
 			if delta, ok := result["delta"].(map[string]any); ok {
-				if text, ok := delta["text"].(string); ok {
-					content.WriteString(text)
+				deltaType, ok := delta["type"].(string)
+				if !ok {
+					continue
+				}
+
+				// Ensure block exists
+				if _, exists := contentBlocks[idx]; !exists {
+					contentBlocks[idx] = make(map[string]any)
+				}
+
+				switch deltaType {
+				case "text_delta":
+					// Accumulate text for text blocks
+					if text, ok := delta["text"].(string); ok {
+						if builders[idx] == nil {
+							builders[idx] = &strings.Builder{}
+						}
+						builders[idx].WriteString(text)
+						contentBlocks[idx]["type"] = "text"
+					}
+				case "input_json_delta":
+					// Accumulate JSON for tool_use blocks
+					if partialJSON, ok := delta["partial_json"].(string); ok {
+						if builders[idx] == nil {
+							builders[idx] = &strings.Builder{}
+						}
+						builders[idx].WriteString(partialJSON)
+						contentBlocks[idx]["type"] = "tool_use"
+					}
 				}
 			}
+
 		case "message_delta":
 			if delta, ok := result["delta"].(map[string]any); ok {
 				if sr, ok := delta["stop_reason"]; ok {
 					stopReason = sr
+				}
+			}
+		}
+	}
+
+	// Convert builders to strings in the appropriate field
+	for idx, builder := range builders {
+		if block, ok := contentBlocks[idx]; ok {
+			msg := builder.String()
+			// Check block type to determine which field to set
+			if blockType, ok := block["type"].(string); ok {
+				switch blockType {
+				case "text":
+					block["text"] = msg
+				case "tool_use":
+					block["input"] = msg
 				}
 			}
 		}
@@ -202,15 +279,34 @@ func (mt *messagesTracer) postprocessStreamingResults(allResults []map[string]an
 		mt.metadata["stop_reason"] = stopReason
 	}
 
-	// Build the final response content block
-	contentBlocks := []map[string]interface{}{
-		{
-			"type": "text",
-			"text": content.String(),
-		},
+	// Convert map to sorted content array
+	if len(contentBlocks) == 0 {
+		return nil
 	}
 
-	return contentBlocks
+	content := make([]map[string]any, 0, len(contentBlocks))
+	for i := 0; i < len(contentBlocks); i++ {
+		if block, ok := contentBlocks[i]; ok {
+			// Parse accumulated JSON string for tool_use blocks
+			if block["type"] == "tool_use" {
+				if inputStr, ok := block["input"].(string); ok && inputStr != "" {
+					var inputObj any
+					if err := json.Unmarshal([]byte(inputStr), &inputObj); err == nil {
+						block["input"] = inputObj
+					}
+				}
+			}
+			content = append(content, block)
+		}
+	}
+
+	// Format as array of messages (same format as input)
+	return []map[string]any{
+		{
+			"role":    "assistant",
+			"content": content,
+		},
+	}
 }
 
 func (mt *messagesTracer) parseResponse(span trace.Span, body io.Reader) error {
@@ -224,19 +320,22 @@ func (mt *messagesTracer) parseResponse(span trace.Span, body io.Reader) error {
 }
 
 func (mt *messagesTracer) handleMessageResponse(span trace.Span, rawMsg map[string]any) error {
-	metadataFields := []string{
-		"id",
-		"type",
-		"role",
-		"model",
+	// Only add response-level metadata that's relevant
+	// (stop_reason, stop_sequence, model if not already set)
+	responseMetadataFields := []string{
 		"stop_reason",
 		"stop_sequence",
 	}
 
-	for _, field := range metadataFields {
+	for _, field := range responseMetadataFields {
 		if v, ok := rawMsg[field]; ok {
 			mt.metadata[field] = v
 		}
+	}
+
+	// Update model if present in response (in case it was resolved from "latest")
+	if model, ok := rawMsg["model"].(string); ok {
+		mt.metadata["model"] = model
 	}
 
 	if err := internal.SetJSONAttr(span, "braintrust.metadata", mt.metadata); err != nil {
@@ -250,8 +349,16 @@ func (mt *messagesTracer) handleMessageResponse(span trace.Span, rawMsg map[stri
 		}
 	}
 
+	// Format output as array of messages (same format as input)
 	if content, ok := rawMsg["content"]; ok {
-		if err := internal.SetJSONAttr(span, "braintrust.output", content); err != nil {
+		role, _ := rawMsg["role"].(string)
+		output := []map[string]any{
+			{
+				"role":    role,
+				"content": content,
+			},
+		}
+		if err := internal.SetJSONAttr(span, "braintrust.output_json", output); err != nil {
 			return err
 		}
 	}
