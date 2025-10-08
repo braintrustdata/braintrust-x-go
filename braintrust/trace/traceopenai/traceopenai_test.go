@@ -11,6 +11,7 @@ import (
 	"github.com/openai/openai-go/option"
 	"github.com/openai/openai-go/packages/param"
 	"github.com/openai/openai-go/responses"
+	"github.com/openai/openai-go/shared"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
@@ -497,4 +498,40 @@ func TestResponsesAPIWithStringInput(t *testing.T) {
 	outputAttr := ts.Attr("braintrust.output_json")
 	require.NotNil(outputAttr, "should use braintrust.output_json for output")
 	assert.Contains(outputAttr.String(), "13")
+}
+
+// TestResponsesAPIWithReasoning verifies that reasoning parameters are captured in metadata
+func TestResponsesAPIWithReasoning(t *testing.T) {
+	client, exporter := setUpTest(t)
+	require := require.New(t)
+	assert := assert.New(t)
+
+	// Test with reasoning parameters
+	params := responses.ResponseNewParams{
+		Input: responses.ResponseNewParamsInputUnion{OfString: openai.String("What is the capital of France?")},
+		Model: "gpt-5", // Use gpt-5 reasoning model
+		Reasoning: shared.ReasoningParam{
+			Effort:  shared.ReasoningEffortLow,
+			Summary: shared.ReasoningSummaryAuto,
+		},
+	}
+
+	resp, err := client.Responses.New(context.Background(), params)
+	require.NoError(err)
+	require.NotNil(resp)
+
+	ts := exporter.FlushOne()
+
+	metadata := ts.Metadata()
+	assert.NotNil(metadata, "metadata should not be nil")
+
+	reasoning, ok := metadata["reasoning"]
+	require.True(ok, "reasoning not in metadata")
+	assert.NotNil(reasoning, "reasoning should be captured in metadata")
+	t.Logf("✓ Captured reasoning metadata: %+v", reasoning)
+
+	reasonMap, ok := reasoning.(map[string]any)
+	require.True(ok, "reasoning should be a map")
+	assert.Equal("low", reasonMap["effort"], "effort should be 'low'")
+	assert.Contains([]string{"auto", "detailed", "concise"}, reasonMap["summary"], "summary should be a valid value")
 }

@@ -61,6 +61,7 @@ func (rt *responsesTracer) StartSpan(ctx context.Context, t time.Time, request i
 		"tools",
 		"tool_choice",
 		"seed",
+		"reasoning",
 	}
 
 	// handle simple fields here.
@@ -166,6 +167,7 @@ func (rt *responsesTracer) handleResponseCompletedMessage(span trace.Span, rawMs
 		"metadata",
 		"choices",
 		"content_filter_results",
+		"reasoning",
 	}
 
 	for _, field := range metadataFields {
