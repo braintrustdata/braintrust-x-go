@@ -29,8 +29,27 @@ func main() {
 	client := openai.NewClient(option.WithMiddleware(traceopenai.Middleware))
 	ctx := context.Background()
 
-	// 1. Chat completion
-	fmt.Println("1. Chat completion...")
+	// Responses API with reasoning (for reasoning models like GPT-5)
+	fmt.Println("Responses API with reasoning...")
+	reasonResp, err := client.Responses.New(ctx, responses.ResponseNewParams{
+		Input: responses.ResponseNewParamsInputUnion{OfString: openai.String("What is the capital of France?")},
+		Model: "gpt-5", // Use GPT-5 reasoning model
+		Reasoning: shared.ReasoningParam{
+			Effort:  shared.ReasoningEffortLow,
+			Summary: shared.ReasoningSummaryAuto,
+		},
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	output := reasonResp.OutputText()
+	if len(output) > 40 {
+		output = output[:40] + "..."
+	}
+	fmt.Printf("✓ %s (reasoning params sent)\n", output)
+
+	// Chat completion
+	fmt.Println("Chat completion...")
 	resp, err := client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.UserMessage("Say hello"),
@@ -42,8 +61,8 @@ func main() {
 	}
 	fmt.Printf("✓ %s\n", resp.Choices[0].Message.Content)
 
-	// 2. Multiple messages (conversation history)
-	fmt.Println("2. Multiple messages...")
+	// Multiple messages (conversation history)
+	fmt.Println("Multiple messages...")
 	multiResp, err := client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.SystemMessage("You are a helpful assistant."),
@@ -58,8 +77,8 @@ func main() {
 	}
 	fmt.Printf("✓ %s\n", multiResp.Choices[0].Message.Content)
 
-	// 3. Streaming chat completion
-	fmt.Println("3. Streaming...")
+	// Streaming chat completion
+	fmt.Println("Streaming...")
 	stream := client.Chat.Completions.NewStreaming(ctx, openai.ChatCompletionNewParams{
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.UserMessage("Count 1 to 3"),
@@ -78,8 +97,8 @@ func main() {
 	}
 	fmt.Println()
 
-	// 4. Chat with tools
-	fmt.Println("4. Chat with tools...")
+	// Chat with tools
+	fmt.Println("Chat with tools...")
 	toolResp, err := client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.UserMessage("What's the weather in San Francisco?"),
@@ -112,8 +131,8 @@ func main() {
 		fmt.Printf("✓ Response: %s\n", toolResp.Choices[0].Message.Content)
 	}
 
-	// 5. Streaming with tools
-	fmt.Println("5. Streaming with tools...")
+	// Streaming with tools
+	fmt.Println("Streaming with tools...")
 	toolStream := client.Chat.Completions.NewStreaming(ctx, openai.ChatCompletionNewParams{
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.UserMessage("What's the weather in Tokyo?"),
@@ -157,8 +176,8 @@ func main() {
 		fmt.Printf("✓ Streamed tool call: %s(%s)\n", toolCallName, toolCallArgs)
 	}
 
-	// 6. Responses API
-	fmt.Println("6. Responses API...")
+	// Responses API
+	fmt.Println("Responses API...")
 	respAPI, err := client.Responses.New(ctx, responses.ResponseNewParams{
 		Input: responses.ResponseNewParamsInputUnion{OfString: openai.String("Recommend pizza in NYC")},
 		Model: openai.ChatModelGPT4,
@@ -166,10 +185,14 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Printf("✓ %s\n", respAPI.OutputText()[:50]+"...")
+	output7 := respAPI.OutputText()
+	if len(output7) > 50 {
+		output7 = output7[:50] + "..."
+	}
+	fmt.Printf("✓ %s\n", output7)
 
-	// 7. Streaming responses
-	fmt.Println("7. Streaming responses...")
+	// Streaming responses
+	fmt.Println("Streaming responses...")
 	respStream := client.Responses.NewStreaming(ctx, responses.ResponseNewParams{
 		Model: openai.ChatModelGPT4,
 		Input: responses.ResponseNewParamsInputUnion{OfString: openai.String("Quick coffee rec")},
@@ -184,18 +207,21 @@ func main() {
 	if err := respStream.Err(); err != nil {
 		log.Fatal(err)
 	}
-	fmt.Printf("✓ %s\n", final[:30]+"...")
+	if len(final) > 30 {
+		final = final[:30] + "..."
+	}
+	fmt.Printf("✓ %s\n", final)
 
-	// 8. Conversations API (new in v2)
-	fmt.Println("8. Conversations API...")
+	// Conversations API (new in v2)
+	fmt.Println("Conversations API...")
 	conv, err := client.Conversations.New(ctx, conversations.ConversationNewParams{})
 	if err != nil {
 		log.Fatal(err)
 	}
 	fmt.Printf("✓ Conversation created: %s\n", conv.ID)
 
-	// 9. Models.List (untraced endpoint)
-	fmt.Println("9. Models.List...")
+	// Models.List (untraced endpoint)
+	fmt.Println("Models.List...")
 	models, err := client.Models.List(ctx)
 	if err != nil {
 		log.Fatal(err)
