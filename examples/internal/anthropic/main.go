@@ -29,48 +29,126 @@ func newAnthropicBot(client anthropic.Client) *AnthropicBot {
 	}
 }
 
-func (a *AnthropicBot) simpleMessageWithTemperature(ctx context.Context) error {
-	ctx, span := tracer.Start(ctx, "simpleMessageWithTemperature")
+// messages demonstrates basic non-streaming message
+func (a *AnthropicBot) messages(ctx context.Context) error {
+	ctx, span := tracer.Start(ctx, "messages")
 	defer span.End()
 
-	fmt.Println("\n=== Example 1: Simple Message with Temperature ===")
+	fmt.Println("\n=== Example 1: Messages ===")
 
-	message, err := a.client.Messages.New(ctx, anthropic.MessageNewParams{
-		Model: anthropic.ModelClaude3_7SonnetLatest,
+	msg, err := a.client.Messages.New(ctx, anthropic.MessageNewParams{
+		Model:     anthropic.ModelClaude3_7SonnetLatest,
+		MaxTokens: 1024,
+		System: []anthropic.TextBlockParam{
+			{Text: "You are a helpful assistant."},
+		},
 		Messages: []anthropic.MessageParam{
 			anthropic.NewUserMessage(anthropic.NewTextBlock("What is the capital of France?")),
 		},
-		MaxTokens:   1024,
-		Temperature: anthropic.Float(0.7), // This will show up in metadata
+		Temperature: anthropic.Float(0.7),
 	})
 	if err != nil {
-		return fmt.Errorf("simple message error: %v", err)
+		return fmt.Errorf("messages error: %v", err)
 	}
 
-	fmt.Printf("Response: %s\n\n", message.Content[0].Text)
+	fmt.Printf("  %s\n", msg.Content[0].Text)
 	return nil
 }
 
-func (a *AnthropicBot) streamingResponseWithParameters(ctx context.Context) error {
-	ctx, span := tracer.Start(ctx, "streamingResponseWithParameters")
+// tools demonstrates tools with non-streaming
+func (a *AnthropicBot) tools(ctx context.Context) error {
+	ctx, span := tracer.Start(ctx, "tools")
 	defer span.End()
 
-	fmt.Println("=== Example 2: Streaming Response with Parameters ===")
+	fmt.Println("\n=== Example 2: Tools ===")
+
+	msg, err := a.client.Messages.New(ctx, anthropic.MessageNewParams{
+		Model:     anthropic.ModelClaude3_7SonnetLatest,
+		MaxTokens: 1024,
+		System: []anthropic.TextBlockParam{
+			{Text: "You are a helpful weather assistant."},
+		},
+		Messages: []anthropic.MessageParam{
+			anthropic.NewUserMessage(anthropic.NewTextBlock("What's the weather in SF?")),
+		},
+		Temperature:   anthropic.Float(0.7),
+		TopP:          anthropic.Float(0.9),
+		TopK:          anthropic.Int(50),
+		StopSequences: []string{"END"},
+		Tools: []anthropic.ToolUnionParam{
+			anthropic.ToolUnionParamOfTool(
+				anthropic.ToolInputSchemaParam{
+					Properties: map[string]interface{}{
+						"location": map[string]interface{}{
+							"type":        "string",
+							"description": "The city and state",
+						},
+					},
+					Required: []string{"location"},
+				},
+				"get_weather",
+			),
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("tools error: %v", err)
+	}
+
+	for _, content := range msg.Content {
+		switch content.Type {
+		case "text":
+			fmt.Printf("  Text: %s\n", content.Text)
+		case "tool_use":
+			fmt.Printf("  Tool: %s\n", content.Name)
+			fmt.Printf("  Input: %v\n", content.Input)
+		}
+	}
+
+	return nil
+}
+
+// streaming demonstrates streaming with tools
+func (a *AnthropicBot) streaming(ctx context.Context) error {
+	ctx, span := tracer.Start(ctx, "streaming")
+	defer span.End()
+
+	fmt.Println("\n=== Example 3: Streaming ===")
 
 	stream := a.client.Messages.NewStreaming(ctx, anthropic.MessageNewParams{
 		Model: anthropic.ModelClaude3_7SonnetLatest,
+		System: []anthropic.TextBlockParam{
+			{Text: "You are a helpful assistant."},
+		},
 		Messages: []anthropic.MessageParam{
-			anthropic.NewUserMessage(anthropic.NewTextBlock("Tell me a short joke.")),
+			anthropic.NewUserMessage(anthropic.NewTextBlock("What's the weather in Tokyo and tell me a joke.")),
 		},
 		MaxTokens:   1024,
-		Temperature: anthropic.Float(0.8),  // Higher temperature for more creative output
-		TopP:        anthropic.Float(0.95), // This will also show up in metadata
+		Temperature: anthropic.Float(0.8),
+		TopP:        anthropic.Float(0.95),
+		Tools: []anthropic.ToolUnionParam{
+			anthropic.ToolUnionParamOfTool(
+				anthropic.ToolInputSchemaParam{
+					Properties: map[string]interface{}{
+						"location": map[string]interface{}{
+							"type":        "string",
+							"description": "The city and country",
+						},
+					},
+					Required: []string{"location"},
+				},
+				"get_weather",
+			),
+		},
 	})
 
-	fmt.Print("Streaming response: ")
+	fmt.Print("  ")
 	for stream.Next() {
 		event := stream.Current()
 		switch eventVariant := event.AsAny().(type) {
+		case anthropic.ContentBlockStartEvent:
+			if eventVariant.ContentBlock.Type == "tool_use" {
+				fmt.Printf("\n  [Tool: %s] ", eventVariant.ContentBlock.Name)
+			}
 		case anthropic.ContentBlockDeltaEvent:
 			switch deltaVariant := eventVariant.Delta.AsAny().(type) {
 			case anthropic.TextDelta:
@@ -87,133 +165,9 @@ func (a *AnthropicBot) streamingResponseWithParameters(ctx context.Context) erro
 	return nil
 }
 
-func (a *AnthropicBot) systemPromptWithAdvancedParameters(ctx context.Context) error {
-	ctx, span := tracer.Start(ctx, "systemPromptWithAdvancedParameters")
-	defer span.End()
-
-	fmt.Println("\n=== Example 3: System Prompt with Advanced Parameters ===")
-
-	message, err := a.client.Messages.New(ctx, anthropic.MessageNewParams{
-		Model:     anthropic.ModelClaude3_7SonnetLatest,
-		MaxTokens: 1024,
-		System: []anthropic.TextBlockParam{
-			{Text: "You are a helpful assistant that responds in a friendly and concise manner."},
-		},
-		Messages: []anthropic.MessageParam{
-			anthropic.NewUserMessage(anthropic.NewTextBlock("Hello! How are you doing today?")),
-		},
-		Temperature:   anthropic.Float(0.5), // Lower temperature for more focused responses
-		TopP:          anthropic.Float(0.9),
-		TopK:          anthropic.Int(50),
-		StopSequences: []string{"END", "STOP"}, // This will show up in metadata
-	})
-	if err != nil {
-		return fmt.Errorf("system prompt error: %v", err)
-	}
-
-	fmt.Printf("Response: %s\n\n", message.Content[0].Text)
-	return nil
-}
-
-func (a *AnthropicBot) multiTurnConversation(ctx context.Context) error {
-	ctx, span := tracer.Start(ctx, "multiTurnConversation")
-	defer span.End()
-
-	fmt.Println("=== Example 4: Multi-turn Conversation ===")
-
-	// First turn
-	messages := []anthropic.MessageParam{
-		anthropic.NewUserMessage(anthropic.NewTextBlock("What is my first name?")),
-	}
-
-	message, err := a.client.Messages.New(ctx, anthropic.MessageNewParams{
-		Model:     anthropic.ModelClaude3_7SonnetLatest,
-		Messages:  messages,
-		MaxTokens: 1024,
-	})
-	if err != nil {
-		return fmt.Errorf("multi-turn conversation first turn error: %v", err)
-	}
-
-	fmt.Printf("Claude: %s\n", message.Content[0].Text)
-
-	// Continue the conversation
-	messages = append(messages, message.ToParam())
-	messages = append(messages, anthropic.NewUserMessage(
-		anthropic.NewTextBlock("My name is Alice. What did I just tell you?"),
-	))
-
-	message, err = a.client.Messages.New(ctx, anthropic.MessageNewParams{
-		Model:     anthropic.ModelClaude3_7SonnetLatest,
-		Messages:  messages,
-		MaxTokens: 1024,
-	})
-	if err != nil {
-		return fmt.Errorf("multi-turn conversation second turn error: %v", err)
-	}
-
-	fmt.Printf("Claude: %s\n", message.Content[0].Text)
-	return nil
-}
-
-// demonstrateCacheTokenHandling shows how the tracer correctly handles cache tokens
-// Note: This example shows the intended behavior, though cache tokens are only available
-// with Anthropic's prompt caching feature (when using compatible models and long prompts)
-func (a *AnthropicBot) demonstrateCacheTokenHandling(ctx context.Context) error {
-	ctx, span := tracer.Start(ctx, "demonstrateCacheTokenHandling")
-	defer span.End()
-
-	fmt.Println("\n=== Example 5: Cache Token Handling Demonstration ===")
-	fmt.Println("Note: Cache tokens (cache_creation_input_tokens, cache_read_input_tokens)")
-	fmt.Println("are automatically included in the total prompt_tokens count in traces.")
-	fmt.Println("This ensures accurate cost tracking when using Anthropic's prompt caching.")
-
-	// Use a longer prompt that might benefit from caching
-	longPrompt := `You are an expert software engineer working on a complex distributed system. 
-Please analyze the following architecture and provide detailed recommendations for optimization.
-
-Context: We have a microservices architecture with the following components:
-1. API Gateway (handles authentication and routing)
-2. User Service (manages user accounts and profiles)
-3. Order Service (processes customer orders)
-4. Payment Service (handles payment processing)
-5. Inventory Service (tracks product availability)
-6. Notification Service (sends emails and push notifications)
-
-Each service has its own database and communicates via REST APIs and message queues.
-Current challenges include high latency, occasional data consistency issues, and scalability bottlenecks.
-
-What specific optimizations would you recommend?`
-
-	message, err := a.client.Messages.New(ctx, anthropic.MessageNewParams{
-		Model: anthropic.ModelClaude3_7SonnetLatest,
-		Messages: []anthropic.MessageParam{
-			anthropic.NewUserMessage(anthropic.NewTextBlock(longPrompt)),
-		},
-		MaxTokens: 1024,
-	})
-	if err != nil {
-		return fmt.Errorf("cache demonstration error: %v", err)
-	}
-
-	// The response itself doesn't contain cache tokens in this simple example,
-	// but when cache tokens are present in API responses, the tracer will:
-	// 1. Track cache_creation_input_tokens and cache_read_input_tokens separately
-	// 2. Add them to the total prompt_tokens count for accurate cost tracking
-	// 3. Include all metrics in the trace for observability
-
-	fmt.Printf("Response: %s\n", message.Content[0].Text[:200]+"...")
-	fmt.Println("\n✨ The tracer automatically handles cache tokens when present in Anthropic responses:")
-	fmt.Println("   • cache_creation_input_tokens + cache_read_input_tokens → added to prompt_tokens")
-	fmt.Println("   • Individual cache metrics tracked for detailed cost analysis")
-	fmt.Println("   • No code changes needed - handled transparently!")
-
-	return nil
-}
-
 func main() {
-	fmt.Println("🧠 Braintrust Anthropic Tracing Examples")
-	fmt.Println("=========================================")
+	fmt.Println("Braintrust Anthropic Tracing Examples")
+	fmt.Println("======================================")
 
 	// Initialize braintrust tracing with a specific project
 	teardown, err := trace.Quickstart(braintrust.WithDefaultProject("go-sdk-internal-examples"))
@@ -237,37 +191,25 @@ func main() {
 	// ======================
 	// ANTHROPIC MESSAGES EXAMPLES
 	// ======================
-	fmt.Println("\n💬 Anthropic Messages Examples")
-	fmt.Println("==============================")
+	fmt.Println("\nAnthropic Messages Examples")
+	fmt.Println("===========================")
+	fmt.Println("Demonstrating: system prompts, tools, parameters, streaming & non-streaming")
 
 	bot := newAnthropicBot(client)
 
-	// Example 1: Simple message completion with temperature
-	if err := bot.simpleMessageWithTemperature(ctx); err != nil {
-		log.Printf("Error in simple message example: %v", err)
+	if err := bot.messages(ctx); err != nil {
+		log.Printf("Error: %v", err)
 	}
 
-	// Example 2: Streaming response with multiple parameters
-	if err := bot.streamingResponseWithParameters(ctx); err != nil {
-		log.Printf("Error in streaming example: %v", err)
+	if err := bot.tools(ctx); err != nil {
+		log.Printf("Error: %v", err)
 	}
 
-	// Example 3: Conversation with system prompt and parameters
-	if err := bot.systemPromptWithAdvancedParameters(ctx); err != nil {
-		log.Printf("Error in system prompt example: %v", err)
-	}
-
-	// Example 4: Multi-turn conversation
-	if err := bot.multiTurnConversation(ctx); err != nil {
-		log.Printf("Error in multi-turn conversation example: %v", err)
-	}
-
-	// Example 5: Cache token handling demonstration
-	if err := bot.demonstrateCacheTokenHandling(ctx); err != nil {
-		log.Printf("Error in cache token demonstration: %v", err)
+	if err := bot.streaming(ctx); err != nil {
+		log.Printf("Error: %v", err)
 	}
 
 	fmt.Println("\n=== Tracing Complete ===")
-	fmt.Println("✅ All examples completed successfully!")
+	fmt.Println("All examples completed successfully!")
 	fmt.Println("Check your Braintrust dashboard to view the traces.")
 }
