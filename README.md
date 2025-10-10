@@ -12,6 +12,8 @@ This library provides tools for **evaluating** and **tracing** AI applications i
 - **Trace** LLM calls and monitor AI application performance with OpenTelemetry
 - **Integrate** seamlessly with OpenAI, Anthropic, and other LLM providers
 
+This SDK is currently in BETA status and APIs may change.
+
 ## Installation
 
 ```bash
@@ -151,10 +153,10 @@ func main() {
 
 Check out the [`examples/`](./examples/) directory for complete working examples:
 
-- [evals](./examples/evals/evals.go) - Basic evaluation setup
-- [openai](./examples/openai/main.go) - OpenAI tracing
-- [anthropic](./examples/anthropic/main.go) - Anthropic tracing
-- [datasets](./examples/datasets/main.go) - Dataset-based evaluations
+- [evals](./examples/evals/evals.go) - Create and run evaluations with custom test cases and scoring functions
+- [openai](./examples/openai/main.go) - Automatically trace OpenAI API calls
+- [anthropic](./examples/anthropic/main.go) - Automatically trace Anthropic API calls
+- [datasets](./examples/datasets/main.go) - Run evaluations using datasets stored in Braintrust
 
 ## Documentation
 
