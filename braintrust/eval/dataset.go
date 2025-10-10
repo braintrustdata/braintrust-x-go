@@ -32,7 +32,7 @@ func GetDataset[I, R any](projectName, datasetName string) (Cases[I, R], error) 
 	return QueryDataset[I, R](opts)
 }
 
-// QueryDataset returns Cases for datasets matching the given options.
+// QueryDataset returns Cases for the most recent dataset matching the given options.
 func QueryDataset[I, R any](opts DatasetOpts) (Cases[I, R], error) {
 	datasets, err := queryDatasets(opts)
 	if err != nil {
@@ -64,8 +64,8 @@ type DatasetOpts struct {
 	Limit   int    // Max results (default: no limit)
 }
 
-// DatasetInfo represents a Braintrust dataset.
-type DatasetInfo struct {
+// datasetInfo represents a Braintrust dataset.
+type datasetInfo struct {
 	ID          string `json:"id"`
 	ProjectID   string `json:"project_id"`
 	Name        string `json:"name"`
@@ -73,10 +73,10 @@ type DatasetInfo struct {
 }
 
 // queryDatasets queries the Braintrust API for datasets matching the options
-func queryDatasets(opts DatasetOpts) ([]DatasetInfo, error) {
+func queryDatasets(opts DatasetOpts) ([]datasetInfo, error) {
 	// If dataset ID is provided directly, create a dataset entry
 	if opts.DatasetID != "" {
-		return []DatasetInfo{{
+		return []datasetInfo{{
 			ID:   opts.DatasetID,
 			Name: opts.DatasetID, // Use ID as name fallback
 		}}, nil
@@ -133,7 +133,7 @@ func queryDatasets(opts DatasetOpts) ([]DatasetInfo, error) {
 
 	// Parse the response
 	var response struct {
-		Objects []DatasetInfo `json:"objects"`
+		Objects []datasetInfo `json:"objects"`
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {

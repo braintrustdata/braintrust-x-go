@@ -45,7 +45,7 @@ import (
 	"github.com/braintrustdata/braintrust-x-go/braintrust/log"
 )
 
-// Enable configures adds Braintrust tracing to an existing OpenTelemetry tracer provider.
+// Enable adds Braintrust tracing to an existing OpenTelemetry tracer provider.
 //
 // Example:
 //

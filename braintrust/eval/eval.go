@@ -18,11 +18,11 @@
 // All of the input and result types must be JSON-encodable.
 //
 // For example:
-//   - [Case][string, string] represents a test case with string input and string output
-//   - [Task][MyInput, MyOutput] represents a task that takes MyInput and returns MyOutput
-//   - [Cases][string, bool] represents an iterator over cases with string inputs and boolean outputs
+//   - [Case][string, string] is a test case with string input and string output
+//   - [Task][Input, Output] is a task that takes Input and returns Output
+//   - [Cases][string, bool] is an iterator of Cases with string inputs and boolean outputs
 //
-// For complete usage examples, see the package examples.
+// See [Run] for the simplest way of running evals.
 package eval
 
 import (
@@ -66,7 +66,8 @@ var (
 )
 
 // Eval is a collection of cases, a task, and a set of scorers. It has two generic types;
-// I is the input type, and R is the result type.
+// I is the input type, and R is the result type. See [Run] for the simplest
+// way of executing Evals.
 type Eval[I, R any] struct {
 	experimentID string
 	cases        Cases[I, R]
@@ -106,7 +107,8 @@ func (e *Eval[I, R]) setParallelism(goroutines int) {
 	e.goroutines = goroutines
 }
 
-// Run runs the eval.
+// Run executes the evaluation by running the task on each case and scoring the results.
+// Returns a joined error containing all errors encountered during case iteration, task execution, and scoring.
 func (e *Eval[I, R]) Run(ctx context.Context) error {
 	if e.experimentID == "" {
 		return fmt.Errorf("%w: experiment ID is required", ErrEval)
@@ -370,7 +372,7 @@ func S(score float64) Scores {
 }
 
 // Scorer evaluates the quality of results against expected values. If a Scorer returns a score with an empty name,
-// we will default to the score of the score.
+// the score will default to the scorer's name.
 type Scorer[I, R any] interface {
 	Name() string
 	Run(ctx context.Context, input I, expected, result R, meta Metadata) (Scores, error)

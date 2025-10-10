@@ -101,6 +101,16 @@ func (c Config) String() string {
 
 // GetConfig loads the Braintrust configuration from environment variables
 // and options. Options take precedence over environment variables.
+//
+// Supported environment variables:
+//   - `BRAINTRUST_API_KEY`: API key for authentication (required for most operations)
+//   - `BRAINTRUST_API_URL`: API endpoint URL (default: "https://api.braintrust.dev")
+//   - `BRAINTRUST_APP_URL`: Application URL (default: "https://www.braintrust.dev")
+//   - `BRAINTRUST_DEFAULT_PROJECT_ID`: Default project ID for spans and evaluations
+//   - `BRAINTRUST_DEFAULT_PROJECT`: Default project name (default: "default-go-project")
+//   - `BRAINTRUST_ENABLE_TRACE_CONSOLE_LOG`: Enable console logging for traces (default: false)
+//   - `BRAINTRUST_OTEL_FILTER_AI_SPANS`: Filter to keep only AI-related spans (default: false)
+//   - `BRAINTRUST_DEBUG`: Enable debug logging (default: false)
 func GetConfig(opts ...Option) Config {
 	config := Config{
 		APIKey:                getEnvString("BRAINTRUST_API_KEY", ""),
