@@ -65,8 +65,8 @@ func TestDatasetOpts(t *testing.T) {
 }
 
 func TestDatasetInfo(t *testing.T) {
-	// Test DatasetInfo struct creation
-	info := DatasetInfo{
+	// Test datasetInfo struct creation
+	info := datasetInfo{
 		ID:          "dataset-123",
 		ProjectID:   "project-456",
 		Name:        "test-dataset",
