@@ -30,25 +30,20 @@ func Example() {
 		return eval.S(0.0), nil // No match
 	}
 
-	// Create and run the evaluation
-	experimentID, err := eval.ResolveProjectExperimentID("greeting-experiment-v1", "my-ai-project")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	evaluation := eval.New(experimentID,
-		eval.NewCases([]eval.Case[string, string]{
+	// Run the evaluation
+	_, err = eval.Run(context.Background(), eval.Opts[string, string]{
+		Project:    "my-ai-project",
+		Experiment: "greeting-experiment-v1",
+		Task:       greetingTask,
+		Cases: eval.NewCases([]eval.Case[string, string]{
 			{Input: "World", Expected: "Hello World"},
 			{Input: "Alice", Expected: "Hello Alice"},
 			{Input: "Bob", Expected: "Hello Bob"},
 		}),
-		greetingTask,
-		[]eval.Scorer[string, string]{
+		Scorers: []eval.Scorer[string, string]{
 			eval.NewScorer("exact_match", exactMatch),
 		},
-	)
-
-	err = evaluation.Run(context.Background())
+	})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -78,10 +73,14 @@ func ExampleNew() {
 		}),
 	}
 
-	// Create evaluation
-	evaluation := eval.New("exp-123", cases, task, scorers)
-
-	err := evaluation.Run(context.Background())
+	// Run evaluation
+	_, err := eval.Run(context.Background(), eval.Opts[int, int]{
+		Project:    "my-project",
+		Experiment: "exp-123",
+		Task:       task,
+		Cases:      cases,
+		Scorers:    scorers,
+	})
 	if err != nil {
 		log.Printf("Error: %v", err)
 		return
