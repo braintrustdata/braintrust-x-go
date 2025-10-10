@@ -374,13 +374,6 @@ func (r *Result) String() string {
 	b = append(b, r.key.Name...)
 	b = append(b, " ===\n"...)
 
-	// Status line
-	if r.err != nil {
-		b = append(b, "Status: ✗\n"...)
-	} else {
-		b = append(b, "Status: ✓\n"...)
-	}
-
 	// Duration
 	b = append(b, fmt.Sprintf("Duration: %.1fs\n", r.elapsed.Seconds())...)
 
@@ -440,6 +433,13 @@ func Run[I, R any](ctx context.Context, opts Opts[I, R]) (*Result, error) {
 	// Validate cases source before making API calls
 	if err := validateCasesSource(opts); err != nil {
 		return nil, err
+	}
+
+	// Attempt to login to cache org name for permalinks
+	// Login() will use GetConfig() which returns the cached config from trace.Quickstart()
+	// Ignore errors - permalinks will still work if org name is configured via env vars
+	if _, err := braintrust.Login(); err != nil {
+		log.Debugf("Could not login for permalink generation: %v", err)
 	}
 
 	// Resolve project ID (fall back to config defaults)

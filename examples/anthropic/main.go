@@ -19,17 +19,14 @@ import (
 func main() {
 	fmt.Println("Braintrust Anthropic Basic Example")
 
-	// Initialize Braintrust tracing
-	teardown, err := trace.Quickstart()
+	// Initialize Braintrust tracing with blocking login to ensure permalinks work immediately
+	teardown, err := trace.Quickstart(
+		braintrust.WithBlockingLogin(true),
+	)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer teardown()
-
-	// Login is only required to view links.
-	if _, err = braintrust.Login(); err != nil {
-		log.Fatal(err)
-	}
 
 	// Create Anthropic client with Braintrust tracing middleware
 	client := anthropic.NewClient(

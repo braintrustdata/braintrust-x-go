@@ -4,8 +4,15 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
+	"testing"
 
 	"go.opentelemetry.io/otel/sdk/trace"
+)
+
+var (
+	configCacheMu sync.RWMutex
+	cachedConfig  *Config
 )
 
 // Option is used to configure the Braintrust GetConfig function.
@@ -73,6 +80,14 @@ func WithFilterAISpans(enabled bool) Option {
 	}
 }
 
+// WithBlockingLogin enables blocking login before starting tracing. Useful for test scripts
+// and evals where you need permalinks to work immediately. Not recommended for production.
+func WithBlockingLogin(enabled bool) Option {
+	return func(c *Config) {
+		c.BlockingLogin = enabled
+	}
+}
+
 // Config holds the configuration for the Braintrust SDK
 type Config struct {
 	APIKey                string
@@ -84,6 +99,7 @@ type Config struct {
 	FilterAISpans         bool
 	SpanFilterFuncs       []SpanFilterFunc
 	OrgName               string
+	BlockingLogin         bool
 
 	// SpanProcessor allows overriding the default SpanProcessor (primarily for testing)
 	SpanProcessor trace.SpanProcessor
@@ -130,6 +146,9 @@ func (c Config) String() string {
 // GetConfig loads the Braintrust configuration from environment variables
 // and options. Options take precedence over environment variables.
 //
+// The first call will cache the config (except during tests).
+// Subsequent calls will return the cached config.
+//
 // Supported environment variables:
 //   - `BRAINTRUST_API_KEY`: API key for authentication (required for most operations)
 //   - `BRAINTRUST_API_URL`: API endpoint URL (default: "https://api.braintrust.dev")
@@ -140,7 +159,39 @@ func (c Config) String() string {
 //   - `BRAINTRUST_OTEL_FILTER_AI_SPANS`: Filter to keep only AI-related spans (default: false)
 //   - `BRAINTRUST_DEBUG`: Enable debug logging (default: false)
 func GetConfig(opts ...Option) Config {
-	config := Config{
+	// Check cache first
+	configCacheMu.RLock()
+	if cachedConfig != nil {
+		defer configCacheMu.RUnlock()
+		return *cachedConfig
+	}
+	configCacheMu.RUnlock()
+
+	// Build config from environment
+	config := buildConfigFromEnv()
+
+	// Apply options
+	for _, opt := range opts {
+		opt(&config)
+	}
+
+	// Sanitize API key (remove all whitespace)
+	config.APIKey = strings.TrimSpace(config.APIKey)
+
+	// Cache this config (only if not running tests)
+	if !testing.Testing() {
+		configCacheMu.Lock()
+		if cachedConfig == nil {
+			cachedConfig = &config
+		}
+		configCacheMu.Unlock()
+	}
+
+	return config
+}
+
+func buildConfigFromEnv() Config {
+	return Config{
 		APIKey:                getEnvString("BRAINTRUST_API_KEY", ""),
 		APIURL:                getEnvString("BRAINTRUST_API_URL", "https://api.braintrust.dev"),
 		AppURL:                getEnvString("BRAINTRUST_APP_URL", "https://www.braintrust.dev"),
@@ -150,12 +201,6 @@ func GetConfig(opts ...Option) Config {
 		FilterAISpans:         getEnvBool("BRAINTRUST_OTEL_FILTER_AI_SPANS", false),
 		OrgName:               getEnvString("BRAINTRUST_ORG_NAME", ""),
 	}
-	for _, opt := range opts {
-		opt(&config)
-	}
-	// Sanitize API key (remove all whitespace)
-	config.APIKey = strings.TrimSpace(config.APIKey)
-	return config
 }
 
 func getEnvString(key, defaultValue string) string {

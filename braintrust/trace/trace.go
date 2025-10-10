@@ -65,8 +65,25 @@ func Enable(tp *trace.TracerProvider, opts ...braintrust.Option) error {
 	config := braintrust.GetConfig(opts...)
 	url := config.APIURL
 	apiKey := config.APIKey
+	orgName := config.OrgName
 
 	log.Debugf("Enabling Braintrust tracing with config: %s", config.String())
+
+	// If no orgName set and BlockingLogin enabled, login synchronously
+	if orgName == "" && config.BlockingLogin {
+		log.Debugf("BlockingLogin enabled, calling Login")
+		state, err := auth.Login(auth.Options{
+			AppURL:  config.AppURL,
+			APIKey:  apiKey,
+			OrgName: config.OrgName,
+		})
+		if err != nil {
+			return fmt.Errorf("blocking login failed: %w", err)
+		}
+		orgName = state.OrgName
+		log.Debugf("Login completed, orgName: %q", orgName)
+	}
+	// If still no orgName, background login will be triggered later by spanProcessor
 
 	processor := config.SpanProcessor
 	if processor == nil {
@@ -98,7 +115,7 @@ func Enable(tp *trace.TracerProvider, opts ...braintrust.Option) error {
 
 	// Wrap the raw OTEL span processor with the bt span processor (which labels the parents,
 	// filters data, etc)
-	sp, err := newSpanProcessor(processor, parent, filters, config.OrgName, config.AppURL, apiKey)
+	sp, err := newSpanProcessor(processor, parent, filters, orgName, config.AppURL, apiKey)
 	if err != nil {
 		return err
 	}
@@ -356,7 +373,7 @@ func (sp *spanProcessor) OnStart(ctx context.Context, span trace.ReadWriteSpan) 
 		} else {
 			// otherwise use the default parent
 			span.SetAttributes(defaultParent)
-			log.Debugf("SpanProcessor.OnStart: setting default parent: %s", defaultParent)
+			log.Debugf("SpanProcessor.OnStart: setting default parent: %s", defaultParent.Value.AsString())
 		}
 	}
 

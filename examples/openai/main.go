@@ -18,17 +18,14 @@ import (
 func main() {
 	fmt.Println("Braintrust OpenAI Basic Example")
 
-	// Initialize Braintrust tracing
-	teardown, err := trace.Quickstart()
+	// Initialize Braintrust tracing with blocking login to ensure permalinks work immediately
+	teardown, err := trace.Quickstart(
+		braintrust.WithBlockingLogin(true),
+	)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer teardown()
-
-	// Login is only required to view links.
-	if _, err = braintrust.Login(); err != nil {
-		log.Fatal(err)
-	}
 
 	// Create OpenAI client with Braintrust tracing middleware
 	client := openai.NewClient(
@@ -56,6 +53,10 @@ func main() {
 	fmt.Printf("Response: %s\n", resp.Choices[0].Message.Content)
 
 	// Get a link to the span in Braintrust
-	link, _ := trace.Permalink(span)
-	fmt.Printf("View trace: %s\n", link)
+	link, err := trace.Permalink(span)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		fmt.Println(link)
+	}
 }

@@ -1401,3 +1401,54 @@ func TestEval_WithQuiet(t *testing.T) {
 	spans := exporter.Flush()
 	assert.Equal(6, len(spans)) // 2 cases * 3 spans each
 }
+
+func TestResult_Permalink(t *testing.T) {
+	assert := assert.New(t)
+
+	// Test with permalink present
+	key := newKey("test-project", "proj-123", "test-experiment")
+	expectedLink := "https://braintrust.dev/app/test-org/p/test-project/experiments/test-experiment"
+	result := newResult(key, nil, expectedLink, 500*time.Millisecond)
+
+	link, err := result.Permalink()
+	assert.NoError(err)
+	assert.Equal(expectedLink, link)
+
+	// Test with empty permalink
+	result2 := newResult(key, nil, "", 500*time.Millisecond)
+	link2, err2 := result2.Permalink()
+	assert.NoError(err2)
+	assert.Equal("", link2)
+}
+
+func TestResult_String(t *testing.T) {
+	assert := assert.New(t)
+
+	// Test successful result with permalink
+	key := newKey("my-project", "proj-123", "my-experiment")
+	permalink := "https://braintrust.dev/app/test-org/p/my-project/experiments/my-experiment"
+	result := newResult(key, nil, permalink, 1234*time.Millisecond)
+
+	str := result.String()
+
+	// Verify experiment name is present
+	assert.Contains(str, "my-experiment", "String output should contain experiment name")
+
+	// Verify permalink is present
+	assert.Contains(str, permalink, "String output should contain permalink")
+
+	// Verify duration is present and shows tenths of seconds
+	assert.Contains(str, "Duration: 1.2s", "String output should show duration with tenths of seconds")
+
+	// Test failed result with error
+	testErr := errors.New("task failed")
+	result2 := newResult(key, testErr, permalink, 50*time.Millisecond)
+
+	str2 := result2.String()
+
+	// Verify error message is present
+	assert.Contains(str2, "task failed", "String output should contain error message")
+
+	// Verify duration shows tenths of seconds (0.1s for 50ms)
+	assert.Contains(str2, "Duration: 0.1s", "String output should show duration with tenths of seconds")
+}

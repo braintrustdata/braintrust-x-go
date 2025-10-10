@@ -776,3 +776,39 @@ func TestPermalinkMissingAttributes(t *testing.T) {
 
 	span.End()
 }
+
+func TestEnableWithBlockingLogin(t *testing.T) {
+	assert := assert.New(t)
+
+	tp := sdktrace.NewTracerProvider()
+	exporter := tracetest.NewInMemoryExporter()
+	processor := sdktrace.NewSimpleSpanProcessor(exporter)
+
+	// Enable with BlockingLogin option - should block and login synchronously
+	err := Enable(tp,
+		braintrust.WithAPIKey("___TEST_API_KEY___"),
+		braintrust.WithDefaultProjectID("test-project"),
+		braintrust.WithBlockingLogin(true),
+		withSpanProcessor(processor),
+	)
+	assert.NoError(err)
+
+	tracer := tp.Tracer("test")
+	_, span := tracer.Start(context.Background(), "test-operation")
+
+	// Org name should be set immediately (not via background login)
+	// For test API key, org name should be "test-org-name"
+	link, err := Permalink(span)
+	assert.NoError(err)
+	assert.Contains(link, "test-org-name")
+
+	span.End()
+}
+
+func TestBlockingLoginDefaultsFalse(t *testing.T) {
+	assert := assert.New(t)
+
+	// Test that BlockingLogin defaults to false
+	config := braintrust.GetConfig()
+	assert.False(config.BlockingLogin)
+}
