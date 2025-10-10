@@ -10,8 +10,12 @@ golangci-lint = "2.1.6"
 goreleaser = "2.12.0"
 watchexec = "latest"
 
+# note: adding mise tasks here so we get "mise watch test -c" for free
 [tasks.test]
-run = "go test ./..."
+run = "make test"
+
+[tasks.lint]
+run = "make lint"
 
 [tasks.watch-test]
 description = "Runs tests when files change"
