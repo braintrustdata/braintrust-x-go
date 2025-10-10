@@ -24,6 +24,25 @@ var (
 	taskType  = map[string]string{"type": "task"}
 )
 
+// newKey creates a test Key with the given parameters.
+// For production code, use ResolveKey which properly resolves names to IDs via the API.
+func newKey(projectName, projectID, expName string) Key {
+	// In tests, we generate a unique experiment ID by appending random suffix to the name
+	// This simulates real behavior where IDs are different from names
+	var expID string
+	if expName == "" {
+		expID = ""
+	} else {
+		expID = expName + "-" + internal.RandomString(6)
+	}
+	return Key{
+		ProjectName:  projectName,
+		ProjectID:    projectID,
+		ExperimentID: expID,
+		Name:         expName,
+	}
+}
+
 func TestEval_TaskErrors(t *testing.T) {
 	// a test that verifies we properly handle evals where some
 	// tasks pass and some have errors.
@@ -49,9 +68,12 @@ func TestEval_TaskErrors(t *testing.T) {
 		NewEqualsScorer[int, int](),
 	}
 
-	eval := New("123", NewCases(cases), task, scorers)
+	key := newKey("project-name", "proj-456", "exp-123")
+	expectedParent := "experiment_id:" + key.ExperimentID
+
+	eval := New(key, NewCases(cases), task, scorers)
 	timer := oteltest.NewTimer()
-	err := eval.Run(context.Background())
+	_, err := eval.Run(context.Background())
 	timeRange := timer.Tick()
 
 	assert.ErrorIs(err, ErrTaskRun)
@@ -69,8 +91,9 @@ func TestEval_TaskErrors(t *testing.T) {
 	spans[0].AssertEqual(oteltest.TestSpan{
 		Name: "task",
 		Attrs: map[string]any{
-			"braintrust.parent":   "experiment_id:123",
+			"braintrust.parent":   expectedParent,
 			"braintrust.expected": "2",
+			"braintrust.app_url":  "https://www.braintrust.dev",
 		},
 		JSONAttrs: map[string]any{
 			"braintrust.input_json":      1,
@@ -93,7 +116,8 @@ func TestEval_TaskErrors(t *testing.T) {
 	spans[1].AssertEqual(oteltest.TestSpan{
 		Name: "eval",
 		Attrs: map[string]any{
-			"braintrust.parent": "experiment_id:123",
+			"braintrust.parent":  expectedParent,
+			"braintrust.app_url": "https://www.braintrust.dev",
 		},
 		StatusCode:        codes.Error,
 		StatusDescription: "task run error: oops",
@@ -104,7 +128,8 @@ func TestEval_TaskErrors(t *testing.T) {
 		Name: "task",
 		Attrs: map[string]any{
 			"braintrust.expected": "4",
-			"braintrust.parent":   "experiment_id:123",
+			"braintrust.parent":   expectedParent,
+			"braintrust.app_url":  "https://www.braintrust.dev",
 		},
 		JSONAttrs: map[string]any{
 			"braintrust.input_json":      2,
@@ -117,7 +142,8 @@ func TestEval_TaskErrors(t *testing.T) {
 	spans[3].AssertEqual(oteltest.TestSpan{
 		Name: "score",
 		Attrs: map[string]any{
-			"braintrust.parent": "experiment_id:123",
+			"braintrust.parent":  expectedParent,
+			"braintrust.app_url": "https://www.braintrust.dev",
 		},
 		JSONAttrs: map[string]any{
 			"braintrust.scores":          map[string]int{"equals": 0},
@@ -130,7 +156,8 @@ func TestEval_TaskErrors(t *testing.T) {
 		Name: "eval",
 		Attrs: map[string]any{
 			"braintrust.expected": "4",
-			"braintrust.parent":   "experiment_id:123",
+			"braintrust.parent":   expectedParent,
+			"braintrust.app_url":  "https://www.braintrust.dev",
 		},
 		JSONAttrs: map[string]any{
 			"braintrust.input_json":      2,
@@ -170,9 +197,11 @@ func TestEval_ScorerErrors(t *testing.T) {
 		}),
 	}
 
-	eval := New("123", NewCases(cases), task, scorers)
+	key := newKey("proj-name", "proj-123", "exp-123")
+	expectedParent := "experiment_id:" + key.ExperimentID
+	eval := New(key, NewCases(cases), task, scorers)
 	timer := oteltest.NewTimer()
-	err := eval.Run(context.Background())
+	_, err := eval.Run(context.Background())
 	timeRange := timer.Tick()
 
 	assert.ErrorIs(err, ErrScorer)
@@ -191,7 +220,8 @@ func TestEval_ScorerErrors(t *testing.T) {
 		Name: "task",
 		Attrs: map[string]any{
 			"braintrust.expected": "1",
-			"braintrust.parent":   "experiment_id:123",
+			"braintrust.parent":   expectedParent,
+			"braintrust.app_url":  "https://www.braintrust.dev",
 		},
 		JSONAttrs: map[string]any{
 			"braintrust.input_json":      1,
@@ -203,7 +233,8 @@ func TestEval_ScorerErrors(t *testing.T) {
 	spans[1].AssertEqual(oteltest.TestSpan{
 		Name: "score",
 		Attrs: map[string]any{
-			"braintrust.parent": "experiment_id:123",
+			"braintrust.parent":  expectedParent,
+			"braintrust.app_url": "https://www.braintrust.dev",
 		},
 		JSONAttrs: map[string]any{
 			"braintrust.scores":          map[string]float64{"equals": 1, "failing_scorer": 1},
@@ -215,7 +246,8 @@ func TestEval_ScorerErrors(t *testing.T) {
 		Name: "eval",
 		Attrs: map[string]any{
 			"braintrust.expected": "1",
-			"braintrust.parent":   "experiment_id:123",
+			"braintrust.parent":   expectedParent,
+			"braintrust.app_url":  "https://www.braintrust.dev",
 		},
 		JSONAttrs: map[string]any{
 			"braintrust.input_json":      1,
@@ -229,7 +261,8 @@ func TestEval_ScorerErrors(t *testing.T) {
 		Name: "task",
 		Attrs: map[string]any{
 			"braintrust.expected": "4",
-			"braintrust.parent":   "experiment_id:123",
+			"braintrust.parent":   expectedParent,
+			"braintrust.app_url":  "https://www.braintrust.dev",
 		},
 		JSONAttrs: map[string]any{
 			"braintrust.input_json":      2,
@@ -242,7 +275,8 @@ func TestEval_ScorerErrors(t *testing.T) {
 	spans[4].AssertEqual(oteltest.TestSpan{
 		Name: "score",
 		Attrs: map[string]any{
-			"braintrust.parent": "experiment_id:123",
+			"braintrust.parent":  expectedParent,
+			"braintrust.app_url": "https://www.braintrust.dev",
 		},
 		JSONAttrs: map[string]any{
 			"braintrust.scores":          map[string]int{"equals": 1},
@@ -265,7 +299,8 @@ func TestEval_ScorerErrors(t *testing.T) {
 	spans[5].AssertEqual(oteltest.TestSpan{
 		Name: "eval",
 		Attrs: map[string]any{
-			"braintrust.parent": "experiment_id:123",
+			"braintrust.parent":  expectedParent,
+			"braintrust.app_url": "https://www.braintrust.dev",
 		},
 		StatusCode:        codes.Error,
 		StatusDescription: "scorer error: scorer \"failing_scorer\" failed: scorer failed for input 2",
@@ -293,8 +328,10 @@ func TestScorerNames(t *testing.T) {
 
 	cases := []Case[int, int]{{Input: 1, Expected: 1}}
 
-	eval := New("123", NewCases(cases), task, scorers)
-	err := eval.Run(context.Background())
+	key := newKey("proj-name", "proj-123", "exp-123")
+	expectedParent := "experiment_id:" + key.ExperimentID
+	eval := New(key, NewCases(cases), task, scorers)
+	_, err := eval.Run(context.Background())
 	require.NoError(err)
 
 	spans := exporter.Flush()
@@ -304,7 +341,8 @@ func TestScorerNames(t *testing.T) {
 		Name: "task",
 		Attrs: map[string]any{
 			"braintrust.expected": "1",
-			"braintrust.parent":   "experiment_id:123",
+			"braintrust.parent":   expectedParent,
+			"braintrust.app_url":  "https://www.braintrust.dev",
 		},
 		JSONAttrs: map[string]any{
 			"braintrust.input_json":      1,
@@ -316,7 +354,8 @@ func TestScorerNames(t *testing.T) {
 	spans[1].AssertEqual(oteltest.TestSpan{
 		Name: "score",
 		Attrs: map[string]any{
-			"braintrust.parent": "experiment_id:123",
+			"braintrust.parent":  expectedParent,
+			"braintrust.app_url": "https://www.braintrust.dev",
 		},
 		JSONAttrs: map[string]any{
 			"braintrust.scores":          map[string]float64{"different": 0.5, "no-name": 0.6},
@@ -332,7 +371,8 @@ func TestHardcodedEval(t *testing.T) {
 	_, exporter := oteltest.Setup(t)
 
 	// test task
-	id := "123"
+	key := newKey("proj-name", "proj-123", "exp-123")
+	expectedParent := "experiment_id:" + key.ExperimentID
 
 	brokenSquare := func(ctx context.Context, x int) (int, error) {
 		square := x * x
@@ -360,9 +400,9 @@ func TestHardcodedEval(t *testing.T) {
 		NewScorer("equals", equals),
 	}
 
-	eval1 := New(id, NewCases(cases), brokenSquare, scorers)
+	eval1 := New(key, NewCases(cases), brokenSquare, scorers)
 	timer := oteltest.NewTimer()
-	err := eval1.Run(context.Background())
+	_, err := eval1.Run(context.Background())
 	timeRange := timer.Tick()
 	require.NoError(err)
 
@@ -374,7 +414,8 @@ func TestHardcodedEval(t *testing.T) {
 		Name: "task",
 		Attrs: map[string]any{
 			"braintrust.expected": "1",
-			"braintrust.parent":   "experiment_id:123",
+			"braintrust.parent":   expectedParent,
+			"braintrust.app_url":  "https://www.braintrust.dev",
 		},
 		JSONAttrs: map[string]any{
 			"braintrust.input_json":      1,
@@ -387,7 +428,8 @@ func TestHardcodedEval(t *testing.T) {
 	spans[1].AssertEqual(oteltest.TestSpan{
 		Name: "score",
 		Attrs: map[string]any{
-			"braintrust.parent": "experiment_id:123",
+			"braintrust.parent":  expectedParent,
+			"braintrust.app_url": "https://www.braintrust.dev",
 		},
 		JSONAttrs: map[string]any{
 			"braintrust.scores":          map[string]int{"equals": 1},
@@ -399,8 +441,9 @@ func TestHardcodedEval(t *testing.T) {
 		Name: "eval",
 		Attrs: map[string]any{
 			"braintrust.expected": "1",
-			"braintrust.parent":   "experiment_id:123",
+			"braintrust.parent":   expectedParent,
 			"braintrust.tags":     []string{"tag1", "tag2"},
+			"braintrust.app_url":  "https://www.braintrust.dev",
 		},
 		JSONAttrs: map[string]any{
 			"braintrust.input_json":      1,
@@ -414,7 +457,8 @@ func TestHardcodedEval(t *testing.T) {
 		Name: "task",
 		Attrs: map[string]any{
 			"braintrust.expected": "4",
-			"braintrust.parent":   "experiment_id:123",
+			"braintrust.parent":   expectedParent,
+			"braintrust.app_url":  "https://www.braintrust.dev",
 		},
 		JSONAttrs: map[string]any{
 			"braintrust.input_json":      2,
@@ -426,7 +470,8 @@ func TestHardcodedEval(t *testing.T) {
 	spans[4].AssertEqual(oteltest.TestSpan{
 		Name: "score",
 		Attrs: map[string]any{
-			"braintrust.parent": "experiment_id:123",
+			"braintrust.parent":  expectedParent,
+			"braintrust.app_url": "https://www.braintrust.dev",
 		},
 		JSONAttrs: map[string]any{
 			"braintrust.scores":          map[string]int{"equals": 0},
@@ -438,7 +483,8 @@ func TestHardcodedEval(t *testing.T) {
 		Name: "eval",
 		Attrs: map[string]any{
 			"braintrust.expected": "4",
-			"braintrust.parent":   "experiment_id:123",
+			"braintrust.parent":   expectedParent,
+			"braintrust.app_url":  "https://www.braintrust.dev",
 		},
 		JSONAttrs: map[string]any{
 			"braintrust.input_json":      2,
@@ -515,8 +561,9 @@ func TestEvalWithCustomGenerator(t *testing.T) {
 
 	scorers := []Scorer[int, int]{NewEqualsScorer[int, int]()}
 
-	eval := New("test-generator", generator, task, scorers)
-	err := eval.Run(context.Background())
+	key := newKey("proj-name", "proj-456", "exp-generator")
+	eval := New(key, generator, task, scorers)
+	_, err := eval.Run(context.Background())
 	require.NoError(err)
 
 	spans := exporter.Flush()
@@ -545,9 +592,11 @@ func TestEvalWithCasesIteratorError(t *testing.T) {
 
 	scorers := []Scorer[string, string]{NewEqualsScorer[string, string]()}
 
-	eval := New("test-error-generator", generator, task, scorers)
+	key := newKey("proj-name", "proj-456", "exp-error-generator")
+	expectedParent := "experiment_id:" + key.ExperimentID
+	eval := New(key, generator, task, scorers)
 	timer := oteltest.NewTimer()
-	err := eval.Run(context.Background())
+	_, err := eval.Run(context.Background())
 	timeRange := timer.Tick()
 
 	// Should return the error from the Cases iterator
@@ -567,7 +616,8 @@ func TestEvalWithCasesIteratorError(t *testing.T) {
 	spans[0].AssertEqual(oteltest.TestSpan{
 		Name: "task",
 		Attrs: map[string]any{
-			"braintrust.parent": "experiment_id:test-error-generator",
+			"braintrust.parent":  expectedParent,
+			"braintrust.app_url": "https://www.braintrust.dev",
 		},
 		JSONAttrs: map[string]any{
 			"braintrust.expected":        "first",
@@ -581,7 +631,8 @@ func TestEvalWithCasesIteratorError(t *testing.T) {
 	spans[1].AssertEqual(oteltest.TestSpan{
 		Name: "score",
 		Attrs: map[string]any{
-			"braintrust.parent": "experiment_id:test-error-generator",
+			"braintrust.parent":  expectedParent,
+			"braintrust.app_url": "https://www.braintrust.dev",
 		},
 		JSONAttrs: map[string]any{
 			"braintrust.scores":          map[string]int{"equals": 1},
@@ -593,7 +644,8 @@ func TestEvalWithCasesIteratorError(t *testing.T) {
 	spans[2].AssertEqual(oteltest.TestSpan{
 		Name: "eval",
 		Attrs: map[string]any{
-			"braintrust.parent": "experiment_id:test-error-generator",
+			"braintrust.parent":  expectedParent,
+			"braintrust.app_url": "https://www.braintrust.dev",
 		},
 		JSONAttrs: map[string]any{
 			"braintrust.expected":        "first",
@@ -607,7 +659,8 @@ func TestEvalWithCasesIteratorError(t *testing.T) {
 	spans[3].AssertEqual(oteltest.TestSpan{
 		Name: "eval",
 		Attrs: map[string]any{
-			"braintrust.parent": "experiment_id:test-error-generator",
+			"braintrust.parent":  expectedParent,
+			"braintrust.app_url": "https://www.braintrust.dev",
 		},
 		StatusCode:        codes.Error,
 		StatusDescription: "case iterator error: iterator error between cases",
@@ -626,7 +679,8 @@ func TestEvalWithCasesIteratorError(t *testing.T) {
 	spans[4].AssertEqual(oteltest.TestSpan{
 		Name: "task",
 		Attrs: map[string]any{
-			"braintrust.parent": "experiment_id:test-error-generator",
+			"braintrust.parent":  expectedParent,
+			"braintrust.app_url": "https://www.braintrust.dev",
 		},
 		JSONAttrs: map[string]any{
 			"braintrust.expected":        "second",
@@ -640,7 +694,8 @@ func TestEvalWithCasesIteratorError(t *testing.T) {
 	spans[5].AssertEqual(oteltest.TestSpan{
 		Name: "score",
 		Attrs: map[string]any{
-			"braintrust.parent": "experiment_id:test-error-generator",
+			"braintrust.parent":  expectedParent,
+			"braintrust.app_url": "https://www.braintrust.dev",
 		},
 		JSONAttrs: map[string]any{
 			"braintrust.scores":          map[string]int{"equals": 1},
@@ -652,7 +707,8 @@ func TestEvalWithCasesIteratorError(t *testing.T) {
 	spans[6].AssertEqual(oteltest.TestSpan{
 		Name: "eval",
 		Attrs: map[string]any{
-			"braintrust.parent": "experiment_id:test-error-generator",
+			"braintrust.parent":  expectedParent,
+			"braintrust.app_url": "https://www.braintrust.dev",
 		},
 		JSONAttrs: map[string]any{
 			"braintrust.expected":        "second",
@@ -686,12 +742,12 @@ func (e *errCases) Next() (Case[string, string], error) {
 
 func TestResolveExperimentID_Validation(t *testing.T) {
 	// Test empty experiment name
-	_, err := ResolveExperimentID("", "test-project")
+	_, _, err := ResolveExperimentID("", "test-project")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "experiment name is required")
 
 	// Test empty project ID
-	_, err = ResolveExperimentID("test-exp", "")
+	_, _, err = ResolveExperimentID("test-exp", "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "project ID is required")
 }
@@ -729,9 +785,10 @@ func TestEval_EmptyExperimentID(t *testing.T) {
 	}
 
 	// Create eval with empty experiment ID
-	eval := New("", NewCases(cases), task, scorers)
+	key := newKey("proj-name", "proj-123", "")
+	eval := New(key, NewCases(cases), task, scorers)
 	timer := oteltest.NewTimer()
-	err := eval.Run(context.Background())
+	_, err := eval.Run(context.Background())
 	timeRange := timer.Tick()
 
 	// Should return ErrEval error
@@ -773,9 +830,10 @@ func TestEval_WithParallelism(t *testing.T) {
 		{Input: 2, Expected: 4},
 	}
 
-	eval := New("test-exp-456", NewCases(cases), task, scorers)
+	key := newKey("proj-name", "proj-123", "exp-456")
+	eval := New(key, NewCases(cases), task, scorers)
 	eval.setParallelism(2)
-	err := eval.Run(context.Background())
+	_, err := eval.Run(context.Background())
 	require.NoError(err)
 
 	spans := exporter.Flush()
@@ -836,8 +894,10 @@ func TestEval_BraintrustParentWithAndWithoutDefaultProject(t *testing.T) {
 				{Input: 1, Expected: 2},
 			}
 
-			eval := New("test-exp-456", NewCases(cases), task, scorers)
-			err := eval.Run(context.Background())
+			key := newKey("proj-name", "proj-123", "exp-456")
+			expectedParent := "experiment_id:" + key.ExperimentID
+			eval := New(key, NewCases(cases), task, scorers)
+			_, err := eval.Run(context.Background())
 			require.NoError(t, err)
 
 			spans := exporter.Flush()
@@ -845,7 +905,7 @@ func TestEval_BraintrustParentWithAndWithoutDefaultProject(t *testing.T) {
 
 			// Verify all spans have braintrust.parent attribute
 			for _, span := range spans {
-				span.AssertAttrEquals("braintrust.parent", "experiment_id:test-exp-456")
+				span.AssertAttrEquals("braintrust.parent", expectedParent)
 			}
 		})
 	}
@@ -951,9 +1011,10 @@ func TestEval_ParallelWithTaskErrors(t *testing.T) {
 		{Input: 4, Expected: 8},
 	}
 
-	eval := New("test-parallel-errors", NewCases(cases), task, scorers)
+	key := newKey("proj-name", "proj-789", "exp-parallel-errors")
+	eval := New(key, NewCases(cases), task, scorers)
 	eval.setParallelism(3)
-	err := eval.Run(context.Background())
+	_, err := eval.Run(context.Background())
 
 	// Should return errors from failed tasks
 	require.Error(err)
@@ -994,9 +1055,10 @@ func TestEval_ParallelWithScorerErrors(t *testing.T) {
 		{Input: 4, Expected: 8},
 	}
 
-	eval := New("test-parallel-scorer-errors", NewCases(cases), task, scorers)
+	key := newKey("proj-name", "proj-789", "exp-parallel-scorer-errors")
+	eval := New(key, NewCases(cases), task, scorers)
 	eval.setParallelism(3)
-	err := eval.Run(context.Background())
+	_, err := eval.Run(context.Background())
 
 	// Should return errors from failed scorers
 	require.Error(err)
@@ -1030,9 +1092,10 @@ func TestEval_ParallelAllTasksFail(t *testing.T) {
 		{Input: 3, Expected: 6},
 	}
 
-	eval := New("test-parallel-all-fail", NewCases(cases), task, scorers)
+	key := newKey("proj-name", "proj-789", "exp-parallel-all-fail")
+	eval := New(key, NewCases(cases), task, scorers)
 	eval.setParallelism(2)
-	err := eval.Run(context.Background())
+	_, err := eval.Run(context.Background())
 
 	// Should return all errors
 	require.Error(err)
@@ -1068,9 +1131,10 @@ func TestEval_ParallelWithIteratorErrors(t *testing.T) {
 
 	scorers := []Scorer[string, string]{NewEqualsScorer[string, string]()}
 
-	eval := New("test-parallel-iterator-errors", generator, task, scorers)
+	key := newKey("proj-name", "proj-789", "exp-parallel-iterator-errors")
+	eval := New(key, generator, task, scorers)
 	eval.setParallelism(2)
-	err := eval.Run(context.Background())
+	_, err := eval.Run(context.Background())
 
 	// Should return the iterator error
 	require.Error(err)
@@ -1193,4 +1257,198 @@ func TestRun_WithDatasetName(t *testing.T) {
 	// Verify spans were created
 	spans := exporter.Flush()
 	assert.Equal(6, len(spans)) // 2 cases * 3 spans each
+}
+
+func TestEval_Permalink(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	// Set environment variables for test
+	t.Setenv("BRAINTRUST_API_KEY", "___TEST_API_KEY___")
+	t.Setenv("BRAINTRUST_ORG_NAME", "test-org")
+
+	// Setup and login to populate auth cache
+	_, _ = oteltest.Setup(t)
+	_, err := braintrust.Login()
+	require.NoError(err)
+
+	// Create an eval with a test key - using experiment name "my-experiment"
+	key := Key{
+		ProjectName:  "my-project",
+		ProjectID:    "proj-123",
+		ExperimentID: "exp-456",
+		Name:         "my-experiment",
+	}
+	cases := []Case[int, int]{{Input: 1, Expected: 2}}
+	task := func(ctx context.Context, x int) (int, error) {
+		return x * 2, nil
+	}
+	scorers := []Scorer[int, int]{NewEqualsScorer[int, int]()}
+
+	eval := New(key, NewCases(cases), task, scorers)
+
+	// Get permalink
+	link, err := eval.Permalink()
+	require.NoError(err)
+
+	// Verify the URL format - should use experiment name, not ID
+	assert.Equal("https://www.braintrust.dev/app/test-org/p/my-project/experiments/my-experiment", link)
+}
+
+func TestEval_Permalink_MissingProjectName(t *testing.T) {
+	assert := assert.New(t)
+
+	// Create eval with missing project name
+	key := newKey("", "proj-123", "exp-456")
+	cases := []Case[int, int]{{Input: 1, Expected: 2}}
+	task := func(ctx context.Context, x int) (int, error) {
+		return x * 2, nil
+	}
+	scorers := []Scorer[int, int]{NewEqualsScorer[int, int]()}
+
+	eval := New(key, NewCases(cases), task, scorers)
+
+	// Should return error for missing project name
+	_, err := eval.Permalink()
+	assert.Error(err)
+	assert.Contains(err.Error(), "project name not set")
+}
+
+func TestEval_Permalink_MissingExperimentName(t *testing.T) {
+	assert := assert.New(t)
+
+	// Create eval with missing experiment name
+	key := Key{
+		ProjectName:  "my-project",
+		ProjectID:    "proj-123",
+		ExperimentID: "exp-456",
+		Name:         "", // Missing experiment name
+	}
+	cases := []Case[int, int]{{Input: 1, Expected: 2}}
+	task := func(ctx context.Context, x int) (int, error) {
+		return x * 2, nil
+	}
+	scorers := []Scorer[int, int]{NewEqualsScorer[int, int]()}
+
+	eval := New(key, NewCases(cases), task, scorers)
+
+	// Should return error for missing experiment name
+	_, err := eval.Permalink()
+	assert.Error(err)
+	assert.Contains(err.Error(), "experiment name not set")
+}
+
+func TestEval_Permalink_MissingOrgName(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	// Unset BRAINTRUST_ORG_NAME to ensure it's not available
+	t.Setenv("BRAINTRUST_ORG_NAME", "")
+
+	// Setup WITHOUT org name - this will fail to get org from cache
+	_, _ = oteltest.Setup(t)
+
+	// Create eval
+	key := newKey("my-project", "proj-123", "exp-456")
+	cases := []Case[int, int]{{Input: 1, Expected: 2}}
+	task := func(ctx context.Context, x int) (int, error) {
+		return x * 2, nil
+	}
+	scorers := []Scorer[int, int]{NewEqualsScorer[int, int]()}
+
+	eval := New(key, NewCases(cases), task, scorers)
+
+	// Should return error for missing org name
+	link, err := eval.Permalink()
+	require.Error(err, "Expected error but got link: %s", link)
+	if err != nil {
+		assert.Contains(err.Error(), "org name not available")
+	}
+}
+
+func TestEval_WithQuiet(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	_, exporter := oteltest.Setup(t)
+
+	// Simple task
+	task := func(ctx context.Context, x int) (int, error) {
+		return x * 2, nil
+	}
+
+	scorers := []Scorer[int, int]{
+		NewEqualsScorer[int, int](),
+	}
+
+	cases := []Case[int, int]{
+		{Input: 1, Expected: 2},
+		{Input: 2, Expected: 4},
+	}
+
+	// Run eval with Quiet option
+	_, err := Run(context.Background(), Opts[int, int]{
+		Project:    "proj-name",
+		Experiment: "exp-456",
+		Cases:      NewCases(cases),
+		Task:       task,
+		Scorers:    scorers,
+		Quiet:      true, // Suppress output
+	})
+	require.NoError(err)
+
+	// Verify spans were still created (quiet only affects printing)
+	spans := exporter.Flush()
+	assert.Equal(6, len(spans)) // 2 cases * 3 spans each
+}
+
+func TestResult_Permalink(t *testing.T) {
+	assert := assert.New(t)
+
+	// Test with permalink present
+	key := newKey("test-project", "proj-123", "test-experiment")
+	expectedLink := "https://braintrust.dev/app/test-org/p/test-project/experiments/test-experiment"
+	result := newResult(key, nil, expectedLink, 500*time.Millisecond)
+
+	link, err := result.Permalink()
+	assert.NoError(err)
+	assert.Equal(expectedLink, link)
+
+	// Test with empty permalink
+	result2 := newResult(key, nil, "", 500*time.Millisecond)
+	link2, err2 := result2.Permalink()
+	assert.NoError(err2)
+	assert.Equal("", link2)
+}
+
+func TestResult_String(t *testing.T) {
+	assert := assert.New(t)
+
+	// Test successful result with permalink
+	key := newKey("my-project", "proj-123", "my-experiment")
+	permalink := "https://braintrust.dev/app/test-org/p/my-project/experiments/my-experiment"
+	result := newResult(key, nil, permalink, 1234*time.Millisecond)
+
+	str := result.String()
+
+	// Verify experiment name is present
+	assert.Contains(str, "my-experiment", "String output should contain experiment name")
+
+	// Verify permalink is present
+	assert.Contains(str, permalink, "String output should contain permalink")
+
+	// Verify duration is present and shows tenths of seconds
+	assert.Contains(str, "Duration: 1.2s", "String output should show duration with tenths of seconds")
+
+	// Test failed result with error
+	testErr := errors.New("task failed")
+	result2 := newResult(key, testErr, permalink, 50*time.Millisecond)
+
+	str2 := result2.String()
+
+	// Verify error message is present
+	assert.Contains(str2, "task failed", "String output should contain error message")
+
+	// Verify duration shows tenths of seconds (0.1s for 50ms)
+	assert.Contains(str2, "Duration: 0.1s", "String output should show duration with tenths of seconds")
 }

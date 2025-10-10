@@ -42,7 +42,7 @@ func main() {
 	}
 
 	// Try to get online scorer - add if available
-	onlineScorer, err := functions.GetScorer[int, int]("test-go-functions", "fail-scorer-d879")
+	onlineScorer, err := functions.GetScorer[int, int]("go-sdk-examples", "fail-scorer-d879")
 	if err != nil {
 		log.Printf("⚠️ Online scorer not available: %v", err)
 		log.Println("📊 Running with local scorers only...")
@@ -53,8 +53,8 @@ func main() {
 
 	log.Println("🚀 Running evaluation...")
 	_, err = eval.Run(context.Background(), eval.Opts[int, int]{
-		Project:    "test-go-functions",
-		Experiment: "test-go-functions",
+		Project:    "go-sdk-examples",
+		Experiment: "go-sdk-examples",
 		Cases: eval.NewCases([]eval.Case[int, int]{
 			{Input: 5, Expected: 10},
 			{Input: 3, Expected: 6},

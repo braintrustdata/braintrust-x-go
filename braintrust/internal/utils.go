@@ -43,7 +43,8 @@ func (f *failTestLogger) Warnf(format string, args ...any) {
 
 var _ log.Logger = &failTestLogger{}
 
-func randomString(length int) string {
+// RandomString generates a random string of the specified length
+func RandomString(length int) string {
 	charset := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	b := make([]rune, length)
 	for i := range b {
@@ -58,7 +59,7 @@ func RandomName(t *testing.T, suffixes ...string) string {
 	parts := []string{
 		"go-sdk-test",
 		t.Name(),
-		randomString(6),
+		RandomString(6),
 	}
 	parts = append(parts, suffixes...)
 	return strings.Join(parts, "-")

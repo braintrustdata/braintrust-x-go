@@ -32,7 +32,9 @@ package trace
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"strings"
+	"sync"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -40,8 +42,10 @@ import (
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
 	"go.opentelemetry.io/otel/sdk/trace"
+	oteltrace "go.opentelemetry.io/otel/trace"
 
 	"github.com/braintrustdata/braintrust-x-go/braintrust"
+	"github.com/braintrustdata/braintrust-x-go/braintrust/internal/auth"
 	"github.com/braintrustdata/braintrust-x-go/braintrust/log"
 )
 
@@ -61,8 +65,25 @@ func Enable(tp *trace.TracerProvider, opts ...braintrust.Option) error {
 	config := braintrust.GetConfig(opts...)
 	url := config.APIURL
 	apiKey := config.APIKey
+	orgName := config.OrgName
 
 	log.Debugf("Enabling Braintrust tracing with config: %s", config.String())
+
+	// If no orgName set and BlockingLogin enabled, login synchronously
+	if orgName == "" && config.BlockingLogin {
+		log.Debugf("BlockingLogin enabled, calling Login")
+		state, err := auth.Login(auth.Options{
+			AppURL:  config.AppURL,
+			APIKey:  apiKey,
+			OrgName: config.OrgName,
+		})
+		if err != nil {
+			return fmt.Errorf("blocking login failed: %w", err)
+		}
+		orgName = state.OrgName
+		log.Debugf("Login completed, orgName: %q", orgName)
+	}
+	// If still no orgName, background login will be triggered later by spanProcessor
 
 	processor := config.SpanProcessor
 	if processor == nil {
@@ -94,7 +115,11 @@ func Enable(tp *trace.TracerProvider, opts ...braintrust.Option) error {
 
 	// Wrap the raw OTEL span processor with the bt span processor (which labels the parents,
 	// filters data, etc)
-	tp.RegisterSpanProcessor(newSpanProcessor(processor, parent, filters))
+	sp, err := newSpanProcessor(processor, parent, filters, orgName, config.AppURL, apiKey)
+	if err != nil {
+		return err
+	}
+	tp.RegisterSpanProcessor(sp)
 
 	// Add console debug exporter if BRAINTRUST_ENABLE_TRACE_DEBUG_LOG is set
 	if config.EnableTraceConsoleLog {
@@ -153,6 +178,13 @@ func Quickstart(opts ...braintrust.Option) (teardown func(), err error) {
 // Parents are formatted as "project_id:{uuid}" or "experiment_id:{uuid}".
 const ParentOtelAttrKey = "braintrust.parent"
 
+// Internal attribute keys for Braintrust span metadata.
+const (
+	orgAttrKey     = "braintrust.org"
+	appURLAttrKey  = "braintrust.app_url"
+	projectAttrKey = "braintrust.project"
+)
+
 type contextKey string
 
 // a context key that cannot possibly collide with any other keys
@@ -188,6 +220,11 @@ const (
 	ParentTypeExperimentID ParentType = "experiment_id"
 )
 
+// IsValid returns true if the ParentType is a valid type.
+func (p ParentType) IsValid() bool {
+	return p == ParentTypeProject || p == ParentTypeProjectID || p == ParentTypeExperimentID
+}
+
 // Parent represents where data goes in Braintrust - a project, an experiment, etc.
 type Parent struct {
 	Type ParentType
@@ -203,28 +240,130 @@ func (p Parent) String() string {
 	return fmt.Sprintf("%s:%s", p.Type, p.ID)
 }
 
+func parseParent(s string) (Parent, error) {
+	parts := strings.SplitN(s, ":", 2)
+	if len(parts) != 2 {
+		return Parent{}, fmt.Errorf("invalid parent format: %s", s)
+	}
+	pt := ParentType(parts[0])
+	if !pt.IsValid() {
+		return Parent{}, fmt.Errorf("invalid parent type: %s", parts[0])
+	}
+
+	return Parent{Type: pt, ID: parts[1]}, nil
+}
+
+// otelAttrs contains the attributes that are added to all spans in our processor.
+type otelAttrs struct {
+	parent attribute.KeyValue
+
+	mu sync.RWMutex
+
+	orgName string
+	appURL  string
+
+	attrs []attribute.KeyValue
+}
+
+func newOtelAttrs(parent Parent, orgName string, appURL string) *otelAttrs {
+	oa := &otelAttrs{
+		parent:  parent.Attr(),
+		orgName: orgName,
+		appURL:  appURL,
+	}
+	oa.makeAttrs()
+	return oa
+}
+
+// Get returns the attributes that should be set on the span. The parent is selectively
+// applied to spans with no parent, there it's separate.
+func (o *otelAttrs) Get() (parent attribute.KeyValue, always []attribute.KeyValue) {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+	return o.parent, o.attrs
+}
+
+func (o *otelAttrs) SetOrgName(orgName string) {
+	o.mu.Lock()
+	o.orgName = orgName
+	o.mu.Unlock()
+
+	o.makeAttrs()
+}
+
+func (o *otelAttrs) makeAttrs() {
+	var attrs []attribute.KeyValue
+	if o.orgName != "" {
+		attrs = append(attrs, attribute.String(orgAttrKey, o.orgName))
+	}
+	if o.appURL != "" {
+		attrs = append(attrs, attribute.String(appURLAttrKey, o.appURL))
+	}
+
+	o.mu.Lock()
+	o.attrs = attrs
+	o.mu.Unlock()
+}
+
 type spanProcessor struct {
-	wrapped       trace.SpanProcessor
-	defaultParent Parent
-	defaultAttr   attribute.KeyValue
-	filters       []braintrust.SpanFilterFunc
+	wrapped   trace.SpanProcessor
+	filters   []braintrust.SpanFilterFunc
+	apiKey    string
+	appURL    string
+	otelAttrs *otelAttrs
 }
 
 // newSpanProcessor creates a new span processor that wraps another processor and adds parent labeling.
-func newSpanProcessor(proc trace.SpanProcessor, defaultParent Parent, filters []braintrust.SpanFilterFunc) *spanProcessor {
-	log.Debugf("Creating span processor with default parent: %s:%s", defaultParent.Type, defaultParent.ID)
-	return &spanProcessor{
-		wrapped:       proc,
-		defaultParent: defaultParent,
-		defaultAttr:   defaultParent.Attr(),
-		filters:       filters,
+func newSpanProcessor(proc trace.SpanProcessor, defaultParent Parent, filters []braintrust.SpanFilterFunc, orgName, appURL, apiKey string) (*spanProcessor, error) {
+	if apiKey == "" || appURL == "" {
+		return nil, fmt.Errorf("apiKey and appURL are required")
+	}
+
+	attrs := newOtelAttrs(defaultParent, orgName, appURL)
+
+	sp := &spanProcessor{
+		apiKey:    apiKey,
+		appURL:    appURL,
+		wrapped:   proc,
+		filters:   filters,
+		otelAttrs: attrs,
+	}
+
+	// If we have no explicit org name, fetch it from the API. This will let us format
+	// links like https://www.braintrust.dev/app/<my-org-name>. We add all data needed
+	// to create links on spans in advance so that we don't rely on looking up global state
+	// later.
+	if orgName == "" {
+		go sp.login()
+	}
+
+	return sp, nil
+}
+
+// login will attempt to login until it succeeds so that we can look up the active org name.
+func (sp *spanProcessor) login() {
+	log.Debugf("spanProcessor: no orgName configured, calling LoginUntilSuccess")
+	state, err := auth.LoginUntilSuccess(auth.Options{
+		AppURL: sp.appURL,
+		APIKey: sp.apiKey,
+	})
+	if err != nil {
+		log.Warnf("spanProcessor: LoginUntilSuccess failed: %v", err)
+		return
+	}
+	log.Debugf("spanProcessor: LoginUntilSuccess succeeded, setting orgName to %q", state.OrgName)
+	if state.OrgName != "" {
+		sp.otelAttrs.SetOrgName(state.OrgName)
 	}
 }
 
 // OnStart is called when a span is started and assigns parent attributes.
 // It assigns spans to projects or experiments based on context or default parent.
-func (p *spanProcessor) OnStart(ctx context.Context, span trace.ReadWriteSpan) {
-	// If that span already has a parent, don't override
+func (sp *spanProcessor) OnStart(ctx context.Context, span trace.ReadWriteSpan) {
+	defaultParent, attrs := sp.otelAttrs.Get()
+
+	// All otel spans need to have a parent attached (e.g. project-id:12345). If the span
+	// doesn't have one already attached, use the one from the context or our default.
 	if !hasParent(span) {
 		// if the context has a parent, use it.
 		ok, parent := GetParent(ctx)
@@ -233,38 +372,41 @@ func (p *spanProcessor) OnStart(ctx context.Context, span trace.ReadWriteSpan) {
 			log.Debugf("SpanProcessor.OnStart: setting parent from context: %s", parent)
 		} else {
 			// otherwise use the default parent
-			span.SetAttributes(p.defaultAttr)
-			log.Debugf("SpanProcessor.OnStart: setting default parent: %s", p.defaultParent)
+			span.SetAttributes(defaultParent)
+			log.Debugf("SpanProcessor.OnStart: setting default parent: %s", defaultParent.Value.AsString())
 		}
 	}
 
+	// Set any other additional attributes (org name, app URL, etc.)
+	span.SetAttributes(attrs...)
+
 	// Delegate to wrapped processor
-	p.wrapped.OnStart(ctx, span)
+	sp.wrapped.OnStart(ctx, span)
 }
 
 // OnEnd is called when a span ends.
-func (p *spanProcessor) OnEnd(span trace.ReadOnlySpan) {
+func (sp *spanProcessor) OnEnd(span trace.ReadOnlySpan) {
 	// Apply filters to determine if we should forward this span
-	if p.shouldForwardSpan(span) {
-		p.wrapped.OnEnd(span)
+	if sp.shouldForwardSpan(span) {
+		sp.wrapped.OnEnd(span)
 	}
 }
 
 // shouldForwardSpan applies filter functions to determine if a span should be forwarded.
 // Root spans are always kept. Filter functions are applied in order, with the first filters having priority.
-func (p *spanProcessor) shouldForwardSpan(span trace.ReadOnlySpan) bool {
+func (sp *spanProcessor) shouldForwardSpan(span trace.ReadOnlySpan) bool {
 	// Always keep root spans (spans with no parent)
 	if !span.Parent().IsValid() {
 		return true
 	}
 
 	// If no filters, keep everything
-	if len(p.filters) == 0 {
+	if len(sp.filters) == 0 {
 		return true
 	}
 
 	// Apply filter functions in order - first filter wins
-	for _, filter := range p.filters {
+	for _, filter := range sp.filters {
 		result := filter(span)
 		switch {
 		case result > 0:
@@ -282,13 +424,13 @@ func (p *spanProcessor) shouldForwardSpan(span trace.ReadOnlySpan) bool {
 }
 
 // Shutdown shuts down the span processor.
-func (p *spanProcessor) Shutdown(ctx context.Context) error {
-	return p.wrapped.Shutdown(ctx)
+func (sp *spanProcessor) Shutdown(ctx context.Context) error {
+	return sp.wrapped.Shutdown(ctx)
 }
 
 // ForceFlush forces a flush of the span processor.
-func (p *spanProcessor) ForceFlush(ctx context.Context) error {
-	return p.wrapped.ForceFlush(ctx)
+func (sp *spanProcessor) ForceFlush(ctx context.Context) error {
+	return sp.wrapped.ForceFlush(ctx)
 }
 
 var _ trace.SpanProcessor = &spanProcessor{}
@@ -368,11 +510,11 @@ func aiSpanFilterFunc(span trace.ReadOnlySpan) int {
 		}
 	}
 
-	// Check attributes for AI prefixes (exclude the braintrust.parent attribute we automatically add)
+	// Check attributes for AI prefixes (exclude system attributes we automatically add)
 	for _, attr := range span.Attributes() {
 		attrKey := string(attr.Key)
-		// Skip the braintrust.parent attribute that we automatically add to all spans
-		if attrKey == ParentOtelAttrKey {
+		// Skip system attributes that we automatically add to all spans
+		if attrKey == ParentOtelAttrKey || attrKey == orgAttrKey || attrKey == appURLAttrKey {
 			continue
 		}
 		for _, prefix := range aiOtelPrefixes {
@@ -384,4 +526,76 @@ func aiSpanFilterFunc(span trace.ReadOnlySpan) int {
 
 	// Drop non-AI spans
 	return -1
+}
+
+// Permalink returns a URL to the span in the Braintrust UI.
+func Permalink(span oteltrace.Span) (string, error) {
+	appURL, org, parent, err := getSpanURLData(span)
+	if err != nil {
+		return "", err
+	}
+
+	// Get span context for trace and span IDs
+	spanContext := span.SpanContext()
+	traceID := spanContext.TraceID().String()
+	spanID := spanContext.SpanID().String()
+
+	// Build permalink
+	u, err := url.Parse(appURL)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse app URL: %w", err)
+	}
+
+	// Different URL formats based on parent type
+	// Projects: {app_url}/app/{org}/p/{project}/logs?r={trace_id}&s={span_id}
+	// Experiments: {app_url}/app/{org}/p/{project}/experiments/{experiment_id}?r={trace_id}&s={span_id}
+	if parent.Type == ParentTypeExperimentID {
+		// For experiments, parent.ID format is "project-name/experiment-id"
+		parts := strings.SplitN(parent.ID, "/", 2)
+		if len(parts) != 2 {
+			return "", fmt.Errorf("experiment parent ID must be in format 'project/experiment-id', got: %s", parent.ID)
+		}
+		projectName := parts[0]
+		experimentID := parts[1]
+		u = u.JoinPath("app", org, "p", projectName, "experiments", experimentID)
+	} else {
+		u = u.JoinPath("app", org, "p", parent.ID, "logs")
+	}
+
+	q := u.Query()
+	q.Set("r", traceID)
+	q.Set("s", spanID)
+	u.RawQuery = q.Encode()
+
+	return u.String(), nil
+}
+
+func getSpanURLData(span oteltrace.Span) (url, org string, parent Parent, err error) {
+	readSpan, ok := span.(trace.ReadWriteSpan)
+	if !ok {
+		err = fmt.Errorf("span does not support attribute reading")
+		return
+	}
+
+	attrs := make(map[string]string)
+	for _, attr := range readSpan.Attributes() {
+		attrs[string(attr.Key)] = attr.Value.AsString()
+	}
+
+	keys := []string{appURLAttrKey, orgAttrKey, ParentOtelAttrKey}
+	for _, key := range keys {
+		if _, ok := attrs[key]; !ok {
+			err = fmt.Errorf("span missing %s attribute", key)
+			return
+		}
+	}
+
+	parent, err = parseParent(attrs[ParentOtelAttrKey])
+	if err != nil {
+		return
+	}
+
+	url = attrs[appURLAttrKey]
+	org = attrs[orgAttrKey]
+	return
 }

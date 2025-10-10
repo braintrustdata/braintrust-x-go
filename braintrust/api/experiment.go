@@ -20,6 +20,7 @@ type ExperimentRequest struct {
 // Experiment represents an experiment from the API
 type Experiment struct {
 	ID        string `json:"id"`
+	Name      string `json:"name"`
 	ProjectID string `json:"project_id"`
 }
 

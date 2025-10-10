@@ -46,7 +46,7 @@ func main() {
 		option.WithMiddleware(traceopenai.Middleware),
 	)
 
-	teardown, err := trace.Quickstart(braintrust.WithDefaultProject("go-sdk-internal-examples"))
+	teardown, err := trace.Quickstart(braintrust.WithDefaultProject("go-sdk-examples"))
 	if err != nil {
 		log.Fatalf("Error starting trace: %v", err)
 	}
@@ -342,7 +342,7 @@ Respond with only a number 0-10.`,
 
 	log.Println("🚀 Running email subject line evaluation...")
 	_, err = eval.Run(context.Background(), eval.Opts[EmailCampaign, SubjectLineResponse]{
-		Project:    "Email Marketing Optimization",
+		Project:    "go-sdk-examples",
 		Experiment: "Subject Line A/B Testing v1",
 		Cases:      eval.NewCases(testCases),
 		Task:       generateSubjectLine,

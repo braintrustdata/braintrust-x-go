@@ -8,6 +8,8 @@ require (
 	go.opentelemetry.io/otel v1.36.0
 )
 
+replace github.com/braintrustdata/braintrust-x-go => ../..
+
 require (
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect

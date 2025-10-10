@@ -17,14 +17,18 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/braintrustdata/braintrust-x-go/braintrust"
 	bttrace "github.com/braintrustdata/braintrust-x-go/braintrust/trace"
 )
 
 func main() {
 	fmt.Println("Manual LLM Logging Example")
 
-	// Initialize Braintrust tracing
-	teardown, err := bttrace.Quickstart()
+	// Initialize Braintrust tracing with org and app URL for permalink generation
+	teardown, err := bttrace.Quickstart(
+		braintrust.WithOrgName("matt-test-org"),
+		braintrust.WithAppURL("https://www.braintrust.dev"),
+	)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -96,7 +100,9 @@ func simpleExample(ctx context.Context) {
 	}
 	setJSONAttr(span, "braintrust.metrics", metrics)
 
-	fmt.Println("✓ Logged simple LLM call")
+	// 6. Generate a permalink to view this span in the Braintrust UI
+	link, _ := bttrace.Permalink(span)
+	fmt.Println(link)
 }
 
 // conversationExample shows logging a multi-turn conversation
@@ -142,7 +148,8 @@ func conversationExample(ctx context.Context) {
 	}
 	setJSONAttr(span, "braintrust.metrics", metrics)
 
-	fmt.Println("✓ Logged multi-turn conversation")
+	link, _ := bttrace.Permalink(span)
+	fmt.Println(link)
 }
 
 // toolCallingExample shows logging an LLM call with function/tool calling
@@ -214,7 +221,8 @@ func toolCallingExample(ctx context.Context) {
 	}
 	setJSONAttr(span, "braintrust.metrics", metrics)
 
-	fmt.Println("✓ Logged LLM call with tool calling")
+	link, _ := bttrace.Permalink(span)
+	fmt.Println(link)
 }
 
 // reasoningExample shows logging a reasoning model call (like GPT-5, o1)

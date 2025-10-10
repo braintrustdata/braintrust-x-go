@@ -8,16 +8,20 @@ import (
 
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
+	"go.opentelemetry.io/otel"
 
+	"github.com/braintrustdata/braintrust-x-go/braintrust"
 	"github.com/braintrustdata/braintrust-x-go/braintrust/trace"
 	"github.com/braintrustdata/braintrust-x-go/braintrust/trace/traceopenai"
 )
 
 func main() {
-	fmt.Println("🧠 Braintrust OpenAI Basic Example")
+	fmt.Println("Braintrust OpenAI Basic Example")
 
-	// Initialize Braintrust tracing
-	teardown, err := trace.Quickstart()
+	// Initialize Braintrust tracing with blocking login to ensure permalinks work immediately
+	teardown, err := trace.Quickstart(
+		braintrust.WithBlockingLogin(true),
+	)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -28,7 +32,12 @@ func main() {
 		option.WithMiddleware(traceopenai.Middleware),
 	)
 
-	ctx := context.Background()
+	// Get a tracer instance
+	tracer := otel.Tracer("openai-example")
+
+	// Create a parent span to wrap the OpenAI call
+	ctx, span := tracer.Start(context.Background(), "ask-question")
+	defer span.End()
 
 	// Make a simple chat completion request
 	resp, err := client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
@@ -42,5 +51,12 @@ func main() {
 	}
 
 	fmt.Printf("Response: %s\n", resp.Choices[0].Message.Content)
-	fmt.Println("\n✅ Request completed! Check your Braintrust dashboard to view the trace.")
+
+	// Get a link to the span in Braintrust
+	link, err := trace.Permalink(span)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		fmt.Println(link)
+	}
 }
