@@ -11,13 +11,11 @@
 //
 // # Configuration
 //
-// The SDK reads configuration from environment variables:
-//   - BRAINTRUST_API_KEY: Your Braintrust API key
-//   - BRAINTRUST_API_URL: API endpoint (defaults to https://www.braintrust.dev)
+// The SDK reads configuration from environment variables.
+// See [GetConfig] for a complete list of supported environment variables.
 //
 // # Learn More
 //
-// For examples and documentation:
-//   - Examples: See the examples/ directory in this repository
+//   - Examples: https://github.com/braintrustdata/braintrust-x-go/tree/main/examples
 //   - Documentation: https://www.braintrust.dev/docs
 package braintrust

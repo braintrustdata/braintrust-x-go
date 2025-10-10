@@ -2,8 +2,15 @@
 # Braintrust Go Tracing & Eval SDK
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/braintrustdata/braintrust-x-go.svg)](https://pkg.go.dev/github.com/braintrustdata/braintrust-x-go)
+![Beta](https://img.shields.io/badge/status-beta-yellow)
 
-This SDK is currently in BETA status and APIs may change.
+## Overview
+
+This library provides tools for **evaluating** and **tracing** AI applications in [Braintrust](https://www.braintrust.dev). Use it to:
+
+- **Evaluate** your AI models with custom test cases and scoring functions
+- **Trace** LLM calls and monitor AI application performance with OpenTelemetry
+- **Integrate** seamlessly with OpenAI, Anthropic, and other LLM providers
 
 ## Installation
 
@@ -144,10 +151,10 @@ func main() {
 
 Check out the [`examples/`](./examples/) directory for complete working examples:
 
-- [`examples/evals/`](./examples/evals/) - Basic evaluation setup
-- [`examples/openai/`](./examples/openai/) - OpenAI tracing
-- [`examples/anthropic/`](./examples/anthropic/) - Anthropic tracing
-- [`examples/datasets/`](./examples/datasets/) - Dataset-based evaluations
+- [evals](./examples/evals/evals.go) - Basic evaluation setup
+- [openai](./examples/openai/main.go) - OpenAI tracing
+- [anthropic](./examples/anthropic/main.go) - Anthropic tracing
+- [datasets](./examples/datasets/main.go) - Dataset-based evaluations
 
 ## Documentation
 

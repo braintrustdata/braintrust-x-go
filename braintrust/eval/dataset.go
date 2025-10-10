@@ -32,7 +32,7 @@ func GetDataset[I, R any](projectName, datasetName string) (Cases[I, R], error) 
 	return QueryDataset[I, R](opts)
 }
 
-// QueryDataset returns Cases for datasets matching the given options.
+// QueryDataset returns Cases for the most recent dataset matching the given options.
 func QueryDataset[I, R any](opts DatasetOpts) (Cases[I, R], error) {
 	datasets, err := queryDatasets(opts)
 	if err != nil {
