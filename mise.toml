@@ -10,6 +10,9 @@ golangci-lint = "2.1.6"
 goreleaser = "2.12.0"
 watchexec = "latest"
 
+[tasks.test]
+run = "go test ./..."
+
 [tasks.watch-test]
 description = "Runs tests when files change"
 run = "watchexec --exts go --watch . --restart --clear -- go test ./..."
