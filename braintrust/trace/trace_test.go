@@ -9,6 +9,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
 
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
@@ -660,4 +661,118 @@ func TestAISpanFilterFunc_KeepsRootSpans(t *testing.T) {
 	assert.Contains(spanNames, "parent-operation")
 	assert.Contains(spanNames, "llm.child_completion")
 	assert.NotContains(spanNames, "database-query")
+}
+
+func TestPermalink(t *testing.T) {
+	assert := assert.New(t)
+
+	tp := sdktrace.NewTracerProvider()
+	exporter := tracetest.NewInMemoryExporter()
+	processor := sdktrace.NewSimpleSpanProcessor(exporter)
+
+	err := Enable(tp,
+		braintrust.WithDefaultProjectID("org-test"),
+		braintrust.WithOrgName("test-org"),
+		braintrust.WithAppURL("https://app.example.com"),
+		withSpanProcessor(processor),
+	)
+	assert.NoError(err)
+
+	tracer := tp.Tracer("test")
+
+	_, span := tracer.Start(context.Background(), "test-operation")
+
+	// Test Permalink function with live span
+	link, err := Permalink(span)
+	assert.NoError(err)
+	assert.NotEmpty(link)
+	assert.Contains(link, "https://app.example.com")
+	assert.Contains(link, "test-org")
+	assert.Contains(link, "org-test")
+	assert.Contains(link, span.SpanContext().SpanID().String())
+	assert.Contains(link, span.SpanContext().TraceID().String())
+
+	span.End()
+
+	_ = tp.ForceFlush(context.Background())
+	capturedSpan := flushOne(t, exporter)
+
+	assertAttrEquals(t, capturedSpan, "braintrust.org", "test-org")
+	assertAttrEquals(t, capturedSpan, "braintrust.app_url", "https://app.example.com")
+}
+
+func TestPermalinkWithExperiment(t *testing.T) {
+	assert := assert.New(t)
+
+	tp := sdktrace.NewTracerProvider()
+	exporter := tracetest.NewInMemoryExporter()
+	processor := sdktrace.NewSimpleSpanProcessor(exporter)
+
+	err := Enable(tp,
+		braintrust.WithOrgName("test-org"),
+		braintrust.WithAppURL("https://app.example.com"),
+		withSpanProcessor(processor),
+	)
+	assert.NoError(err)
+
+	tracer := tp.Tracer("test")
+
+	// Create a span with an experiment parent (format: project-name/experiment-id)
+	ctx := SetParent(context.Background(), Parent{Type: ParentTypeExperimentID, ID: "test-project/exp-123"})
+	_, span := tracer.Start(ctx, "test-operation")
+
+	// Test Permalink function with experiment
+	link, err := Permalink(span)
+	assert.NoError(err)
+	assert.NotEmpty(link)
+	assert.Contains(link, "https://app.example.com")
+	assert.Contains(link, "test-org")
+	assert.Contains(link, "/p/test-project/experiments/exp-123")
+	assert.Contains(link, span.SpanContext().SpanID().String())
+	assert.Contains(link, span.SpanContext().TraceID().String())
+
+	span.End()
+}
+
+func TestPermalinkWithNoopSpan(t *testing.T) {
+	assert := assert.New(t)
+
+	// Use noop tracer provider to create a noop span
+	noopTP := noop.NewTracerProvider()
+	noopTracer := noopTP.Tracer("test")
+	_, noopSpan := noopTracer.Start(context.Background(), "noop-span")
+
+	// Should return error, not crash
+	link, err := Permalink(noopSpan)
+	assert.Error(err)
+	assert.Empty(link)
+	assert.Contains(err.Error(), "does not support attribute reading")
+
+	noopSpan.End()
+}
+
+func TestPermalinkMissingAttributes(t *testing.T) {
+	assert := assert.New(t)
+
+	tp := sdktrace.NewTracerProvider()
+	exporter := tracetest.NewInMemoryExporter()
+	processor := sdktrace.NewSimpleSpanProcessor(exporter)
+
+	// Enable without setting OrgName or AppURL
+	err := Enable(tp,
+		braintrust.WithDefaultProjectID("test-project"),
+		withSpanProcessor(processor),
+	)
+	assert.NoError(err)
+
+	tracer := tp.Tracer("test")
+	_, span := tracer.Start(context.Background(), "test-operation")
+
+	// Should return error for missing org
+	link, err := Permalink(span)
+	assert.Error(err)
+	assert.Empty(link)
+	assert.Contains(err.Error(), "braintrust.org")
+
+	span.End()
 }

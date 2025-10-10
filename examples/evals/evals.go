@@ -17,6 +17,7 @@ import (
 )
 
 func main() {
+
 	log.Println("Starting eval")
 
 	client := openai.NewClient(
@@ -45,8 +46,8 @@ func main() {
 	}
 
 	_, err = eval.Run(context.Background(), eval.Opts[string, string]{
-		Project:    "go-eval-project",
-		Experiment: "go-eval-x",
+		Project:    "go-sdk-examples",
+		Experiment: "go-eval-example",
 		Cases: eval.NewCases([]eval.Case[string, string]{
 			{Input: "strawberry", Expected: "fruit"},
 			{Input: "asparagus", Expected: "vegetable"},

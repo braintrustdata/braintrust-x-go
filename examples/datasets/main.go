@@ -103,7 +103,7 @@ func main() {
 	defer teardown() // Ensure traces are flushed on exit
 
 	// First, create a project
-	project, err := api.RegisterProject("Struct Dataset Example Project")
+	project, err := api.RegisterProject("go-sdk-examples")
 	if err != nil {
 		log.Fatalf("Failed to create project: %v", err)
 	}

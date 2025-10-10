@@ -18,6 +18,7 @@ import (
 
 	"github.com/braintrustdata/braintrust-x-go/braintrust"
 	"github.com/braintrustdata/braintrust-x-go/braintrust/internal"
+	"github.com/braintrustdata/braintrust-x-go/braintrust/internal/auth"
 	"github.com/braintrustdata/braintrust-x-go/braintrust/trace"
 )
 
@@ -47,6 +48,9 @@ func Setup(t *testing.T, opts ...braintrust.Option) (oteltrace.Tracer, *Exporter
 		t.Fatalf("Failed to enable Braintrust tracing: %v", err)
 	}
 
+	// clear auth cache before
+	auth.Logout()
+
 	t.Cleanup(func() {
 		// Use background context for cleanup
 		ctx := context.Background()
@@ -56,6 +60,8 @@ func Setup(t *testing.T, opts ...braintrust.Option) (oteltrace.Tracer, *Exporter
 			t.Errorf("Error shutting down tracer provider: %v", err)
 		}
 		otel.SetTracerProvider(original)
+
+		auth.Logout()
 	})
 
 	return tracer, &Exporter{exporter: exporter, t: t}

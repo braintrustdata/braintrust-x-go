@@ -39,6 +39,20 @@ func WithAPIURL(apiURL string) Option {
 	}
 }
 
+// WithAppURL sets the app URL for the Braintrust SDK.
+func WithAppURL(appURL string) Option {
+	return func(c *Config) {
+		c.AppURL = appURL
+	}
+}
+
+// WithOrgName sets the default org name for the Braintrust SDK.
+func WithOrgName(orgName string) Option {
+	return func(c *Config) {
+		c.OrgName = orgName
+	}
+}
+
 // SpanFilterFunc is a function that you can use to decide which spans to send to Braintrust.
 // Return >1 to keep the span, <1 to drop the span, or 0 to not influence the decision.
 type SpanFilterFunc func(span trace.ReadOnlySpan) int
@@ -69,6 +83,7 @@ type Config struct {
 	EnableTraceConsoleLog bool
 	FilterAISpans         bool
 	SpanFilterFuncs       []SpanFilterFunc
+	OrgName               string
 
 	// SpanProcessor allows overriding the default SpanProcessor (primarily for testing)
 	SpanProcessor trace.SpanProcessor
@@ -81,21 +96,34 @@ func (c Config) String() string {
 		apiKey = c.APIKey[:3] + "........" + c.APIKey[len(c.APIKey)-3:]
 	} else if len(c.APIKey) > 0 {
 		apiKey = "<redacted>"
-	} else {
-		apiKey = "<not set>"
+	}
+
+	hasSpanProcessor := "false"
+	if c.SpanProcessor != nil {
+		hasSpanProcessor = "true"
 	}
 
 	return fmt.Sprintf(`Braintrust Config:
   APIKey: %s
   APIURL: %s
   AppURL: %s
+  OrgName: %s
   DefaultProjectID: %s
-  EnableTraceDebugLog: %t`,
+  DefaultProjectName: %s
+  EnableTraceConsoleLog: %t
+  FilterAISpans: %t
+  SpanFilterFuncs: %d
+  SpanProcessor: %s`,
 		apiKey,
 		c.APIURL,
 		c.AppURL,
+		c.OrgName,
 		c.DefaultProjectID,
+		c.DefaultProjectName,
 		c.EnableTraceConsoleLog,
+		c.FilterAISpans,
+		len(c.SpanFilterFuncs),
+		hasSpanProcessor,
 	)
 }
 
@@ -120,10 +148,13 @@ func GetConfig(opts ...Option) Config {
 		DefaultProjectName:    getEnvString("BRAINTRUST_DEFAULT_PROJECT", "default-go-project"),
 		EnableTraceConsoleLog: getEnvBool("BRAINTRUST_ENABLE_TRACE_CONSOLE_LOG", false),
 		FilterAISpans:         getEnvBool("BRAINTRUST_OTEL_FILTER_AI_SPANS", false),
+		OrgName:               getEnvString("BRAINTRUST_ORG_NAME", ""),
 	}
 	for _, opt := range opts {
 		opt(&config)
 	}
+	// Sanitize API key (remove all whitespace)
+	config.APIKey = strings.TrimSpace(config.APIKey)
 	return config
 }
 

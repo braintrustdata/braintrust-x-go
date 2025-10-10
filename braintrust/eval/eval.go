@@ -32,6 +32,7 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"time"
 
 	"go.opentelemetry.io/otel"
 	attr "go.opentelemetry.io/otel/attribute"
@@ -40,6 +41,7 @@ import (
 
 	"github.com/braintrustdata/braintrust-x-go/braintrust"
 	"github.com/braintrustdata/braintrust-x-go/braintrust/api"
+	"github.com/braintrustdata/braintrust-x-go/braintrust/internal/auth"
 	"github.com/braintrustdata/braintrust-x-go/braintrust/log"
 	bttrace "github.com/braintrustdata/braintrust-x-go/braintrust/trace"
 )
@@ -65,11 +67,19 @@ var (
 	scoreSpanAttrs = map[string]any{"type": "score"}
 )
 
+// Key contains the data needed to uniquely identify and reference an eval.
+type Key struct {
+	ExperimentID string
+	Name         string
+	ProjectID    string
+	ProjectName  string
+}
+
 // Eval is a collection of cases, a task, and a set of scorers. It has two generic types;
 // I is the input type, and R is the result type. See [Run] for the simplest
 // way of executing Evals.
 type Eval[I, R any] struct {
-	experimentID string
+	key          Key
 	cases        Cases[I, R]
 	task         Task[I, R]
 	scorers      []Scorer[I, R]
@@ -77,17 +87,20 @@ type Eval[I, R any] struct {
 	parent       bttrace.Parent
 	startSpanOpt trace.SpanStartOption
 	goroutines   int
+	quiet        bool
 }
 
 // New creates a new eval with the given experiment ID, cases, task, and scorers.
-func New[I, R any](experimentID string, cases Cases[I, R], task Task[I, R], scorers []Scorer[I, R]) *Eval[I, R] {
+//
+// [Run] is a preferable convenience function that automatically resolves the project, experiment, and cases, and adds options.
+func New[I, R any](key Key, cases Cases[I, R], task Task[I, R], scorers []Scorer[I, R]) *Eval[I, R] {
 	// Every span created from this eval will have the experiment ID as the parent. This _should_ be done by the SpanProcessor
 	// but just in case a user hasn't set it up, we'll do it again here just in case as it should be idempotent.
-	parent := bttrace.Parent{Type: bttrace.ParentTypeExperimentID, ID: experimentID}
+	parent := bttrace.Parent{Type: bttrace.ParentTypeExperimentID, ID: key.ExperimentID}
 	startSpanOpt := trace.WithAttributes(parent.Attr())
 
 	return &Eval[I, R]{
-		experimentID: experimentID,
+		key:          key,
 		cases:        cases,
 		task:         task,
 		scorers:      scorers,
@@ -107,11 +120,57 @@ func (e *Eval[I, R]) setParallelism(goroutines int) {
 	e.goroutines = goroutines
 }
 
+// Permalink returns a URL to view this evaluation in the Braintrust UI.
+func (e *Eval[I, R]) Permalink() (string, error) {
+	config := braintrust.GetConfig()
+
+	if e.key.ProjectName == "" {
+		return "", fmt.Errorf("project name not set in eval key")
+	}
+	if e.key.Name == "" {
+		return "", fmt.Errorf("experiment name not set in eval key")
+	}
+
+	// Get app URL and org name - check config first, then cached auth state
+	appURL := config.AppURL
+	orgName := config.OrgName
+
+	if (appURL == "" || orgName == "") && config.APIKey != "" {
+		// Try to get from cached auth state
+		if state, ok := auth.GetState(config.APIKey, config.OrgName); ok {
+			if appURL == "" {
+				appURL = state.AppPublicURL
+			}
+			if orgName == "" {
+				orgName = state.OrgName
+			}
+		}
+	}
+
+	if appURL == "" {
+		return "", fmt.Errorf("app URL not configured")
+	}
+	if orgName == "" {
+		return "", fmt.Errorf("org name not available")
+	}
+
+	// Format: {app_url}/app/{org}/p/{project}/experiments/{experiment_name}
+	link := fmt.Sprintf("%s/app/%s/p/%s/experiments/%s",
+		appURL,
+		orgName,
+		e.key.ProjectName,
+		e.key.Name,
+	)
+
+	return link, nil
+}
+
 // Run executes the evaluation by running the task on each case and scoring the results.
-// Returns a joined error containing all errors encountered during case iteration, task execution, and scoring.
-func (e *Eval[I, R]) Run(ctx context.Context) error {
-	if e.experimentID == "" {
-		return fmt.Errorf("%w: experiment ID is required", ErrEval)
+// Returns a [Result] and any error which contains all errors encountered during case iteration, task execution, and scoring.
+func (e *Eval[I, R]) Run(ctx context.Context) (*Result, error) {
+	start := time.Now()
+	if e.key.ExperimentID == "" {
+		return nil, fmt.Errorf("%w: experiment ID is required", ErrEval)
 	}
 
 	ctx = bttrace.SetParent(ctx, e.parent)
@@ -151,8 +210,17 @@ func (e *Eval[I, R]) Run(ctx context.Context) error {
 
 	// Wait for all the goroutines to finish.
 	wg.Wait()
+	elapsed := time.Since(start)
 
-	return errors.Join(errs.get()...)
+	err := errors.Join(errs.get()...)
+
+	permalink, _ := e.Permalink() // err not super important here
+	result := newResult(e.key, err, permalink, elapsed)
+	if !e.quiet {
+		fmt.Println(result.String())
+	}
+
+	return result, err
 }
 
 func (e *Eval[I, R]) runNextCase(ctx context.Context, nextCase nextCase[I, R]) error {
@@ -271,7 +339,67 @@ func (e *Eval[I, R]) runTask(ctx context.Context, c Case[I, R]) (R, error) {
 
 // Result contains the results from running an evaluation.
 type Result struct {
+	key       Key
+	err       error
+	elapsed   time.Duration
+	permalink string
 	// TODO: Will be populated with span data, scores, errors, etc. in future iterations
+}
+
+func newResult(key Key, err error, permalink string, elapsed time.Duration) *Result {
+	return &Result{
+		err:       err,
+		permalink: permalink,
+		elapsed:   elapsed,
+		key:       key,
+	}
+}
+
+// Permalink returns link to this eval in the Braintrust UI.
+func (r *Result) Permalink() (string, error) {
+	return r.permalink, nil
+}
+
+// Error returns the error from running the eval.
+func (r *Result) Error() error {
+	return r.err
+}
+
+// String returns a string representaton of the result for printing on the console.
+//
+// The format it prints will change and shouldn't be relied on for programmatic use.
+func (r *Result) String() string {
+	var b []byte
+	b = append(b, "\n=== Experiment: "...)
+	b = append(b, r.key.Name...)
+	b = append(b, " ===\n"...)
+
+	// Status line
+	if r.err != nil {
+		b = append(b, "Status: ✗\n"...)
+	} else {
+		b = append(b, "Status: ✓\n"...)
+	}
+
+	// Duration
+	b = append(b, fmt.Sprintf("Duration: %.1fs\n", r.elapsed.Seconds())...)
+
+	// Error details if present
+	if r.err != nil {
+		b = append(b, "\nErrors:\n"...)
+		b = append(b, "  "...)
+		b = append(b, r.err.Error()...)
+		b = append(b, "\n"...)
+	}
+
+	// Permalink
+	if r.permalink != "" {
+		b = append(b, "\n"...)
+		b = append(b, r.permalink...)
+		b = append(b, "\n"...)
+	}
+
+	return string(b)
 }
 
 // Opts contains all options for running an evaluation in a single call.
@@ -292,12 +420,13 @@ type Opts[I, R any] struct {
 	DatasetVersion string
 
 	// Options:
-	Parallelism int // Number of goroutines (default: 1)
+	Parallelism int  // Number of goroutines (default: 1)
+	Quiet       bool // Suppress result output (default: false)
 }
 
 // Run executes an evaluation with automatic resolution of project, experiment, and dataset.
 func Run[I, R any](ctx context.Context, opts Opts[I, R]) (*Result, error) {
-	// Validate required fields
+	// Validate required fields (no API calls)
 	if opts.Task == nil {
 		return nil, fmt.Errorf("%w: Task is required", ErrEval)
 	}
@@ -308,14 +437,19 @@ func Run[I, R any](ctx context.Context, opts Opts[I, R]) (*Result, error) {
 		return nil, fmt.Errorf("%w: Experiment is required", ErrEval)
 	}
 
+	// Validate cases source before making API calls
+	if err := validateCasesSource(opts); err != nil {
+		return nil, err
+	}
+
 	// Resolve project ID (fall back to config defaults)
 	projectID, err := resolveProjectID(opts.ProjectID, opts.Project, braintrust.GetConfig())
 	if err != nil {
 		return nil, err
 	}
 
-	// Resolve experiment ID
-	experimentID, err := ResolveExperimentID(opts.Experiment, projectID)
+	// Resolve experiment ID and name
+	experimentID, experimentName, err := ResolveExperimentID(opts.Experiment, projectID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve experiment: %w", err)
 	}
@@ -327,13 +461,16 @@ func Run[I, R any](ctx context.Context, opts Opts[I, R]) (*Result, error) {
 	}
 
 	// Create and run the evaluation
-	eval := New(experimentID, cases, opts.Task, opts.Scorers)
+	key := Key{ExperimentID: experimentID, Name: experimentName, ProjectID: projectID, ProjectName: opts.Project}
+
+	eval := New(key, cases, opts.Task, opts.Scorers)
 	if opts.Parallelism > 0 {
 		eval.setParallelism(opts.Parallelism)
 	}
-	err = eval.Run(ctx)
-
-	return &Result{}, err
+	if opts.Quiet {
+		eval.quiet = true
+	}
+	return eval.Run(ctx)
 }
 
 // Metadata is a map of strings to a JSON-encodable value. It is used to store arbitrary metadata about a case.
@@ -476,19 +613,33 @@ func (s *casesImpl[I, R]) Next() (Case[I, R], error) {
 	return testCase, nil
 }
 
-// ResolveExperimentID resolves an experiment ID from a name and project ID.
-func ResolveExperimentID(name string, projectID string) (string, error) {
+// ResolveKey creates a Key by resolving a project name and experiment name to their IDs.
+func ResolveKey(projectName, experimentName string) (Key, error) {
+	projectID, err := resolveProjectID("", projectName, braintrust.GetConfig())
+	if err != nil {
+		return Key{}, fmt.Errorf("failed to resolve project: %w", err)
+	}
+	experimentID, resolvedExpName, err := ResolveExperimentID(experimentName, projectID)
+	if err != nil {
+		return Key{}, fmt.Errorf("failed to resolve experiment: %w", err)
+	}
+	return Key{ExperimentID: experimentID, Name: resolvedExpName, ProjectID: projectID, ProjectName: projectName}, nil
+}
+
+// ResolveExperimentID resolves an experiment ID and name from a name and project ID.
+// Returns (experimentID, experimentName, error).
+func ResolveExperimentID(name string, projectID string) (string, string, error) {
 	if name == "" {
-		return "", fmt.Errorf("experiment name is required")
+		return "", "", fmt.Errorf("experiment name is required")
 	}
 	if projectID == "" {
-		return "", fmt.Errorf("project ID is required")
+		return "", "", fmt.Errorf("project ID is required")
 	}
 	experiment, err := api.RegisterExperiment(name, projectID)
 	if err != nil {
-		return "", fmt.Errorf("failed to register experiment %q in project %q: %w", name, projectID, err)
+		return "", "", fmt.Errorf("failed to register experiment %q in project %q: %w", name, projectID, err)
 	}
-	return experiment.ID, nil
+	return experiment.ID, experiment.Name, nil
 }
 
 // ResolveProjectExperimentID resolves an experiment ID from a name and project name.
@@ -503,7 +654,8 @@ func ResolveProjectExperimentID(name string, projectName string) (string, error)
 	if err != nil {
 		return "", fmt.Errorf("failed to register project %q: %w", projectName, err)
 	}
-	return ResolveExperimentID(name, project.ID)
+	expID, _, err := ResolveExperimentID(name, project.ID)
+	return expID, err
 }
 
 // resolveProjectID resolves a project ID from the provided options and config.
@@ -537,10 +689,8 @@ func resolveProjectID(projectID, projectName string, config braintrust.Config) (
 	return "", fmt.Errorf("%w: Project or ProjectID is required (or set BRAINTRUST_DEFAULT_PROJECT_ID)", ErrEval)
 }
 
-// resolveCases validates and resolves cases from the provided options.
-// Exactly one of Cases, Dataset, or DatasetID must be provided.
-func resolveCases[I, R any](opts Opts[I, R], projectID string) (Cases[I, R], error) {
-	// Validate cases source (must provide exactly one)
+// validateCasesSource validates that exactly one case source is provided.
+func validateCasesSource[I, R any](opts Opts[I, R]) error {
 	paramCount := 0
 	if opts.Cases != nil {
 		paramCount++
@@ -553,11 +703,17 @@ func resolveCases[I, R any](opts Opts[I, R], projectID string) (Cases[I, R], err
 	}
 
 	if paramCount == 0 {
-		return nil, fmt.Errorf("%w: one of Cases, Dataset, or DatasetID is required", ErrEval)
+		return fmt.Errorf("%w: one of Cases, Dataset, or DatasetID is required", ErrEval)
 	}
 	if paramCount > 1 {
-		return nil, fmt.Errorf("%w: only one of Cases, Dataset, or DatasetID should be provided", ErrEval)
+		return fmt.Errorf("%w: only one of Cases, Dataset, or DatasetID should be provided", ErrEval)
 	}
+	return nil
+}
+
+// resolveCases resolves cases from the provided options.
+// Exactly one of Cases, Dataset, or DatasetID must be provided (validated by validateCasesSource).
+func resolveCases[I, R any](opts Opts[I, R], projectID string) (Cases[I, R], error) {
 
 	// Resolve cases
 	if opts.Cases != nil {

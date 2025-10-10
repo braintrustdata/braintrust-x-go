@@ -11,6 +11,7 @@ import (
 
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
+	"go.opentelemetry.io/otel"
 
 	"github.com/braintrustdata/braintrust-x-go/braintrust"
 	"github.com/braintrustdata/braintrust-x-go/braintrust/trace"
@@ -27,6 +28,11 @@ func main() {
 	}
 	defer teardown()
 
+	// Login is only required to view links.
+	if _, err = braintrust.Login(); err != nil {
+		log.Fatal(err)
+	}
+
 	// The key insight: OpenAI client works with OpenRouter, but you need to:
 	// 1. Use the OpenRouter API key directly (it handles Bearer prefix automatically)
 	// 2. Set the correct base URL
@@ -42,6 +48,13 @@ func main() {
 		option.WithHeader("X-Title", "Braintrust Go SDK Example"),
 	)
 
+	// Get a tracer instance
+	tracer := otel.Tracer("openrouter-example")
+
+	// Create a parent span to wrap the OpenRouter call
+	ctx, span := tracer.Start(context.Background(), "ask-question")
+	defer span.End()
+
 	params := openai.ChatCompletionNewParams{
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.SystemMessage("You are a helpful assistant."),
@@ -50,7 +63,7 @@ func main() {
 		Model: "openai/gpt-3.5-turbo", // OpenRouter model format
 	}
 
-	resp, err := client.Chat.Completions.New(context.Background(), params)
+	resp, err := client.Chat.Completions.New(ctx, params)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -60,6 +73,8 @@ func main() {
 	}
 
 	fmt.Printf("Response: %s\n", resp.Choices[0].Message.Content)
-	fmt.Println("\n✅ OpenRouter example completed successfully!")
-	fmt.Println("Check your Braintrust dashboard to view the trace.")
+
+	// Get a link to the span in Braintrust
+	link, _ := trace.Permalink(span)
+	fmt.Printf("View trace: %s\n", link)
 }
