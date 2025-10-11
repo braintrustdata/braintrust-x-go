@@ -117,6 +117,14 @@ func (gt *generateContentTracer) StartSpan(ctx context.Context, t time.Time, req
 		return ctx, span, err
 	}
 
+	// Set span attributes to mark this as an LLM span
+	spanAttrs := map[string]string{
+		"type": "llm",
+	}
+	if err := internal.SetJSONAttr(span, "braintrust.span_attributes", spanAttrs); err != nil {
+		return ctx, span, err
+	}
+
 	return ctx, span, nil
 }
 
