@@ -200,12 +200,43 @@ func (a *AnthropicBot) extendedThinking(ctx context.Context) error {
 	return nil
 }
 
+// vision demonstrates Claude's vision capability with images
+func (a *AnthropicBot) vision(ctx context.Context) error {
+	ctx, span := tracer.Start(ctx, "vision")
+	defer span.End()
+
+	fmt.Println("\n=== Example 5: Vision ===")
+
+	// 100x100 red square PNG (base64 encoded)
+	redSquare := "iVBORw0KGgoAAAANSUhEUgAAAGQAAABkCAIAAAD/gAIDAAABFUlEQVR4nO3OUQkAIABEsetfWiv4Nx4IC7Cd7XvkByF+EOIHIX4Q4gchfhDiByF+EOIHIX4Q4gchfhDiByF+EOIHIX4Q4gchfhDiByF+EOIHIX4Q4gchfhDiByF+EOIHIX4Q4gchfhDiByF+EOIHIX4Q4gchfhDiByF+EOIHIX4Q4gchfhDiByF+EOIHIX4Q4gchfhDiByF+EOIHIX4Q4gchfhDiByF+EOIHIX4Q4gchfhDiByF+EOIHIX4Q4gchfhDiByF+EOIHIX4Q4gchfhDiByF+EOIHIX4Q4gchfhDiByF+EOIHIX4Q4gchfhDiByF+EOIHIX4Q4gchfhDiByF+EOIHIX4Q4gchfhDiByF+EOIHIReeLesrH9s1agAAAABJRU5ErkJggg=="
+
+	msg, err := a.client.Messages.New(ctx, anthropic.MessageNewParams{
+		Model:     anthropic.ModelClaude3_7SonnetLatest,
+		MaxTokens: 1024,
+		Messages: []anthropic.MessageParam{
+			anthropic.NewUserMessage(
+				anthropic.NewTextBlock("What color is this image?"),
+				anthropic.NewImageBlockBase64("image/png", redSquare),
+			),
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("vision error: %v", err)
+	}
+
+	fmt.Printf("  %s\n", msg.Content[0].Text)
+	return nil
+}
+
 func main() {
 	fmt.Println("Braintrust Anthropic Tracing Examples")
 	fmt.Println("======================================")
 
 	// Initialize braintrust tracing with a specific project
-	teardown, err := trace.Quickstart(braintrust.WithDefaultProject("go-sdk-internal-examples"))
+	teardown, err := trace.Quickstart(
+		braintrust.WithDefaultProject("go-sdk-internal-examples"),
+		braintrust.WithBlockingLogin(true),
+	)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -228,7 +259,7 @@ func main() {
 	// ======================
 	fmt.Println("\nAnthropic Messages Examples")
 	fmt.Println("===========================")
-	fmt.Println("Demonstrating: system prompts, tools, parameters, streaming & non-streaming")
+	fmt.Println("Demonstrating: system prompts, tools, parameters, streaming, vision & non-streaming")
 
 	bot := newAnthropicBot(client)
 
@@ -248,7 +279,18 @@ func main() {
 		log.Printf("Error: %v", err)
 	}
 
+	if err := bot.vision(ctx); err != nil {
+		log.Printf("Error: %v", err)
+	}
+
 	fmt.Println("\n=== Tracing Complete ===")
 	fmt.Println("All examples completed successfully!")
-	fmt.Println("Check your Braintrust dashboard to view the traces.")
+
+	// Print permalink to the top-level span
+	link, err := trace.Permalink(rootSpan)
+	if err != nil {
+		fmt.Printf("Error generating permalink: %v\n", err)
+	} else {
+		fmt.Printf("View trace: %s\n", link)
+	}
 }

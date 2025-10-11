@@ -13,6 +13,7 @@ import (
 	"github.com/openai/openai-go/v2/option"
 	"github.com/openai/openai-go/v2/responses"
 	"github.com/openai/openai-go/v2/shared"
+	"go.opentelemetry.io/otel"
 
 	"github.com/braintrustdata/braintrust-x-go/braintrust"
 	"github.com/braintrustdata/braintrust-x-go/braintrust/trace"
@@ -20,14 +21,21 @@ import (
 )
 
 func main() {
-	teardown, err := trace.Quickstart(braintrust.WithDefaultProject("go-sdk-internal-examples"))
+	teardown, err := trace.Quickstart(
+		braintrust.WithDefaultProject("go-sdk-internal-examples"),
+		braintrust.WithBlockingLogin(true),
+	)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer teardown()
 
 	client := openai.NewClient(option.WithMiddleware(traceopenai.Middleware))
-	ctx := context.Background()
+
+	// Create a root span to wrap all examples
+	tracer := otel.Tracer("openai-v2-examples")
+	ctx, rootSpan := tracer.Start(context.Background(), "openai-v2-examples")
+	defer rootSpan.End()
 
 	// Responses API with reasoning (for reasoning models like GPT-5)
 	fmt.Println("Responses API with reasoning...")
@@ -228,5 +236,33 @@ func main() {
 	}
 	fmt.Printf("✓ Models.List succeeded: %d models\n", len(models.Data))
 
+	// Vision - image with text
+	fmt.Println("Vision with image...")
+	// 100x100 red square PNG (base64 encoded)
+	redSquare := "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGQAAABkCAIAAAD/gAIDAAABFUlEQVR4nO3OUQkAIABEsetfWiv4Nx4IC7Cd7XvkByF+EOIHIX4Q4gchfhDiByF+EOIHIX4Q4gchfhDiByF+EOIHIX4Q4gchfhDiByF+EOIHIX4Q4gchfhDiByF+EOIHIX4Q4gchfhDiByF+EOIHIX4Q4gchfhDiByF+EOIHIX4Q4gchfhDiByF+EOIHIX4Q4gchfhDiByF+EOIHIX4Q4gchfhDiByF+EOIHIX4Q4gchfhDiByF+EOIHIX4Q4gchfhDiByF+EOIHIX4Q4gchfhDiByF+EOIHIX4Q4gchfhDiByF+EOIHIX4Q4gchfhDiByF+EOIHIX4Q4gchfhDiByF+EOIHIX4Q4gchfhDiByF+EOIHIReeLesrH9s1agAAAABJRU5ErkJggg=="
+	visionResp, err := client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+		Messages: []openai.ChatCompletionMessageParamUnion{
+			openai.UserMessage([]openai.ChatCompletionContentPartUnionParam{
+				openai.TextContentPart("What color is this image?"),
+				openai.ImageContentPart(openai.ChatCompletionContentPartImageImageURLParam{
+					URL: redSquare,
+				}),
+			}),
+		},
+		Model: openai.ChatModelGPT4o,
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("✓ %s\n", visionResp.Choices[0].Message.Content)
+
 	fmt.Println("\n✅ All OpenAI features tested!")
+
+	// Print permalink to the top-level span
+	link, err := trace.Permalink(rootSpan)
+	if err != nil {
+		fmt.Printf("Error generating permalink: %v\n", err)
+	} else {
+		fmt.Printf("View trace: %s\n", link)
+	}
 }

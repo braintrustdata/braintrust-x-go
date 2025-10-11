@@ -6,11 +6,13 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 
 	"go.opentelemetry.io/otel"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
+	"github.com/braintrustdata/braintrust-x-go/braintrust"
 	"github.com/braintrustdata/braintrust-x-go/braintrust/trace"
 )
 
@@ -25,13 +27,23 @@ func main() {
 
 	otel.SetTracerProvider(tp)
 
-	// Enable Braintrust tracing
-	err := trace.Enable(tp)
+	// Enable Braintrust tracing with blocking login to ensure permalinks work
+	err := trace.Enable(tp, braintrust.WithBlockingLogin(true))
 	if err != nil {
 		log.Fatalf("❌ Failed to enable Braintrust tracing: %v", err)
 	}
 
+	log.Println("✅ Braintrust tracing enabled successfully")
+
 	tracer := otel.Tracer("otel-enable-demo")
 	_, span := tracer.Start(context.Background(), "demo-operation")
 	span.End()
+
+	// Print permalink so user can view the trace in the UI
+	link, err := trace.Permalink(span)
+	if err != nil {
+		log.Printf("⚠️  Could not generate permalink: %v", err)
+	} else {
+		fmt.Printf("\n🔗 View trace: %s\n", link)
+	}
 }
