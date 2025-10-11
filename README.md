@@ -10,7 +10,7 @@ This library provides tools for **evaluating** and **tracing** AI applications i
 
 - **Evaluate** your AI models with custom test cases and scoring functions
 - **Trace** LLM calls and monitor AI application performance with OpenTelemetry
-- **Integrate** seamlessly with OpenAI, Anthropic, and other LLM providers
+- **Integrate** seamlessly with OpenAI, Anthropic, Google Gemini, and other LLM providers
 
 This SDK is currently in BETA status and APIs may change.
 
@@ -141,10 +141,49 @@ func main() {
 }
 ```
 
+### Google Gemini Tracing
+
+```go
+package main
+
+import (
+    "context"
+    "log"
+    "os"
+
+    "google.golang.org/genai"
+
+    "github.com/braintrustdata/braintrust-x-go/braintrust/trace"
+    "github.com/braintrustdata/braintrust-x-go/braintrust/trace/tracegenai"
+)
+
+func main() {
+    // Start tracing
+    teardown, err := trace.Quickstart()
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer teardown()
+
+    // Create Gemini client with tracing
+    client, err := genai.NewClient(context.Background(), &genai.ClientConfig{
+        HTTPClient: tracegenai.Client(),
+        APIKey:     os.Getenv("GOOGLE_API_KEY"),
+        Backend:    genai.BackendGeminiAPI,
+    })
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    // Your Gemini API calls will now be automatically traced
+    _ = client // Use the client for your API calls
+}
+```
+
 ## Features
 
 - **Evaluations**: Run systematic evaluations of your AI systems with custom scoring functions
-- **Tracing**: Automatic instrumentation for OpenAI and Anthropic API calls
+- **Tracing**: Automatic instrumentation for OpenAI, Anthropic, and Google Gemini API calls
 - **Datasets**: Manage and version your evaluation datasets
 - **Experiments**: Track different versions and configurations of your AI systems
 - **Observability**: Monitor your AI applications in production
@@ -156,6 +195,7 @@ Check out the [`examples/`](./examples/) directory for complete working examples
 - [evals](./examples/evals/evals.go) - Create and run evaluations with custom test cases and scoring functions
 - [openai](./examples/openai/main.go) - Automatically trace OpenAI API calls
 - [anthropic](./examples/anthropic/main.go) - Automatically trace Anthropic API calls
+- [genai](./examples/genai/main.go) - Automatically trace Google Gemini API calls
 - [datasets](./examples/datasets/main.go) - Run evaluations using datasets stored in Braintrust
 
 ## Documentation
