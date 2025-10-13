@@ -18,11 +18,13 @@ import (
 type generateContentTracer struct {
 	streaming bool
 	metadata  map[string]any
+	model     string
 }
 
-func newGenerateContentTracer() *generateContentTracer {
+func newGenerateContentTracer(model string) *generateContentTracer {
 	return &generateContentTracer{
 		streaming: false,
+		model:     model,
 		metadata: map[string]any{
 			"provider": "gemini",
 		},
@@ -76,40 +78,29 @@ func (gt *generateContentTracer) StartSpan(ctx context.Context, t time.Time, req
 		}
 	}
 
-	// Parse input contents into messages format
-	if contents, ok := raw["contents"].([]any); ok {
-		var msgs []any
+	// Log the raw request format
+	inputLog := make(map[string]any)
 
-		// Prepend system instruction if present
-		if systemInst, ok := raw["systemInstruction"].(map[string]any); ok {
-			if parts, ok := systemInst["parts"].([]any); ok {
-				msgs = append(msgs, map[string]any{
-					"role":    "system",
-					"content": parts,
-				})
-			}
-		}
+	// Add model from URL path (or from body if present)
+	if model, ok := raw["model"].(string); ok {
+		inputLog["model"] = model
+	} else if gt.model != "" {
+		inputLog["model"] = gt.model
+	}
 
-		// Add content messages
-		for _, content := range contents {
-			if contentMap, ok := content.(map[string]any); ok {
-				role := "user" // default role
-				if r, ok := contentMap["role"].(string); ok {
-					role = r
-				}
+	// Add contents as-is
+	if contents, ok := raw["contents"]; ok {
+		inputLog["contents"] = contents
+	}
 
-				msg := map[string]any{
-					"role":    role,
-					"content": contentMap["parts"],
-				}
-				msgs = append(msgs, msg)
-			}
-		}
+	// Add generationConfig as config
+	if genConfig, ok := raw["generationConfig"]; ok {
+		inputLog["config"] = genConfig
+	}
 
-		if len(msgs) > 0 {
-			if err := internal.SetJSONAttr(span, "braintrust.input_json", msgs); err != nil {
-				return ctx, span, err
-			}
+	if len(inputLog) > 0 {
+		if err := internal.SetJSONAttr(span, "braintrust.input_json", inputLog); err != nil {
+			return ctx, span, err
 		}
 	}
 
@@ -155,38 +146,9 @@ func (gt *generateContentTracer) handleResponse(span trace.Span, raw map[string]
 		return err
 	}
 
-	// Parse candidates into output format
-	if candidates, ok := raw["candidates"].([]any); ok && len(candidates) > 0 {
-		var outputMsgs []any
-
-		for _, candidate := range candidates {
-			if candMap, ok := candidate.(map[string]any); ok {
-				if content, ok := candMap["content"].(map[string]any); ok {
-					role := "assistant" // default
-					if r, ok := content["role"].(string); ok {
-						role = r
-					}
-
-					msg := map[string]any{
-						"role":    role,
-						"content": content["parts"],
-					}
-
-					// Add finish reason if present
-					if finishReason, ok := candMap["finishReason"].(string); ok {
-						msg["finishReason"] = finishReason
-					}
-
-					outputMsgs = append(outputMsgs, msg)
-				}
-			}
-		}
-
-		if len(outputMsgs) > 0 {
-			if err := internal.SetJSONAttr(span, "braintrust.output_json", outputMsgs); err != nil {
-				return err
-			}
-		}
+	// Log the raw response format
+	if err := internal.SetJSONAttr(span, "braintrust.output_json", raw); err != nil {
+		return err
 	}
 
 	// Parse usage metadata (token counts)

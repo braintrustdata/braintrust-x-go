@@ -90,7 +90,8 @@ func genaiRouter(path string) internal.MiddlewareTracer {
 	// Gemini API: /v1beta/models/{model}/generateContent
 	// Vertex AI: /v1/projects/{project}/locations/{location}/publishers/google/models/{model}:generateContent
 	if containsGenerateContent(path) {
-		return newGenerateContentTracer()
+		model := extractModelFromPath(path)
+		return newGenerateContentTracer(model)
 	}
 	return nil
 }
@@ -99,4 +100,24 @@ func genaiRouter(path string) internal.MiddlewareTracer {
 func containsGenerateContent(path string) bool {
 	return strings.Contains(path, "/generateContent") ||
 		strings.Contains(path, ":generateContent")
+}
+
+// extractModelFromPath extracts the model name from the URL path
+// Gemini API: /v1beta/models/{model}/generateContent or /v1beta/models/{model}:generateContent
+// Vertex AI: /v1/projects/{project}/locations/{location}/publishers/google/models/{model}:generateContent
+func extractModelFromPath(path string) string {
+	// Split by /models/ to get the part after it
+	parts := strings.Split(path, "/models/")
+	if len(parts) < 2 {
+		return ""
+	}
+
+	// Get the model part (after /models/)
+	modelPart := parts[1]
+
+	// Remove :generateContent or /generateContent suffix
+	modelPart = strings.TrimSuffix(modelPart, ":generateContent")
+	modelPart = strings.TrimSuffix(modelPart, "/generateContent")
+
+	return modelPart
 }
