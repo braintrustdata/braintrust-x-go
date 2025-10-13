@@ -35,6 +35,8 @@ examples/evals/evals
 examples/kitchen-sink/kitchen-sink
 examples/struct-dataset-eval/struct-dataset-eval
 examples/traceopenai/traceopenai
+examples/scorers/scorers
+examples/prompts/prompts
 
 # Example binaries (if built in root directory)
 /dataset-eval
@@ -43,6 +45,7 @@ examples/traceopenai/traceopenai
 /struct-dataset-eval
 /traceopenai
 /scorers
+/prompts
 
 **/.claude/settings.local.json
 *.DS_Store
