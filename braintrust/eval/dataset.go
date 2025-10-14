@@ -18,7 +18,7 @@ func GetDatasetByID[I, R any](datasetID string) (Cases[I, R], error) {
 	}
 
 	return &datasetIterator[I, R]{
-		dataset: api.NewDataset(datasetID),
+		dataset: api.NewDataset(datasetID, 0), // 0 = no limit
 	}, nil
 }
 
@@ -27,7 +27,7 @@ func GetDataset[I, R any](projectName, datasetName string) (Cases[I, R], error) 
 	opts := DatasetOpts{
 		ProjectName: projectName,
 		DatasetName: datasetName,
-		Limit:       1,
+		Limit:       0, // No limit on rows
 	}
 	return QueryDataset[I, R](opts)
 }
@@ -45,7 +45,7 @@ func QueryDataset[I, R any](opts DatasetOpts) (Cases[I, R], error) {
 
 	// Return Cases for the first (most recent) dataset
 	return &datasetIterator[I, R]{
-		dataset: api.NewDataset(datasets[0].ID),
+		dataset: api.NewDataset(datasets[0].ID, opts.Limit),
 	}, nil
 }
 
@@ -61,7 +61,7 @@ type DatasetOpts struct {
 
 	// Query modifiers
 	Version string // Specific dataset version
-	Limit   int    // Max results (default: no limit)
+	Limit   int    // Max rows to return from the dataset (0 = unlimited)
 }
 
 // datasetInfo represents a Braintrust dataset.
@@ -105,10 +105,8 @@ func queryDatasets(opts DatasetOpts) ([]datasetInfo, error) {
 		params.Add("version", opts.Version)
 	}
 
-	// Add limit if specified
-	if opts.Limit > 0 {
-		params.Add("limit", fmt.Sprintf("%d", opts.Limit))
-	}
+	// Always query for just 1 dataset (we only use the first/most recent one)
+	params.Add("limit", "1")
 
 	fullURL := baseURL + "?" + params.Encode()
 

@@ -232,26 +232,36 @@ func DeleteDataset(datasetID string) error {
 
 // Dataset handles fetching raw DatasetEvents from the Braintrust API with pagination
 type Dataset struct {
-	DatasetID string
-	Events    []json.RawMessage
-	Index     int
-	Cursor    string
-	Exhausted bool
+	DatasetID   string
+	Events      []json.RawMessage
+	Index       int
+	Cursor      string
+	Exhausted   bool
+	MaxRecords  int // Maximum number of records to fetch (0 = unlimited)
+	RecordCount int // Number of records fetched so far
 }
 
 // NewDataset creates a new Dataset that fetches data from the given dataset ID
-func NewDataset(datasetID string) *Dataset {
+// maxRecords limits the total number of records returned (0 = unlimited)
+func NewDataset(datasetID string, maxRecords int) *Dataset {
 	return &Dataset{
-		DatasetID: datasetID,
-		Events:    nil,
-		Index:     0,
-		Cursor:    "",
-		Exhausted: false,
+		DatasetID:   datasetID,
+		Events:      nil,
+		Index:       0,
+		Cursor:      "",
+		Exhausted:   false,
+		MaxRecords:  maxRecords,
+		RecordCount: 0,
 	}
 }
 
 // Next returns the next DatasetEvent, fetching more data as needed
 func (d *Dataset) Next() (DatasetEvent, error) {
+	// Check if we've reached the max records limit
+	if d.MaxRecords > 0 && d.RecordCount >= d.MaxRecords {
+		return DatasetEvent{}, io.EOF
+	}
+
 	// If we've consumed all events in the current batch and haven't exhausted the dataset, fetch more
 	if d.Index >= len(d.Events) && !d.Exhausted {
 		err := d.fetchNextBatch()
@@ -273,13 +283,28 @@ func (d *Dataset) Next() (DatasetEvent, error) {
 	}
 
 	d.Index++
+	d.RecordCount++
 	return event, nil
 }
 
 // fetchNextBatch retrieves the next batch of events from the Braintrust API
 func (d *Dataset) fetchNextBatch() error {
+	batchSize := 100 // Default batch size
+
+	// If we have a max records limit, adjust batch size to only fetch what we need
+	if d.MaxRecords > 0 {
+		remaining := d.MaxRecords - d.RecordCount
+		if remaining <= 0 {
+			d.Exhausted = true
+			return nil
+		}
+		if remaining < batchSize {
+			batchSize = remaining
+		}
+	}
+
 	req := DatasetFetchRequest{
-		Limit:  100, // Fetch 100 records at a time
+		Limit:  batchSize,
 		Cursor: d.Cursor,
 	}
 
@@ -302,6 +327,11 @@ func (d *Dataset) fetchNextBatch() error {
 
 // NextAs unmarshals the next event into the given struct type
 func (d *Dataset) NextAs(target interface{}) error {
+	// Check if we've reached the max records limit
+	if d.MaxRecords > 0 && d.RecordCount >= d.MaxRecords {
+		return io.EOF
+	}
+
 	// If we've consumed all events in the current batch and haven't exhausted the dataset, fetch more
 	if d.Index >= len(d.Events) && !d.Exhausted {
 		err := d.fetchNextBatch()
@@ -322,5 +352,6 @@ func (d *Dataset) NextAs(target interface{}) error {
 	}
 
 	d.Index++
+	d.RecordCount++
 	return nil
 }

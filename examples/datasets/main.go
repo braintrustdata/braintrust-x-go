@@ -80,16 +80,7 @@ func initializeDataset(projectID string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to insert events: %v", err)
 	}
-	fmt.Printf("📝 Inserted %d events into dataset\n", len(sampleEvents))
-
-	// Verify the data was inserted by fetching it back
-	fmt.Println("\n🔍 Querying dataset to verify data...")
-	fetchResp, err := api.FetchDatasetEvents(datasetInfo.ID, api.DatasetFetchRequest{Limit: 10})
-	if err != nil {
-		log.Printf("Warning: Failed to fetch events for verification: %v", err)
-	} else {
-		fmt.Printf("📊 Found %d events in dataset\n", len(fetchResp.Events))
-	}
+	fmt.Printf("📝 Inserted %d events\n", len(sampleEvents))
 
 	return datasetInfo.ID, nil
 }
@@ -115,11 +106,12 @@ func main() {
 		log.Fatalf("Failed to initialize dataset: %v", err)
 	}
 
-	fmt.Println("\n🚀 Running evaluation with struct-based dataset...")
+	fmt.Println("\n🚀 Running evaluation (limiting to 2 of 3 rows)...")
 	_, err = eval.Run(context.Background(), eval.Opts[QuestionInput, AnswerExpected]{
-		ProjectID:  project.ID,
-		Experiment: "Capitalization Task Demo",
-		DatasetID:  datasetID, // Use DatasetID directly - eval.Run handles fetching
+		ProjectID:    project.ID,
+		Experiment:   "Capitalization Task Demo",
+		DatasetID:    datasetID, // Use DatasetID directly - eval.Run handles fetching
+		DatasetLimit: 2,         // Only evaluate the first 2 rows
 		Task: func(ctx context.Context, input QuestionInput) (AnswerExpected, error) {
 			// Simple example: capitalize the first letter of each word
 			fmt.Printf("🔄 Processing text: '%s' (context: %s, language: %s)\n",
@@ -150,8 +142,4 @@ func main() {
 	if err != nil {
 		log.Fatalf("Evaluation failed: %v", err)
 	}
-
-	fmt.Println("\n✅ Evaluation completed successfully!")
-	fmt.Printf("🏷️  Project ID: %s\n", project.ID)
-	fmt.Printf("📊 Dataset ID: %s\n", datasetID)
 }
