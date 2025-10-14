@@ -70,8 +70,12 @@ func QueryScorer[I, R any](opts Opts) (eval.Scorer[I, R], error) {
 
 // QueryScorers provides flexible querying for multiple scorers (user controls limit).
 func QueryScorers[I, R any](opts Opts) ([]eval.Scorer[I, R], error) {
+	// FIXME: Accept context.Context as first parameter to allow cancellation
+	// This would be a breaking change, so using context.Background() for now
+	ctx := context.Background()
+
 	// Query all matching functions
-	functions, err := queryFunctions(opts)
+	functions, err := queryFunctions(ctx, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query functions: %w", err)
 	}
@@ -119,7 +123,7 @@ type Function struct {
 }
 
 // queryFunctions queries the Braintrust API for functions matching the options
-func queryFunctions(opts Opts) ([]Function, error) {
+func queryFunctions(ctx context.Context, opts Opts) ([]Function, error) {
 	// If function ID is provided directly, create a mock function entry
 	if opts.FunctionID != "" {
 		return []Function{{
@@ -165,15 +169,14 @@ func queryFunctions(opts Opts) ([]Function, error) {
 
 	fullURL := baseURL + "?" + params.Encode()
 
-	req, err := http.NewRequest("GET", fullURL, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", fullURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	req.Header.Set("Authorization", "Bearer "+config.APIKey)
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := defaultHTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to make request: %w", err)
 	}
@@ -238,8 +241,7 @@ func createFunction(projectName, name, slug, description string, functionData ma
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+config.APIKey)
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := defaultHTTPClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to make request: %w", err)
 	}
@@ -304,8 +306,7 @@ func createFunctionWithPromptData(projectName, name, slug, description string, p
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+config.APIKey)
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := defaultHTTPClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to make request: %w", err)
 	}
@@ -370,8 +371,7 @@ func createPrompt(projectName, name, slug, description string, promptData map[st
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+config.APIKey)
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := defaultHTTPClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to make request: %w", err)
 	}
@@ -397,12 +397,12 @@ type functionScorer[I, R any] struct {
 	client     *http.Client
 }
 
-// newFunctionScorer creates a new function scorer with a default HTTP client
+// newFunctionScorer creates a new function scorer using the shared HTTP client
 func newFunctionScorer[I, R any](name, functionID string) *functionScorer[I, R] {
 	return &functionScorer[I, R]{
 		name:       name,
 		functionID: functionID,
-		client:     &http.Client{},
+		client:     defaultHTTPClient,
 	}
 }
 

@@ -96,7 +96,7 @@ func invoke(ctx context.Context, opts invokeOptions) (any, error) {
 	functionID := opts.FunctionID
 	if functionID == "" {
 		// Query for function by project+slug
-		functions, err := queryFunctions(Opts{
+		functions, err := queryFunctions(ctx, Opts{
 			Project:     opts.Project,
 			ProjectID:   opts.ProjectID,
 			Slug:        opts.Slug,

@@ -334,6 +334,78 @@ func TestGetTaskWithCustomStringType(t *testing.T) {
 	})
 }
 
+func TestGetTaskWithCustomPrimitiveTypes(t *testing.T) {
+	assert := assert.New(t)
+
+	// Define custom primitive types (type aliases)
+	type CustomInt int
+	type CustomFloat float64
+
+	t.Run("custom int type output", func(t *testing.T) {
+		functionSlug := uniqueFuncName("test-prompt-custom-int")
+		promptData := map[string]any{
+			"prompt": map[string]any{
+				"type": "chat",
+				"messages": []map[string]any{
+					{"role": "user", "content": "Return ONLY the number {{input}} with no other text"},
+				},
+			},
+			"options": map[string]any{
+				"model":  "gpt-4o-mini",
+				"params": map[string]any{"use_cache": true, "temperature": 0},
+			},
+		}
+
+		functionID, err := createPrompt(testProjectName, "Test Custom Int Type", functionSlug, "Returns a custom int", promptData)
+		require.NoError(t, err)
+		require.NotEmpty(t, functionID)
+
+		// Create a task that returns a custom int type
+		task := GetTask[string, CustomInt](Opts{
+			Project: testProjectName,
+			Slug:    functionSlug,
+		})
+
+		result, err := task(context.Background(), "42")
+		assert.NoError(err, "Should handle custom int type correctly")
+		assert.Equal(CustomInt(42), result)
+		assert.IsType(CustomInt(0), result, "Result should be of CustomInt type")
+		t.Logf("Custom int result: %d", result)
+	})
+
+	t.Run("custom float type output", func(t *testing.T) {
+		functionSlug := uniqueFuncName("test-prompt-custom-float")
+		promptData := map[string]any{
+			"prompt": map[string]any{
+				"type": "chat",
+				"messages": []map[string]any{
+					{"role": "user", "content": "Return ONLY the decimal number {{input}} with no other text"},
+				},
+			},
+			"options": map[string]any{
+				"model":  "gpt-4o-mini",
+				"params": map[string]any{"use_cache": true, "temperature": 0},
+			},
+		}
+
+		functionID, err := createPrompt(testProjectName, "Test Custom Float Type", functionSlug, "Returns a custom float", promptData)
+		require.NoError(t, err)
+		require.NotEmpty(t, functionID)
+
+		// Create a task that returns a custom float type
+		task := GetTask[string, CustomFloat](Opts{
+			Project: testProjectName,
+			Slug:    functionSlug,
+		})
+
+		result, err := task(context.Background(), "3.14")
+		assert.NoError(err, "Should handle custom float type correctly")
+		assert.InDelta(3.14, float64(result), 0.01)
+		assert.IsType(CustomFloat(0), result, "Result should be of CustomFloat type")
+		t.Logf("Custom float result: %f", result)
+	})
+}
+
 func TestGetTaskWithComplexType(t *testing.T) {
 	assert := assert.New(t)
 	functionSlug := uniqueFuncName("test-prompt-struct")
