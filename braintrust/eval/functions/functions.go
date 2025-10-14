@@ -68,7 +68,7 @@ func QueryScorer[I, R any](opts Opts) (eval.Scorer[I, R], error) {
 	return scorers[0], nil
 }
 
-// QueryScorers provides flexible querying for multiple scorers (user controls limit).
+// QueryScorers returns the scorers that match the given options.
 func QueryScorers[I, R any](opts Opts) ([]eval.Scorer[I, R], error) {
 	// FIXME: Accept context.Context as first parameter to allow cancellation
 	// This would be a breaking change, so using context.Background() for now
