@@ -1433,3 +1433,62 @@ func TestResult_String(t *testing.T) {
 	// Verify duration shows tenths of seconds (0.1s for 50ms)
 	assert.Contains(str2, "Duration: 0.1s", "String output should show duration with tenths of seconds")
 }
+
+func TestQueryDataset_WithLimit(t *testing.T) {
+	// Test that the Limit parameter correctly limits the number of records returned from a dataset
+	require := require.New(t)
+	assert := assert.New(t)
+
+	_, _ = oteltest.Setup(t)
+
+	// Create a project
+	projectName := "go-sdk-dataset-tests"
+	project, err := api.RegisterProject(projectName)
+	require.NoError(err)
+
+	// Create a dataset with unique name
+	datasetName := internal.RandomName(t)
+	datasetInfo, err := api.CreateDataset(api.DatasetRequest{
+		ProjectID:   project.ID,
+		Name:        datasetName,
+		Description: "Test dataset for Limit parameter",
+	})
+	require.NoError(err)
+	defer func() {
+		_ = api.DeleteDataset(datasetInfo.ID)
+	}()
+
+	// Insert 10 records into the dataset
+	events := []api.DatasetEvent{}
+	for i := 1; i <= 10; i++ {
+		events = append(events, api.DatasetEvent{
+			Input:    i,
+			Expected: i * 2,
+		})
+	}
+	err = api.InsertDatasetEvents(datasetInfo.ID, events)
+	require.NoError(err)
+
+	// Query the dataset with a limit of 3
+	opts := DatasetOpts{
+		ProjectID:   project.ID,
+		DatasetName: datasetName,
+		Limit:       3, // We want only 3 records
+	}
+	cases, err := QueryDataset[int, int](opts)
+	require.NoError(err)
+
+	// Count how many records are returned
+	recordCount := 0
+	for {
+		_, err := cases.Next()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(err)
+		recordCount++
+	}
+
+	// Assert that only 3 records were returned
+	assert.Equal(3, recordCount, "Expected 3 records, but got %d", recordCount)
+}

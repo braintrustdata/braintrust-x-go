@@ -368,11 +368,16 @@ func (r *Result) Error() error {
 func (r *Result) String() string {
 	link, linkErr := r.Permalink()
 
+	projectDisplay := r.key.ProjectName
+	if projectDisplay == "" {
+		projectDisplay = r.key.ProjectID
+	}
+
 	lines := []string{
 		"",
 		fmt.Sprintf("=== Experiment: %s ===", r.key.Name),
 		fmt.Sprintf("Name: %s", r.key.Name),
-		fmt.Sprintf("Project: %s", r.key.ProjectName),
+		fmt.Sprintf("Project: %s", projectDisplay),
 		fmt.Sprintf("Duration: %.1fs", r.elapsed.Seconds()),
 		fmt.Sprintf("Link: %s", link),
 	}
@@ -407,6 +412,7 @@ type Opts[I, R any] struct {
 	Dataset        string
 	DatasetID      string
 	DatasetVersion string
+	DatasetLimit   int // Max records to fetch from dataset (0 = unlimited)
 
 	// Options:
 	Parallelism int  // Number of goroutines (default: 1)
@@ -716,30 +722,19 @@ func resolveCases[I, R any](opts Opts[I, R], projectID string) (Cases[I, R], err
 		return opts.Cases, nil
 	}
 
-	if opts.DatasetID != "" {
-		cases, err := GetDatasetByID[I, R](opts.DatasetID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get dataset by ID %q: %w", opts.DatasetID, err)
-		}
-		return cases, nil
+	datasetOpts := DatasetOpts{
+		ProjectID:   projectID,
+		DatasetID:   opts.DatasetID,
+		DatasetName: opts.Dataset,
+		Version:     opts.DatasetVersion,
+		Limit:       opts.DatasetLimit,
 	}
 
-	if opts.Dataset != "" {
-		datasetOpts := DatasetOpts{
-			ProjectID:   projectID,
-			DatasetName: opts.Dataset,
-			Version:     opts.DatasetVersion,
-			Limit:       1, // Get most recent dataset
-		}
-		cases, err := QueryDataset[I, R](datasetOpts)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get dataset %q: %w", opts.Dataset, err)
-		}
-		return cases, nil
+	cases, err := QueryDataset[I, R](datasetOpts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dataset: %w", err)
 	}
-
-	// Should never reach here due to validation above
-	return nil, fmt.Errorf("%w: no cases source provided", ErrEval)
+	return cases, nil
 }
 
 // nextCase represents the result of a call to Cases.Next(). It can contain a
