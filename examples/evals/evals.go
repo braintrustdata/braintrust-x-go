@@ -71,6 +71,7 @@ func main() {
 				return eval.S(v), nil
 			}),
 		},
+		Parallelism: 5,
 	})
 	if err != nil {
 		log.Fatalf("Error running eval: %v", err)

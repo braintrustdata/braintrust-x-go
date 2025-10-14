@@ -31,6 +31,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 	"time"
 
@@ -124,11 +125,8 @@ func (e *Eval[I, R]) setParallelism(goroutines int) {
 func (e *Eval[I, R]) Permalink() (string, error) {
 	config := braintrust.GetConfig()
 
-	if e.key.ProjectName == "" {
-		return "", fmt.Errorf("project name not set in eval key")
-	}
-	if e.key.Name == "" {
-		return "", fmt.Errorf("experiment name not set in eval key")
+	if e.key.ExperimentID == "" {
+		return "", fmt.Errorf("experiment ID not set in eval key")
 	}
 
 	// Get app URL and org name - check config first, then cached auth state
@@ -154,12 +152,11 @@ func (e *Eval[I, R]) Permalink() (string, error) {
 		return "", fmt.Errorf("org name not available")
 	}
 
-	// Format: {app_url}/app/{org}/p/{project}/experiments/{experiment_name}
-	link := fmt.Sprintf("%s/app/%s/p/%s/experiments/%s",
+	// Format: {app_url}/app/{org}/object?object_type=experiment&object_id={experiment_id}
+	link := fmt.Sprintf("%s/app/%s/object?object_type=experiment&object_id=%s",
 		appURL,
 		orgName,
-		e.key.ProjectName,
-		e.key.Name,
+		e.key.ExperimentID,
 	)
 
 	return link, nil
@@ -369,30 +366,29 @@ func (r *Result) Error() error {
 //
 // The format it prints will change and shouldn't be relied on for programmatic use.
 func (r *Result) String() string {
-	var b []byte
-	b = append(b, "\n=== Experiment: "...)
-	b = append(b, r.key.Name...)
-	b = append(b, " ===\n"...)
+	link, linkErr := r.Permalink()
 
-	// Duration
-	b = append(b, fmt.Sprintf("Duration: %.1fs\n", r.elapsed.Seconds())...)
+	lines := []string{
+		"",
+		fmt.Sprintf("=== Experiment: %s ===", r.key.Name),
+		fmt.Sprintf("Name: %s", r.key.Name),
+		fmt.Sprintf("Project: %s", r.key.ProjectName),
+		fmt.Sprintf("Duration: %.1fs", r.elapsed.Seconds()),
+		fmt.Sprintf("Link: %s", link),
+	}
+	if linkErr != nil {
+		log.Warnf("Failed to generate permalink: %v", linkErr)
+	}
 
 	// Error details if present
 	if r.err != nil {
-		b = append(b, "\nErrors:\n"...)
-		b = append(b, "  "...)
-		b = append(b, r.err.Error()...)
-		b = append(b, "\n"...)
+		lines = append(lines, "Errors:")
+		lines = append(lines, "  "+r.err.Error())
 	}
 
-	// Permalink
-	if r.permalink != "" {
-		b = append(b, "\n"...)
-		b = append(b, r.permalink...)
-		b = append(b, "\n"...)
-	}
+	lines = append(lines, "")
 
-	return string(b)
+	return strings.Join(lines, "\n")
 }
 
 // Opts contains all options for running an evaluation in a single call.
