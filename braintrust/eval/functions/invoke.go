@@ -7,12 +7,19 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 
 	"go.opentelemetry.io/otel"
 	attr "go.opentelemetry.io/otel/attribute"
 
 	"github.com/braintrustdata/braintrust-x-go/braintrust"
 )
+
+// defaultHTTPClient is a shared HTTP client with reasonable timeouts.
+// It is safe for concurrent use by multiple goroutines.
+var defaultHTTPClient = &http.Client{
+	Timeout: 60 * time.Second,
+}
 
 // invokeOptions provides options for invoking a Braintrust function.
 type invokeOptions struct {
@@ -36,9 +43,24 @@ type invokeOptions struct {
 // The server handles all templating and LLM execution.
 // Returns the output from the function invocation.
 func invoke(ctx context.Context, opts invokeOptions) (any, error) {
+	// Validate that we have enough information to identify the function
+	if opts.FunctionID == "" && opts.Slug == "" {
+		return nil, fmt.Errorf("either FunctionID or Slug must be specified")
+	}
+	if opts.FunctionID == "" && opts.Project == "" && opts.ProjectID == "" {
+		return nil, fmt.Errorf("either FunctionID or Project/ProjectID must be specified")
+	}
+
 	// Create a span for the function invocation
 	tracer := otel.GetTracerProvider().Tracer("braintrust.functions")
-	ctx, span := tracer.Start(ctx, opts.Slug)
+	spanName := opts.Slug
+	if spanName == "" {
+		spanName = opts.FunctionID
+	}
+	if spanName == "" {
+		spanName = "unknown"
+	}
+	ctx, span := tracer.Start(ctx, fmt.Sprintf("function: %s", spanName))
 	defer span.End()
 
 	// Set Braintrust span attributes to mark this as a function invocation
@@ -86,7 +108,11 @@ func invoke(ctx context.Context, opts invokeOptions) (any, error) {
 			return nil, fmt.Errorf("failed to query function: %w", err)
 		}
 		if len(functions) == 0 {
-			return nil, fmt.Errorf("function not found: project=%s slug=%s", opts.Project, opts.Slug)
+			projectInfo := opts.Project
+			if projectInfo == "" {
+				projectInfo = opts.ProjectID
+			}
+			return nil, fmt.Errorf("function not found: project=%s slug=%s", projectInfo, opts.Slug)
 		}
 		functionID = functions[0].ID
 	}
@@ -112,8 +138,7 @@ func invoke(ctx context.Context, opts invokeOptions) (any, error) {
 	req.Header.Set("Authorization", "Bearer "+config.APIKey)
 
 	// Execute request
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := defaultHTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to invoke function: %w", err)
 	}

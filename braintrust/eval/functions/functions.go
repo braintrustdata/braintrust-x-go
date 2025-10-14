@@ -6,27 +6,22 @@
 //
 // # Using Prompts in Evals
 //
-// Use NewTask to create a task function from a hosted prompt:
-//
-//	task := functions.NewTask(functions.Opts{
-//	    Slug: "my-prompt",
-//	})
-//
-//	eval.Eval(ctx, eval.Options{
-//	    ProjectName: "my-project",
-//	    Data:        dataset,
-//	    Task:        task,
-//	    Scorers:     scorers,
-//	})
-//
+// Use GetTask to create a task function from a hosted prompt.
 // The server handles all prompt templating with the input variables from each
 // eval case.
+//
+//	task := functions.GetTask[string, string](functions.Opts{
+//	    Project: "my-project",
+//	    Slug:    "my-prompt",
+//	})
 //
 // # Using Scorers
 //
 // Use GetScorer or QueryScorer to get a hosted scorer:
 //
 //	scorer, err := functions.GetScorer[string, string]("my-project", "my-scorer")
+//
+// See the package example for a complete usage demonstration.
 package functions
 
 import (
@@ -418,6 +413,8 @@ func (f *functionScorer[I, R]) Name() string {
 // The server handles templating the prompt with input variables for each eval case.
 // This is equivalent to initFunction() in TypeScript and init_function() in Python.
 //
+// The function will automatically unmarshal JSON responses into the specified return type R.
+//
 // Example usage:
 //
 //	eval.Eval(ctx, eval.Options{
@@ -450,19 +447,31 @@ func GetTask[I, R any](opts Opts) eval.Task[I, R] {
 			return typedResult, nil
 		}
 
-		// For complex types (structs), we need to convert via JSON
+		// For complex types (structs) or type mismatches, we need to convert via JSON
 		var zero R
 
 		// If result is a string, it might be a JSON string that needs parsing
+		// This handles cases where the LLM returns JSON as a string
 		if resultStr, ok := result.(string); ok {
 			// Try to unmarshal the string as JSON
 			if err := json.Unmarshal([]byte(resultStr), &zero); err != nil {
+				// If unmarshaling fails and R is string type, return the string as-is
+				// This handles the case where GetTask[string, string] receives a plain string
+				if _, isString := any(zero).(string); isString {
+					// We know R is string because zero is string, so this is safe
+					typedStr, ok := any(resultStr).(R)
+					if !ok {
+						return zero, fmt.Errorf("failed to convert string to type %T", zero)
+					}
+					return typedStr, nil
+				}
 				return zero, fmt.Errorf("failed to unmarshal JSON string to type %T: %w", zero, err)
 			}
 			return zero, nil
 		}
 
-		// Otherwise, result is likely a map[string]any, marshal and unmarshal
+		// Otherwise, result is likely a map[string]any from JSON parsing
+		// Marshal and unmarshal to convert to the target type
 		jsonBytes, err := json.Marshal(result)
 		if err != nil {
 			return zero, fmt.Errorf("failed to marshal result to JSON: %w", err)
