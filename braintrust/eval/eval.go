@@ -412,7 +412,7 @@ type Opts[I, R any] struct {
 	Dataset        string
 	DatasetID      string
 	DatasetVersion string
-	DatasetLimit   int // Max records to fetch from dataset (0 = unlimited)
+	DatasetLimit   int // Max rows to fetch from dataset (0 = unlimited)
 
 	// Options:
 	Parallelism int  // Number of goroutines (default: 1)

@@ -27,23 +27,15 @@ func GetDataset[I, R any](projectName, datasetName string) (Cases[I, R], error) 
 	opts := DatasetOpts{
 		ProjectName: projectName,
 		DatasetName: datasetName,
-		Limit:       0, // No limit on records
+		Limit:       0, // No limit on rows
 	}
 	return QueryDataset[I, R](opts)
 }
 
 // QueryDataset returns Cases for the most recent dataset matching the given options.
-// The Limit field in opts controls the maximum number of records returned from the dataset.
+// The Limit field in opts controls the maximum number of rows returned from the dataset.
 func QueryDataset[I, R any](opts DatasetOpts) (Cases[I, R], error) {
-	// To find the most recent dataset, we query for up to 10 datasets and take the first one
-	// The opts.Limit field controls record limiting, not dataset query limiting
-	queryOpts := opts
-	if queryOpts.DatasetID == "" {
-		// Only set a dataset query limit if we're actually querying (not using DatasetID directly)
-		queryOpts.Limit = 10 // Get up to 10 datasets to find the most recent
-	}
-
-	datasets, err := queryDatasets(queryOpts)
+	datasets, err := queryDatasets(opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query datasets: %w", err)
 	}
@@ -52,7 +44,7 @@ func QueryDataset[I, R any](opts DatasetOpts) (Cases[I, R], error) {
 		return nil, fmt.Errorf("no datasets found matching the criteria")
 	}
 
-	// Return Cases for the first (most recent) dataset, with record limit from original opts
+	// Return Cases for the first (most recent) dataset
 	return &datasetIterator[I, R]{
 		dataset: api.NewDataset(datasets[0].ID, opts.Limit),
 	}, nil
@@ -70,7 +62,7 @@ type DatasetOpts struct {
 
 	// Query modifiers
 	Version string // Specific dataset version
-	Limit   int    // Max records to return from the dataset (0 = unlimited)
+	Limit   int    // Max rows to return from the dataset (0 = unlimited)
 }
 
 // datasetInfo represents a Braintrust dataset.
@@ -114,10 +106,8 @@ func queryDatasets(opts DatasetOpts) ([]datasetInfo, error) {
 		params.Add("version", opts.Version)
 	}
 
-	// Add limit if specified
-	if opts.Limit > 0 {
-		params.Add("limit", fmt.Sprintf("%d", opts.Limit))
-	}
+	// Always query for just 1 dataset (we only use the first/most recent one)
+	params.Add("limit", "1")
 
 	fullURL := baseURL + "?" + params.Encode()
 

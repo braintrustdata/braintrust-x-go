@@ -1435,7 +1435,7 @@ func TestResult_String(t *testing.T) {
 }
 
 func TestQueryDataset_WithLimit(t *testing.T) {
-	// Test that the Limit parameter correctly limits the number of records returned from a dataset
+	// Test that the Limit parameter correctly limits the number of rows returned from a dataset
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -1473,22 +1473,22 @@ func TestQueryDataset_WithLimit(t *testing.T) {
 	opts := DatasetOpts{
 		ProjectID:   project.ID,
 		DatasetName: datasetName,
-		Limit:       3, // We want only 3 records
+		Limit:       3, // We want only 3 rows
 	}
 	cases, err := QueryDataset[int, int](opts)
 	require.NoError(err)
 
-	// Count how many records are returned
-	recordCount := 0
+	// Count how many rows are returned
+	rowCount := 0
 	for {
 		_, err := cases.Next()
 		if err == io.EOF {
 			break
 		}
 		require.NoError(err)
-		recordCount++
+		rowCount++
 	}
 
-	// Assert that only 3 records were returned
-	assert.Equal(3, recordCount, "Expected 3 records, but got %d", recordCount)
+	// Assert that only 3 rows were returned
+	assert.Equal(3, rowCount, "Expected 3 rows, but got %d", rowCount)
 }

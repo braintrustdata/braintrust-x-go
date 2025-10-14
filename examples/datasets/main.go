@@ -106,12 +106,12 @@ func main() {
 		log.Fatalf("Failed to initialize dataset: %v", err)
 	}
 
-	fmt.Println("\n🚀 Running evaluation (limiting to 2 of 3 records)...")
+	fmt.Println("\n🚀 Running evaluation (limiting to 2 of 3 rows)...")
 	_, err = eval.Run(context.Background(), eval.Opts[QuestionInput, AnswerExpected]{
 		ProjectID:    project.ID,
 		Experiment:   "Capitalization Task Demo",
 		DatasetID:    datasetID, // Use DatasetID directly - eval.Run handles fetching
-		DatasetLimit: 2,         // Only evaluate the first 2 records
+		DatasetLimit: 2,         // Only evaluate the first 2 rows
 		Task: func(ctx context.Context, input QuestionInput) (AnswerExpected, error) {
 			// Simple example: capitalize the first letter of each word
 			fmt.Printf("🔄 Processing text: '%s' (context: %s, language: %s)\n",
