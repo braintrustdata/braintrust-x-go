@@ -295,6 +295,45 @@ func TestGetTaskWithSimpleTypes(t *testing.T) {
 	})
 }
 
+func TestGetTaskWithCustomStringType(t *testing.T) {
+	assert := assert.New(t)
+
+	// Define a custom string type (type alias)
+	type CustomString string
+
+	t.Run("custom string type output", func(t *testing.T) {
+		functionSlug := uniqueFuncName("test-prompt-custom-string")
+		promptData := map[string]any{
+			"prompt": map[string]any{
+				"type": "chat",
+				"messages": []map[string]any{
+					{"role": "user", "content": "Say hello to {{input}}"},
+				},
+			},
+			"options": map[string]any{
+				"model":  "gpt-4o-mini",
+				"params": map[string]any{"use_cache": true, "temperature": 0},
+			},
+		}
+
+		functionID, err := createPrompt(testProjectName, "Test Custom String Type", functionSlug, "Returns a custom string", promptData)
+		require.NoError(t, err)
+		require.NotEmpty(t, functionID)
+
+		// Create a task that returns a custom string type
+		task := GetTask[string, CustomString](Opts{
+			Project: testProjectName,
+			Slug:    functionSlug,
+		})
+
+		result, err := task(context.Background(), "World")
+		assert.NoError(err, "Should handle custom string type correctly")
+		assert.NotEmpty(result)
+		assert.IsType(CustomString(""), result, "Result should be of CustomString type")
+		t.Logf("Custom string result: %s", result)
+	})
+}
+
 func TestGetTaskWithComplexType(t *testing.T) {
 	assert := assert.New(t)
 	functionSlug := uniqueFuncName("test-prompt-struct")

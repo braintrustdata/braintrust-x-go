@@ -32,6 +32,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"reflect"
 
 	"github.com/braintrustdata/braintrust-x-go/braintrust"
 	"github.com/braintrustdata/braintrust-x-go/braintrust/api"
@@ -455,15 +456,19 @@ func GetTask[I, R any](opts Opts) eval.Task[I, R] {
 		if resultStr, ok := result.(string); ok {
 			// Try to unmarshal the string as JSON
 			if err := json.Unmarshal([]byte(resultStr), &zero); err != nil {
-				// If unmarshaling fails and R is string type, return the string as-is
-				// This handles the case where GetTask[string, string] receives a plain string
-				if _, isString := any(zero).(string); isString {
-					// We know R is string because zero is string, so this is safe
-					typedStr, ok := any(resultStr).(R)
+				// If unmarshaling fails and R is string type (including custom string types),
+				// return the string as-is. This handles cases where GetTask[string, string]
+				// or GetTask[CustomString, CustomString] receives a plain string.
+				// Use reflection to check if the underlying type is string to support type aliases.
+				if reflect.TypeOf(zero).Kind() == reflect.String {
+					// Use reflection to convert the string to the target type (handles custom string types)
+					resultValue := reflect.ValueOf(resultStr)
+					typedValue := resultValue.Convert(reflect.TypeOf(zero))
+					typedResult, ok := typedValue.Interface().(R)
 					if !ok {
 						return zero, fmt.Errorf("failed to convert string to type %T", zero)
 					}
-					return typedStr, nil
+					return typedResult, nil
 				}
 				return zero, fmt.Errorf("failed to unmarshal JSON string to type %T: %w", zero, err)
 			}
