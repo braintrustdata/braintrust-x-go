@@ -37,7 +37,7 @@ func TestScorerFunctionality(t *testing.T) {
 	assert.Equal("Test Scorer Function", scorer.Name())
 
 	// Test QueryScorer with different option patterns
-	queryScorer, err := QueryScorer[string, string](Opts{ProjectName: testProjectName, Slug: functionSlug})
+	queryScorer, err := QueryScorer[string, string](Opts{Project: testProjectName, Slug: functionSlug})
 	assert.NoError(err)
 	assert.NotNil(queryScorer)
 	assert.Equal("Test Scorer Function", queryScorer.Name())
@@ -49,7 +49,7 @@ func TestScorerFunctionality(t *testing.T) {
 	assert.Equal(functionID, queryScorer2.Name()) // When using function ID directly, name = ID
 
 	// Test QueryScorers
-	scorers, err := QueryScorers[string, string](Opts{ProjectName: testProjectName, Slug: functionSlug, Limit: 1})
+	scorers, err := QueryScorers[string, string](Opts{Project: testProjectName, Slug: functionSlug, Limit: 1})
 	assert.NoError(err)
 	assert.Len(scorers, 1)
 	assert.Equal("Test Scorer Function", scorers[0].Name())
@@ -120,12 +120,12 @@ func TestVersionHandling(t *testing.T) {
 	assert.Equal("Version Test v2", scorer2.Name())
 
 	// QueryScorer should also return the updated version (v2)
-	queryScorer, err := QueryScorer[string, string](Opts{ProjectName: testProjectName, Slug: functionSlug})
+	queryScorer, err := QueryScorer[string, string](Opts{Project: testProjectName, Slug: functionSlug})
 	assert.NoError(err)
 	assert.Equal("Version Test v2", queryScorer.Name())
 
 	// QueryScorers should return the updated function
-	scorers, err := QueryScorers[string, string](Opts{ProjectName: testProjectName, Slug: functionSlug})
+	scorers, err := QueryScorers[string, string](Opts{Project: testProjectName, Slug: functionSlug})
 	assert.NoError(err)
 	assert.Len(scorers, 1) // Should be exactly one function (replaced, not versioned)
 	assert.Equal("Version Test v2", scorers[0].Name())
@@ -136,7 +136,7 @@ func TestVersionHandling(t *testing.T) {
 	assert.NotEmpty(functionID3)
 
 	// QueryScorers with project name should return multiple functions
-	allProjectScorers, err := QueryScorers[string, string](Opts{ProjectName: testProjectName, Limit: 10})
+	allProjectScorers, err := QueryScorers[string, string](Opts{Project: testProjectName, Limit: 10})
 	assert.NoError(err)
 	assert.GreaterOrEqual(len(allProjectScorers), 2) // At least our two test functions
 }
@@ -153,4 +153,304 @@ func TestGetScorer_DifferentTypes(t *testing.T) {
 	scorer, err := GetScorer[CustomInput, CustomOutput](testProjectName, "non-existent-scorer")
 	assert.Error(err)
 	assert.Nil(scorer)
+}
+
+func TestGetTask(t *testing.T) {
+	assert := assert.New(t)
+
+	t.Run("GetTask returns a TaskFunc", func(t *testing.T) {
+		task := GetTask[map[string]any, any](Opts{
+			Project: testProjectName,
+			Slug:    "test-prompt",
+		})
+
+		assert.NotNil(task)
+	})
+
+	t.Run("GetTask with nonexistent function returns error when called", func(t *testing.T) {
+		task := GetTask[map[string]any, any](Opts{
+			Project: "nonexistent-project",
+			Slug:    "nonexistent-function",
+		})
+
+		result, err := task(context.Background(), map[string]any{"test": "input"})
+		assert.Error(err)
+		assert.Equal(nil, result)
+	})
+
+	t.Run("GetTask with environment parameter", func(t *testing.T) {
+		task := GetTask[map[string]any, any](Opts{
+			Project:     testProjectName,
+			Slug:        "test-prompt",
+			Environment: "production",
+		})
+
+		assert.NotNil(task)
+	})
+}
+
+func TestGetTaskWithCreatedPrompt(t *testing.T) {
+	assert := assert.New(t)
+	functionSlug := uniqueFuncName("test-prompt-task")
+
+	// Create a simple prompt that uses {{input}} for the variable
+	promptData := map[string]any{
+		"prompt": map[string]any{
+			"type": "chat",
+			"messages": []map[string]any{
+				{"role": "user", "content": "Say hello to {{input}}"},
+			},
+		},
+		"options": map[string]any{
+			"model":  "gpt-4",
+			"params": map[string]any{"use_cache": true, "temperature": 0},
+		},
+	}
+
+	// Create the prompt function
+	functionID, err := createPrompt(testProjectName, "Test Prompt Task", functionSlug, "A test prompt for task invocation", promptData)
+	require.NoError(t, err)
+	require.NotEmpty(t, functionID)
+
+	// Create a task from the prompt
+	task := GetTask[string, any](Opts{
+		Project: testProjectName,
+		Slug:    functionSlug,
+	})
+	assert.NotNil(task)
+
+	// Invoke the task with a simple string input
+	result, err := task(context.Background(), "World")
+	assert.NoError(err)
+	assert.NotNil(result)
+
+	// The result should be a string (the LLM's response)
+	resultStr, ok := result.(string)
+	assert.True(ok, "Expected string result from prompt invocation")
+	assert.NotEmpty(resultStr)
+	t.Logf("Prompt result: %s", resultStr)
+}
+
+func TestGetTaskWithSimpleTypes(t *testing.T) {
+	assert := assert.New(t)
+
+	t.Run("string output", func(t *testing.T) {
+		functionSlug := uniqueFuncName("test-prompt-string")
+		promptData := map[string]any{
+			"prompt": map[string]any{
+				"type": "chat",
+				"messages": []map[string]any{
+					{"role": "user", "content": "Say hello to {{input}}"},
+				},
+			},
+			"options": map[string]any{
+				"model":  "gpt-4o-mini",
+				"params": map[string]any{"use_cache": true, "temperature": 0},
+			},
+		}
+
+		functionID, err := createPrompt(testProjectName, "Test String Type", functionSlug, "Returns a string", promptData)
+		require.NoError(t, err)
+		require.NotEmpty(t, functionID)
+
+		task := GetTask[string, string](Opts{
+			Project: testProjectName,
+			Slug:    functionSlug,
+		})
+
+		result, err := task(context.Background(), "World")
+		assert.NoError(err)
+		assert.NotEmpty(result)
+		t.Logf("String result: %s", result)
+	})
+
+	t.Run("int output from string", func(t *testing.T) {
+		functionSlug := uniqueFuncName("test-prompt-int")
+		promptData := map[string]any{
+			"prompt": map[string]any{
+				"type": "chat",
+				"messages": []map[string]any{
+					{"role": "user", "content": "Return ONLY the number {{input}} with no other text"},
+				},
+			},
+			"options": map[string]any{
+				"model":  "gpt-4o-mini",
+				"params": map[string]any{"use_cache": true, "temperature": 0},
+			},
+		}
+
+		functionID, err := createPrompt(testProjectName, "Test Int Type", functionSlug, "Returns an int", promptData)
+		require.NoError(t, err)
+		require.NotEmpty(t, functionID)
+
+		task := GetTask[string, int](Opts{
+			Project: testProjectName,
+			Slug:    functionSlug,
+		})
+
+		result, err := task(context.Background(), "42")
+		assert.NoError(err)
+		assert.Equal(42, result)
+		t.Logf("Int result: %d", result)
+	})
+}
+
+func TestGetTaskWithCustomStringType(t *testing.T) {
+	assert := assert.New(t)
+
+	// Define a custom string type (type alias)
+	type CustomString string
+
+	t.Run("custom string type output", func(t *testing.T) {
+		functionSlug := uniqueFuncName("test-prompt-custom-string")
+		promptData := map[string]any{
+			"prompt": map[string]any{
+				"type": "chat",
+				"messages": []map[string]any{
+					{"role": "user", "content": "Say hello to {{input}}"},
+				},
+			},
+			"options": map[string]any{
+				"model":  "gpt-4o-mini",
+				"params": map[string]any{"use_cache": true, "temperature": 0},
+			},
+		}
+
+		functionID, err := createPrompt(testProjectName, "Test Custom String Type", functionSlug, "Returns a custom string", promptData)
+		require.NoError(t, err)
+		require.NotEmpty(t, functionID)
+
+		// Create a task that returns a custom string type
+		task := GetTask[string, CustomString](Opts{
+			Project: testProjectName,
+			Slug:    functionSlug,
+		})
+
+		result, err := task(context.Background(), "World")
+		assert.NoError(err, "Should handle custom string type correctly")
+		assert.NotEmpty(result)
+		assert.IsType(CustomString(""), result, "Result should be of CustomString type")
+		t.Logf("Custom string result: %s", result)
+	})
+}
+
+func TestGetTaskWithCustomPrimitiveTypes(t *testing.T) {
+	assert := assert.New(t)
+
+	// Define custom primitive types (type aliases)
+	type CustomInt int
+	type CustomFloat float64
+
+	t.Run("custom int type output", func(t *testing.T) {
+		functionSlug := uniqueFuncName("test-prompt-custom-int")
+		promptData := map[string]any{
+			"prompt": map[string]any{
+				"type": "chat",
+				"messages": []map[string]any{
+					{"role": "user", "content": "Return ONLY the number {{input}} with no other text"},
+				},
+			},
+			"options": map[string]any{
+				"model":  "gpt-4o-mini",
+				"params": map[string]any{"use_cache": true, "temperature": 0},
+			},
+		}
+
+		functionID, err := createPrompt(testProjectName, "Test Custom Int Type", functionSlug, "Returns a custom int", promptData)
+		require.NoError(t, err)
+		require.NotEmpty(t, functionID)
+
+		// Create a task that returns a custom int type
+		task := GetTask[string, CustomInt](Opts{
+			Project: testProjectName,
+			Slug:    functionSlug,
+		})
+
+		result, err := task(context.Background(), "42")
+		assert.NoError(err, "Should handle custom int type correctly")
+		assert.Equal(CustomInt(42), result)
+		assert.IsType(CustomInt(0), result, "Result should be of CustomInt type")
+		t.Logf("Custom int result: %d", result)
+	})
+
+	t.Run("custom float type output", func(t *testing.T) {
+		functionSlug := uniqueFuncName("test-prompt-custom-float")
+		promptData := map[string]any{
+			"prompt": map[string]any{
+				"type": "chat",
+				"messages": []map[string]any{
+					{"role": "user", "content": "Return ONLY the decimal number {{input}} with no other text"},
+				},
+			},
+			"options": map[string]any{
+				"model":  "gpt-4o-mini",
+				"params": map[string]any{"use_cache": true, "temperature": 0},
+			},
+		}
+
+		functionID, err := createPrompt(testProjectName, "Test Custom Float Type", functionSlug, "Returns a custom float", promptData)
+		require.NoError(t, err)
+		require.NotEmpty(t, functionID)
+
+		// Create a task that returns a custom float type
+		task := GetTask[string, CustomFloat](Opts{
+			Project: testProjectName,
+			Slug:    functionSlug,
+		})
+
+		result, err := task(context.Background(), "3.14")
+		assert.NoError(err, "Should handle custom float type correctly")
+		assert.InDelta(3.14, float64(result), 0.01)
+		assert.IsType(CustomFloat(0), result, "Result should be of CustomFloat type")
+		t.Logf("Custom float result: %f", result)
+	})
+}
+
+func TestGetTaskWithComplexType(t *testing.T) {
+	assert := assert.New(t)
+	functionSlug := uniqueFuncName("test-prompt-struct")
+
+	// Define a struct type for the output
+	type OutputStruct struct {
+		Greeting string `json:"greeting"`
+		Name     string `json:"name"`
+	}
+
+	// Create a prompt that returns JSON
+	// Note: We're asking for JSON explicitly and relying on the LLM to return valid JSON
+	promptData := map[string]any{
+		"prompt": map[string]any{
+			"type": "chat",
+			"messages": []map[string]any{
+				{"role": "system", "content": "You are a helpful assistant that returns JSON."},
+				{"role": "user", "content": `Return ONLY a JSON object (no other text) with fields "greeting" and "name". Set name to {{input}}. Example: {"greeting": "Hello", "name": "World"}`},
+			},
+		},
+		"options": map[string]any{
+			"model":  "gpt-4o-mini",
+			"params": map[string]any{"use_cache": true, "temperature": 0},
+		},
+	}
+
+	// Create the prompt function
+	functionID, err := createPrompt(testProjectName, "Test Prompt Struct", functionSlug, "A test prompt that returns structured output", promptData)
+	require.NoError(t, err)
+	require.NotEmpty(t, functionID)
+
+	// Create a task with struct output type
+	task := GetTask[string, OutputStruct](Opts{
+		Project: testProjectName,
+		Slug:    functionSlug,
+	})
+	assert.NotNil(task)
+
+	// Invoke the task
+	result, err := task(context.Background(), "Alice")
+	assert.NoError(err)
+	assert.NotNil(result)
+
+	// Verify the struct fields
+	assert.NotEmpty(result.Greeting)
+	assert.Equal("Alice", result.Name)
+	t.Logf("Struct result: %+v", result)
 }
