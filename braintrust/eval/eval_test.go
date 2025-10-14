@@ -1291,38 +1291,19 @@ func TestEval_Permalink(t *testing.T) {
 	link, err := eval.Permalink()
 	require.NoError(err)
 
-	// Verify the URL format - should use experiment name, not ID
-	assert.Equal("https://www.braintrust.dev/app/test-org/p/my-project/experiments/my-experiment", link)
+	// Verify the URL format - should use object query params with experiment ID
+	assert.Equal("https://www.braintrust.dev/app/test-org/object?object_type=experiment&object_id=exp-456", link)
 }
 
-func TestEval_Permalink_MissingProjectName(t *testing.T) {
+func TestEval_Permalink_MissingExperimentID(t *testing.T) {
 	assert := assert.New(t)
 
-	// Create eval with missing project name
-	key := newKey("", "proj-123", "exp-456")
-	cases := []Case[int, int]{{Input: 1, Expected: 2}}
-	task := func(ctx context.Context, x int) (int, error) {
-		return x * 2, nil
-	}
-	scorers := []Scorer[int, int]{NewEqualsScorer[int, int]()}
-
-	eval := New(key, NewCases(cases), task, scorers)
-
-	// Should return error for missing project name
-	_, err := eval.Permalink()
-	assert.Error(err)
-	assert.Contains(err.Error(), "project name not set")
-}
-
-func TestEval_Permalink_MissingExperimentName(t *testing.T) {
-	assert := assert.New(t)
-
-	// Create eval with missing experiment name
+	// Create eval with missing experiment ID
 	key := Key{
 		ProjectName:  "my-project",
 		ProjectID:    "proj-123",
-		ExperimentID: "exp-456",
-		Name:         "", // Missing experiment name
+		ExperimentID: "", // Missing experiment ID
+		Name:         "exp-name",
 	}
 	cases := []Case[int, int]{{Input: 1, Expected: 2}}
 	task := func(ctx context.Context, x int) (int, error) {
@@ -1332,10 +1313,10 @@ func TestEval_Permalink_MissingExperimentName(t *testing.T) {
 
 	eval := New(key, NewCases(cases), task, scorers)
 
-	// Should return error for missing experiment name
+	// Should return error for missing experiment ID
 	_, err := eval.Permalink()
 	assert.Error(err)
-	assert.Contains(err.Error(), "experiment name not set")
+	assert.Contains(err.Error(), "experiment ID not set")
 }
 
 func TestEval_Permalink_MissingOrgName(t *testing.T) {
@@ -1407,7 +1388,7 @@ func TestResult_Permalink(t *testing.T) {
 
 	// Test with permalink present
 	key := newKey("test-project", "proj-123", "test-experiment")
-	expectedLink := "https://braintrust.dev/app/test-org/p/test-project/experiments/test-experiment"
+	expectedLink := "https://braintrust.dev/app/test-org/object?object_type=experiment&object_id=" + key.ExperimentID
 	result := newResult(key, nil, expectedLink, 500*time.Millisecond)
 
 	link, err := result.Permalink()
@@ -1426,7 +1407,7 @@ func TestResult_String(t *testing.T) {
 
 	// Test successful result with permalink
 	key := newKey("my-project", "proj-123", "my-experiment")
-	permalink := "https://braintrust.dev/app/test-org/p/my-project/experiments/my-experiment"
+	permalink := "https://braintrust.dev/app/test-org/object?object_type=experiment&object_id=" + key.ExperimentID
 	result := newResult(key, nil, permalink, 1234*time.Millisecond)
 
 	str := result.String()
@@ -1434,8 +1415,8 @@ func TestResult_String(t *testing.T) {
 	// Verify experiment name is present
 	assert.Contains(str, "my-experiment", "String output should contain experiment name")
 
-	// Verify permalink is present
-	assert.Contains(str, permalink, "String output should contain permalink")
+	// Verify permalink is present with "Link: " prefix
+	assert.Contains(str, "Link: "+permalink, "String output should contain permalink with 'Link:' prefix")
 
 	// Verify duration is present and shows tenths of seconds
 	assert.Contains(str, "Duration: 1.2s", "String output should show duration with tenths of seconds")
