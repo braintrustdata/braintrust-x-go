@@ -46,6 +46,7 @@ examples/prompts/prompts
 /traceopenai
 /scorers
 /prompts
+/devserver
 
 **/.claude/settings.local.json
 *.DS_Store

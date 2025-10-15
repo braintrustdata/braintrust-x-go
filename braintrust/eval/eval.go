@@ -362,6 +362,11 @@ func (r *Result) Error() error {
 	return r.err
 }
 
+// Key returns the eval key containing experiment and project identifiers.
+func (r *Result) Key() Key {
+	return r.key
+}
+
 // String returns a string representaton of the result for printing on the console.
 //
 // The format it prints will change and shouldn't be relied on for programmatic use.
