@@ -415,8 +415,10 @@ type Opts[I, R any] struct {
 	DatasetLimit   int // Max rows to fetch from dataset (0 = unlimited)
 
 	// Options:
-	Parallelism int  // Number of goroutines (default: 1)
-	Quiet       bool // Suppress result output (default: false)
+	Parallelism int                    // Number of goroutines (default: 1)
+	Quiet       bool                   // Suppress result output (default: false)
+	Tags        []string               // Tags to apply to the experiment
+	Metadata    map[string]interface{} // Metadata to attach to the experiment
 }
 
 // Run executes an evaluation with automatic resolution of project, experiment, and dataset.
@@ -450,8 +452,8 @@ func Run[I, R any](ctx context.Context, opts Opts[I, R]) (*Result, error) {
 		return nil, err
 	}
 
-	// Resolve experiment ID and name
-	experimentID, experimentName, err := ResolveExperimentID(opts.Experiment, projectID)
+	// Resolve experiment ID and name with tags and metadata
+	experimentID, experimentName, err := resolveExpID(opts.Experiment, projectID, opts.Tags, opts.Metadata)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve experiment: %w", err)
 	}
@@ -637,7 +639,26 @@ func ResolveExperimentID(name string, projectID string) (string, string, error) 
 	if projectID == "" {
 		return "", "", fmt.Errorf("project ID is required")
 	}
-	experiment, err := api.RegisterExperiment(name, projectID)
+	experiment, err := api.RegisterExperiment(name, projectID, api.RegisterExperimentOpts{})
+	if err != nil {
+		return "", "", fmt.Errorf("failed to register experiment %q in project %q: %w", name, projectID, err)
+	}
+	return experiment.ID, experiment.Name, nil
+}
+
+// resolveExpID is an internal helper that resolves an experiment ID with tags and metadata.
+// Returns (experimentID, experimentName, error).
+func resolveExpID(name string, projectID string, tags []string, metadata map[string]interface{}) (string, string, error) {
+	if name == "" {
+		return "", "", fmt.Errorf("experiment name is required")
+	}
+	if projectID == "" {
+		return "", "", fmt.Errorf("project ID is required")
+	}
+	experiment, err := api.RegisterExperiment(name, projectID, api.RegisterExperimentOpts{
+		Tags:     tags,
+		Metadata: metadata,
+	})
 	if err != nil {
 		return "", "", fmt.Errorf("failed to register experiment %q in project %q: %w", name, projectID, err)
 	}

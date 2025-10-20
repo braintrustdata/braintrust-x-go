@@ -1492,3 +1492,78 @@ func TestQueryDataset_WithLimit(t *testing.T) {
 	// Assert that only 3 rows were returned
 	assert.Equal(3, rowCount, "Expected 3 rows, but got %d", rowCount)
 }
+
+func TestRun_WithTags(t *testing.T) {
+	// Test that experiment-level tags are properly passed through eval.Run
+	require := require.New(t)
+
+	oteltest.Setup(t)
+
+	// Create a project
+	projectName := "go-sdk-tags-test"
+	project, err := api.RegisterProject(projectName)
+	require.NoError(err)
+
+	// Simple test cases
+	cases := []Case[string, string]{
+		{Input: "hello", Expected: "hello"},
+		{Input: "world", Expected: "world"},
+	}
+
+	// Run eval with experiment-level tags
+	_, err = Run(context.Background(), Opts[string, string]{
+		ProjectID:  project.ID,
+		Experiment: internal.RandomName(t, "exp"),
+		Cases:      NewCases(cases),
+		Task: func(ctx context.Context, input string) (string, error) {
+			return input, nil
+		},
+		Scorers: []Scorer[string, string]{
+			NewEqualsScorer[string, string](),
+		},
+		Tags: []string{"production", "v2.0", "baseline"},
+	})
+	require.NoError(err)
+
+	// The test will pass if the eval runs successfully with tags
+	// Tags should be sent to the API when creating the experiment
+}
+
+func TestRun_WithMetadata(t *testing.T) {
+	// Test that experiment-level metadata is properly passed through eval.Run
+	require := require.New(t)
+
+	oteltest.Setup(t)
+
+	// Create a project
+	projectName := "go-sdk-metadata-test"
+	project, err := api.RegisterProject(projectName)
+	require.NoError(err)
+
+	// Simple test cases
+	cases := []Case[string, string]{
+		{Input: "test", Expected: "test"},
+	}
+
+	// Run eval with experiment-level metadata
+	_, err = Run(context.Background(), Opts[string, string]{
+		ProjectID:  project.ID,
+		Experiment: internal.RandomName(t, "exp"),
+		Cases:      NewCases(cases),
+		Task: func(ctx context.Context, input string) (string, error) {
+			return input, nil
+		},
+		Scorers: []Scorer[string, string]{
+			NewEqualsScorer[string, string](),
+		},
+		Metadata: map[string]interface{}{
+			"model":       "gpt-4",
+			"temperature": 0.7,
+			"version":     "1.0.0",
+		},
+	})
+	require.NoError(err)
+
+	// The test will pass if the eval runs successfully with metadata
+	// Metadata should be sent to the API when creating the experiment
+}
