@@ -12,24 +12,36 @@ import (
 
 // ExperimentRequest represents the request payload for creating an experiment
 type ExperimentRequest struct {
-	ProjectID string `json:"project_id"`
-	Name      string `json:"name"`
-	EnsureNew bool   `json:"ensure_new"`
+	ProjectID string                 `json:"project_id"`
+	Name      string                 `json:"name"`
+	EnsureNew bool                   `json:"ensure_new"`
+	Tags      []string               `json:"tags,omitempty"`
+	Metadata  map[string]interface{} `json:"metadata,omitempty"`
 }
 
 // Experiment represents an experiment from the API
 type Experiment struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	ProjectID string `json:"project_id"`
+	ID        string                 `json:"id"`
+	Name      string                 `json:"name"`
+	ProjectID string                 `json:"project_id"`
+	Tags      []string               `json:"tags,omitempty"`
+	Metadata  map[string]interface{} `json:"metadata,omitempty"`
+}
+
+// RegisterExperimentOpts contains optional parameters for registering an experiment
+type RegisterExperimentOpts struct {
+	Tags     []string
+	Metadata map[string]interface{}
 }
 
 // RegisterExperiment creates a new experiment via the Braintrust API.
-func RegisterExperiment(name string, projectID string) (*Experiment, error) {
+func RegisterExperiment(name string, projectID string, opts RegisterExperimentOpts) (*Experiment, error) {
 	req := ExperimentRequest{
 		ProjectID: projectID,
 		Name:      name,
 		EnsureNew: true, // Always create new experiments
+		Tags:      opts.Tags,
+		Metadata:  opts.Metadata,
 	}
 
 	jsonData, err := json.Marshal(req)
@@ -76,7 +88,7 @@ func GetOrCreateExperiment(experimentName, projectName string) (string, error) {
 	}
 
 	// Then register/get the experiment
-	experiment, err := RegisterExperiment(experimentName, project.ID)
+	experiment, err := RegisterExperiment(experimentName, project.ID, RegisterExperimentOpts{})
 	if err != nil {
 		return "", fmt.Errorf("failed to register experiment %q: %w", experimentName, err)
 	}

@@ -71,6 +71,11 @@ func main() {
 				return eval.S(v), nil
 			}),
 		},
+		Tags: []string{"example", "food-classifier", "gpt-4o-mini"},
+		Metadata: map[string]interface{}{
+			"model":       "gpt-4o-mini",
+			"description": "Classifies food items as fruit or vegetable",
+		},
 		Parallelism: 5,
 	})
 	if err != nil {
