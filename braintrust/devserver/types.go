@@ -34,6 +34,9 @@ type registeredEval struct {
 
 	// Type-erased scorer functions
 	scorers []func(context.Context, interface{}, interface{}, interface{}, eval.Metadata) (eval.Scores, error)
+
+	// Scorer names extracted from the original Scorer.Name() methods
+	scorerNames []string
 }
 
 // evalRequest represents the request body for POST /eval

@@ -134,10 +134,12 @@ func Register[I, R any](s *Server, re RemoteEval[I, R]) error {
 		return result, nil
 	}
 
-	// Wrap scorers similarly
+	// Wrap scorers similarly and extract names
 	wrappedScorers := make([]func(context.Context, interface{}, interface{}, interface{}, eval.Metadata) (eval.Scores, error), len(re.Scorers))
+	scorerNames := make([]string, len(re.Scorers))
 	for i, scorer := range re.Scorers {
 		scorerCopy := scorer // Capture for closure
+		scorerNames[i] = scorer.Name()
 		wrappedScorers[i] = func(ctx context.Context, input, expected, result interface{}, meta eval.Metadata) (eval.Scores, error) {
 			// Convert interface{} inputs to typed I and R
 			var typedInput I
@@ -165,6 +167,7 @@ func Register[I, R any](s *Server, re RemoteEval[I, R]) error {
 		projectName: re.ProjectName,
 		task:        wrappedTask,
 		scorers:     wrappedScorers,
+		scorerNames: scorerNames,
 	}
 
 	log.Printf("Registered evaluator: %s (project: %s)", re.Name, re.ProjectName)

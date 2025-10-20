@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"strings"
 
@@ -32,14 +33,17 @@ func main() {
 		Name:        "uppercase",
 		ProjectName: "go-sdk-examples",
 		Task: func(ctx context.Context, input string) (string, error) {
+			fmt.Printf("Task Input: %s\n", input)
 			return strings.ToUpper(input), nil
 		},
 		Scorers: []eval.Scorer[string, string]{
 			eval.NewScorer("length", func(ctx context.Context, input, expected, result string, meta eval.Metadata) (eval.Scores, error) {
+				fmt.Printf("Scorer Input: %v, expected: %v, result: %v\n", input, expected, result)
 				score := float64(len(result)) / 10.0
 				if score > 1.0 {
 					score = 1.0
 				}
+				fmt.Printf("Scorer Score: %v\n", score)
 				return eval.S(score), nil
 			}),
 		},

@@ -39,11 +39,10 @@ func (s *Server) handleList(w http.ResponseWriter, r *http.Request) {
 			"scores":     []map[string]string{},    // Empty for now
 		}
 
-		// Add scorer names
-		scorerNames := make([]map[string]string, len(eval.scorers))
-		for i := range eval.scorers {
-			// We don't have scorer names stored yet, so use generic names
-			scorerNames[i] = map[string]string{"name": fmt.Sprintf("scorer_%d", i)}
+		// Add scorer names from registered evaluator
+		scorerNames := make([]map[string]string, len(eval.scorerNames))
+		for i, scorerName := range eval.scorerNames {
+			scorerNames[i] = map[string]string{"name": scorerName}
 		}
 		evalInfo["scores"] = scorerNames
 
@@ -68,6 +67,8 @@ func (s *Server) handleEval(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("Invalid request body: %v", err), http.StatusBadRequest)
 		return
 	}
+
+	log.Printf("Request: %+v", req)
 
 	// Look up evaluator in registry
 	evaluator, ok := s.registry[req.Name]
@@ -94,7 +95,7 @@ func (s *Server) handleEval(w http.ResponseWriter, r *http.Request) {
 	wrappedScorers := make([]eval.Scorer[interface{}, interface{}], len(evaluator.scorers))
 	for i, scorerFunc := range evaluator.scorers {
 		wrappedScorers[i] = &typeErasedScorer{
-			name:     fmt.Sprintf("scorer_%d", i),
+			name:     evaluator.scorerNames[i],
 			scorerFn: scorerFunc,
 		}
 	}
@@ -125,7 +126,18 @@ func (s *Server) handleEval(w http.ResponseWriter, r *http.Request) {
 		projectURL = fmt.Sprintf("%s/app/%s/p/%s", config.AppURL, config.OrgName, key.ProjectID)
 	}
 
-	// Build response
+	// Build response with hardcoded scores using actual scorer names
+	// TODO: Replace hardcoded score values with real aggregated data from result
+	scores := make(map[string]interface{})
+	for _, scorerName := range evaluator.scorerNames {
+		scores[scorerName] = map[string]interface{}{
+			"name":         scorerName,
+			"score":        0.5, // Hardcoded for now
+			"improvements": 0,   // Hardcoded for now
+			"regressions":  0,   // Hardcoded for now
+		}
+	}
+
 	response := evalResponse{
 		ExperimentName: key.Name,
 		ProjectName:    key.ProjectName,
@@ -133,7 +145,7 @@ func (s *Server) handleEval(w http.ResponseWriter, r *http.Request) {
 		ExperimentID:   key.ExperimentID,
 		ExperimentURL:  permalink,
 		ProjectURL:     projectURL,
-		Scores:         map[string]interface{}{}, // TODO: populate from result
+		Scores:         scores,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
