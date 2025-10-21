@@ -32,6 +32,7 @@ type Experiment struct {
 type RegisterExperimentOpts struct {
 	Tags     []string
 	Metadata map[string]interface{}
+	Update   bool // If true, append to existing experiment instead of creating new one
 }
 
 // RegisterExperiment creates a new experiment via the Braintrust API.
@@ -39,7 +40,7 @@ func RegisterExperiment(name string, projectID string, opts RegisterExperimentOp
 	req := ExperimentRequest{
 		ProjectID: projectID,
 		Name:      name,
-		EnsureNew: true, // Always create new experiments
+		EnsureNew: !opts.Update, // When Update=true, allow reusing existing experiment
 		Tags:      opts.Tags,
 		Metadata:  opts.Metadata,
 	}

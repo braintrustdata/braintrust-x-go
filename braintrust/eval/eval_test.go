@@ -1567,3 +1567,83 @@ func TestRun_WithMetadata(t *testing.T) {
 	// The test will pass if the eval runs successfully with metadata
 	// Metadata should be sent to the API when creating the experiment
 }
+
+func TestEval_Update(t *testing.T) {
+	// Test that the Update flag properly controls experiment creation vs reuse
+	require := require.New(t)
+
+	project, err := api.RegisterProject(internal.RandomName(t, "proj"))
+	require.NoError(err)
+
+	experimentName := internal.RandomName(t, "exp")
+
+	cases1 := []Case[string, string]{
+		{Input: "hello", Expected: "hello"},
+		{Input: "world", Expected: "world"},
+	}
+
+	// First run: Create a new experiment (Update: false, which is the default)
+	result1, err := Run(context.Background(), Opts[string, string]{
+		ProjectID:  project.ID,
+		Experiment: experimentName,
+		Cases:      NewCases(cases1),
+		Task: func(ctx context.Context, input string) (string, error) {
+			return input, nil
+		},
+		Scorers: []Scorer[string, string]{
+			NewEqualsScorer[string, string](),
+		},
+		Update: false, // Create new experiment
+	})
+	require.NoError(err)
+	require.NotNil(result1)
+
+	firstExpID := result1.key.ExperimentID
+
+	cases2 := []Case[string, string]{
+		{Input: "append", Expected: "append"},
+		{Input: "update", Expected: "update"},
+	}
+
+	// Second run: Append to the existing experiment (Update: true)
+	result2, err := Run(context.Background(), Opts[string, string]{
+		ProjectID:  project.ID,
+		Experiment: experimentName,
+		Cases:      NewCases(cases2),
+		Task: func(ctx context.Context, input string) (string, error) {
+			return input, nil
+		},
+		Scorers: []Scorer[string, string]{
+			NewEqualsScorer[string, string](),
+		},
+		Update: true, // Append to existing experiment
+	})
+	require.NoError(err)
+	require.NotNil(result2)
+
+	secondExpID := result2.key.ExperimentID
+
+	// When Update: true, the experiment ID should be the same
+	assert.Equal(t, firstExpID, secondExpID, "Update: true should reuse the same experiment ID")
+
+	// Third run: Without Update flag, should create a new experiment
+	result3, err := Run(context.Background(), Opts[string, string]{
+		ProjectID:  project.ID,
+		Experiment: experimentName,
+		Cases:      NewCases(cases1),
+		Task: func(ctx context.Context, input string) (string, error) {
+			return input, nil
+		},
+		Scorers: []Scorer[string, string]{
+			NewEqualsScorer[string, string](),
+		},
+		Update: false, // Create new experiment
+	})
+	require.NoError(err)
+	require.NotNil(result3)
+
+	thirdExpID := result3.key.ExperimentID
+
+	// When Update: false, the experiment ID should be different
+	assert.NotEqual(t, firstExpID, thirdExpID, "Update: false should create a new experiment ID")
+}
