@@ -419,6 +419,7 @@ type Opts[I, R any] struct {
 	Quiet       bool                   // Suppress result output (default: false)
 	Tags        []string               // Tags to apply to the experiment
 	Metadata    map[string]interface{} // Metadata to attach to the experiment
+	Update      bool                   // If true, append to existing experiment instead of creating new one (default: false)
 }
 
 // Run executes an evaluation with automatic resolution of project, experiment, and dataset.
@@ -452,8 +453,8 @@ func Run[I, R any](ctx context.Context, opts Opts[I, R]) (*Result, error) {
 		return nil, err
 	}
 
-	// Resolve experiment ID and name with tags and metadata
-	experimentID, experimentName, err := resolveExpID(opts.Experiment, projectID, opts.Tags, opts.Metadata)
+	// Resolve experiment ID and name with tags, metadata, and update flag
+	experimentID, experimentName, err := resolveExpID(opts.Experiment, projectID, opts.Tags, opts.Metadata, opts.Update)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve experiment: %w", err)
 	}
@@ -646,9 +647,9 @@ func ResolveExperimentID(name string, projectID string) (string, string, error) 
 	return experiment.ID, experiment.Name, nil
 }
 
-// resolveExpID is an internal helper that resolves an experiment ID with tags and metadata.
+// resolveExpID is an internal helper that resolves an experiment ID with tags, metadata, and update flag.
 // Returns (experimentID, experimentName, error).
-func resolveExpID(name string, projectID string, tags []string, metadata map[string]interface{}) (string, string, error) {
+func resolveExpID(name string, projectID string, tags []string, metadata map[string]interface{}, update bool) (string, string, error) {
 	if name == "" {
 		return "", "", fmt.Errorf("experiment name is required")
 	}
@@ -658,6 +659,7 @@ func resolveExpID(name string, projectID string, tags []string, metadata map[str
 	experiment, err := api.RegisterExperiment(name, projectID, api.RegisterExperimentOpts{
 		Tags:     tags,
 		Metadata: metadata,
+		Update:   update,
 	})
 	if err != nil {
 		return "", "", fmt.Errorf("failed to register experiment %q in project %q: %w", name, projectID, err)
