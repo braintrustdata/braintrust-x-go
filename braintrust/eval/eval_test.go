@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -1646,4 +1647,86 @@ func TestEval_Update(t *testing.T) {
 
 	// When Update: false, the experiment ID should be different
 	assert.NotEqual(t, firstExpID, thirdExpID, "Update: false should create a new experiment ID")
+}
+
+// TestEval_UpdateBehavior verifies that the Update flag works as expected:
+// - Update: false creates a new experiment with a random suffix
+// - Update: true appends to an existing experiment with the exact name
+func TestEval_UpdateBehavior(t *testing.T) {
+	oteltest.Setup(t)
+
+	task := func(ctx context.Context, input string) (string, error) {
+		return input, nil
+	}
+
+	scorer := NewEqualsScorer[string, string]()
+
+	experimentName := "test-update-behavior"
+
+	// Test 1: Create a new experiment with Update: false
+	t.Run("Create new experiment", func(t *testing.T) {
+		result1, err := Run(context.Background(), Opts[string, string]{
+			Project:    "go-sdk-examples",
+			Experiment: experimentName,
+			Cases: NewCases([]Case[string, string]{
+				{Input: "hello", Expected: "hello"},
+			}),
+			Task:    task,
+			Scorers: []Scorer[string, string]{scorer},
+			Update:  false,
+		})
+		if err != nil {
+			t.Fatalf("First run failed: %v", err)
+		}
+
+		// With Update: false, the experiment name should have a random suffix
+		if result1.Name() == experimentName {
+			t.Errorf("Expected experiment name to have random suffix, got: %s", result1.Name())
+		}
+		if !strings.HasPrefix(result1.Name(), experimentName) {
+			t.Errorf("Expected experiment name to start with %s, got: %s", experimentName, result1.Name())
+		}
+	})
+
+	// Test 2: Update the experiment with Update: true
+	t.Run("Update existing experiment", func(t *testing.T) {
+		// First, create the base experiment
+		result1, err := Run(context.Background(), Opts[string, string]{
+			Project:    "go-sdk-examples",
+			Experiment: experimentName + "-update",
+			Cases: NewCases([]Case[string, string]{
+				{Input: "world", Expected: "world"},
+			}),
+			Task:    task,
+			Scorers: []Scorer[string, string]{scorer},
+			Update:  false,
+		})
+		if err != nil {
+			t.Fatalf("First run failed: %v", err)
+		}
+
+		// Get the experiment name from the first run (with random suffix)
+		firstExpName := result1.Name()
+
+		// Now try to update with the SAME name from the first run
+		// This should append to the existing experiment
+		result2, err := Run(context.Background(), Opts[string, string]{
+			Project:    "go-sdk-examples",
+			Experiment: firstExpName, // Use the exact name with suffix
+			Cases: NewCases([]Case[string, string]{
+				{Input: "append", Expected: "append"},
+			}),
+			Task:    task,
+			Scorers: []Scorer[string, string]{scorer},
+			Update:  true,
+		})
+		if err != nil {
+			t.Fatalf("Second run failed: %v", err)
+		}
+
+		// With Update: true and the same name, it should reuse the same experiment
+		if result2.ID() != result1.ID() {
+			t.Errorf("Expected same experiment ID, got %s and %s", result1.ID(), result2.ID())
+		}
+	})
 }
