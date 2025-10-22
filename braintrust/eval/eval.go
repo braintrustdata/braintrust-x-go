@@ -362,6 +362,16 @@ func (r *Result) Error() error {
 	return r.err
 }
 
+// Name returns the experiment name.
+func (r *Result) Name() string {
+	return r.key.Name
+}
+
+// ID returns the experiment ID.
+func (r *Result) ID() string {
+	return r.key.ExperimentID
+}
+
 // String returns a string representaton of the result for printing on the console.
 //
 // The format it prints will change and shouldn't be relied on for programmatic use.

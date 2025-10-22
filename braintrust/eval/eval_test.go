@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -1646,4 +1647,53 @@ func TestEval_Update(t *testing.T) {
 
 	// When Update: false, the experiment ID should be different
 	assert.NotEqual(t, firstExpID, thirdExpID, "Update: false should create a new experiment ID")
+}
+
+// TestEval_UpdateBehavior verifies that the Update flag works as expected:
+// - Update: false creates a new experiment with a random suffix
+// - Update: true appends to an existing experiment with the exact name
+func TestEval_UpdateBehavior(t *testing.T) {
+	assert := assert.New(t)
+	oteltest.Setup(t)
+
+	task := func(ctx context.Context, input string) (string, error) {
+		return input, nil
+	}
+	scorer := NewEqualsScorer[string, string]()
+
+	// Update: false creates new experiment
+	result1, err := Run(context.Background(), Opts[string, string]{
+		Project:    "go-sdk-examples",
+		Experiment: "test-update",
+		Cases:      NewCases([]Case[string, string]{{Input: "hello", Expected: "hello"}}),
+		Task:       task,
+		Scorers:    []Scorer[string, string]{scorer},
+		Update:     false,
+	})
+	assert.NoError(err)
+
+	// Update: true should reuse the same experiment
+	result2, err := Run(context.Background(), Opts[string, string]{
+		Project:    "go-sdk-examples",
+		Experiment: result1.Name(), // Use exact name from first run
+		Cases:      NewCases([]Case[string, string]{{Input: "world", Expected: "world"}}),
+		Task:       task,
+		Scorers:    []Scorer[string, string]{scorer},
+		Update:     true,
+	})
+	assert.NoError(err)
+	assert.Equal(result1.ID(), result2.ID())
+
+	// Update: false should create a different experiment
+	result3, err := Run(context.Background(), Opts[string, string]{
+		Project:    "go-sdk-examples",
+		Experiment: result1.Name(),
+		Cases:      NewCases([]Case[string, string]{{Input: "test", Expected: "test"}}),
+		Task:       task,
+		Scorers:    []Scorer[string, string]{scorer},
+		Update:     false,
+	})
+	assert.NoError(err)
+	assert.NotEqual(result1.ID(), result3.ID())
+	assert.True(strings.HasPrefix(result3.Name(), result1.Name()))
 }
