@@ -1154,7 +1154,7 @@ func TestRun_WithDatasetID(t *testing.T) {
 	_, exporter := oteltest.Setup(t)
 
 	// Create a project
-	projectName := "go-sdk-dataset-tests"
+	projectName := "go-sdk-unit-tests"
 	project, err := api.RegisterProject(projectName)
 	require.NoError(err)
 
@@ -1187,7 +1187,7 @@ func TestRun_WithDatasetID(t *testing.T) {
 	// Run eval using DatasetID - this tests the DatasetID resolution path
 	_, err = Run(context.Background(), Opts[int, int]{
 		ProjectID:  project.ID,
-		Experiment: internal.RandomName(t, "exp"),
+		Experiment: internal.RandomName(t),
 		DatasetID:  datasetInfo.ID, // Using DatasetID directly
 		Task: func(ctx context.Context, input int) (int, error) {
 			return input * 2, nil
@@ -1211,7 +1211,7 @@ func TestRun_WithDatasetName(t *testing.T) {
 	_, exporter := oteltest.Setup(t)
 
 	// Create a unique project name
-	projectName := "go-sdk-dataset-tests"
+	projectName := "go-sdk-unit-tests"
 	project, err := api.RegisterProject(projectName)
 	require.NoError(err)
 
@@ -1244,7 +1244,7 @@ func TestRun_WithDatasetName(t *testing.T) {
 	// Run eval using Dataset name - this tests the Dataset name resolution path
 	_, err = Run(context.Background(), Opts[int, int]{
 		Project:    projectName,
-		Experiment: internal.RandomName(t, "exp"),
+		Experiment: internal.RandomName(t),
 		Dataset:    datasetName, // Using Dataset name with automatic resolution
 		Task: func(ctx context.Context, input int) (int, error) {
 			return input * input, nil
@@ -1565,7 +1565,7 @@ func TestQueryDataset_WithLimit(t *testing.T) {
 	_, _ = oteltest.Setup(t)
 
 	// Create a project
-	projectName := "go-sdk-dataset-tests"
+	projectName := "go-sdk-unit-tests"
 	project, err := api.RegisterProject(projectName)
 	require.NoError(err)
 
@@ -1623,7 +1623,7 @@ func TestRun_WithTags(t *testing.T) {
 	oteltest.Setup(t)
 
 	// Create a project
-	projectName := "go-sdk-tags-test"
+	projectName := "go-sdk-unit-tests"
 	project, err := api.RegisterProject(projectName)
 	require.NoError(err)
 
@@ -1636,7 +1636,7 @@ func TestRun_WithTags(t *testing.T) {
 	// Run eval with experiment-level tags
 	_, err = Run(context.Background(), Opts[string, string]{
 		ProjectID:  project.ID,
-		Experiment: internal.RandomName(t, "exp"),
+		Experiment: internal.RandomName(t),
 		Cases:      NewCases(cases),
 		Task: func(ctx context.Context, input string) (string, error) {
 			return input, nil
@@ -1659,7 +1659,7 @@ func TestRun_WithMetadata(t *testing.T) {
 	oteltest.Setup(t)
 
 	// Create a project
-	projectName := "go-sdk-metadata-test"
+	projectName := "go-sdk-unit-tests"
 	project, err := api.RegisterProject(projectName)
 	require.NoError(err)
 
@@ -1671,7 +1671,7 @@ func TestRun_WithMetadata(t *testing.T) {
 	// Run eval with experiment-level metadata
 	_, err = Run(context.Background(), Opts[string, string]{
 		ProjectID:  project.ID,
-		Experiment: internal.RandomName(t, "exp"),
+		Experiment: internal.RandomName(t),
 		Cases:      NewCases(cases),
 		Task: func(ctx context.Context, input string) (string, error) {
 			return input, nil
@@ -1695,10 +1695,10 @@ func TestEval_Update(t *testing.T) {
 	// Test that the Update flag properly controls experiment creation vs reuse
 	require := require.New(t)
 
-	project, err := api.RegisterProject(internal.RandomName(t, "proj"))
+	project, err := api.RegisterProject("go-sdk-unit-tests")
 	require.NoError(err)
 
-	experimentName := internal.RandomName(t, "exp")
+	experimentName := internal.RandomName(t)
 
 	cases1 := []Case[string, string]{
 		{Input: "hello", Expected: "hello"},
