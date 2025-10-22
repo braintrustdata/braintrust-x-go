@@ -2,6 +2,7 @@ package attachment
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -59,7 +60,7 @@ func TestAttachment_FromFile_ErrorOnNonExistentFile(t *testing.T) {
 
 	require.Error(err)
 	assert.Nil(t, att)
-	assert.Contains(t, err.Error(), "failed to read file")
+	assert.Contains(t, err.Error(), "failed to open file")
 }
 
 func TestAttachment_FromReader_ReadsStream(t *testing.T) {
@@ -216,4 +217,59 @@ func TestAttachment_FromURL_ErrorOnInvalidURL(t *testing.T) {
 	require.Error(err)
 	assert.Nil(t, att)
 	assert.Contains(t, err.Error(), "failed to fetch URL")
+}
+
+// Example demonstrates how to create an attachment from a file and embed it
+// in a message for multimodal AI requests. The attachment is included alongside
+// text content in the message structure used by OpenAI and Anthropic APIs.
+func Example() {
+	// Create an attachment from a local file
+	attach, err := FromFile(ImageJPEG, "./photo.jpg")
+	if err != nil {
+		panic(err)
+	}
+
+	// Embed the attachment in a message structure (OpenAI/Anthropic format)
+	// The attachment will be automatically marshaled to the correct JSON format
+	message := map[string]interface{}{
+		"role": "user",
+		"content": []interface{}{
+			map[string]interface{}{
+				"type": "text",
+				"text": "What's in this image?",
+			},
+			attach, // Attachment automatically marshals to correct format
+		},
+	}
+
+	// Convert to JSON to log to a span
+	jsonData, _ := json.Marshal(message)
+	fmt.Printf("Message with attachment: %s\n", jsonData)
+
+	// In practice, you would log this to a span using:
+	// span.SetAttributes(attribute.String("braintrust.input_json", string(jsonData)))
+}
+
+// Example_multipleAttachments shows how to include multiple attachments
+// in a single message, which is useful for comparing images or providing
+// multiple pieces of visual context.
+func Example_multipleAttachments() {
+	// Create attachments from different sources
+	imageAttach, _ := FromFile(ImagePNG, "./chart.png")
+	pdfAttach, _ := FromFile(PDF, "./report.pdf")
+
+	// Build a message with text and multiple attachments
+	message := map[string]interface{}{
+		"role": "user",
+		"content": []interface{}{
+			map[string]interface{}{
+				"type": "text",
+				"text": "Compare the data in this chart with the report.",
+			},
+			imageAttach,
+			pdfAttach,
+		},
+	}
+
+	_ = message // Log to span in your application
 }
