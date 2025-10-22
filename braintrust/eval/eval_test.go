@@ -1435,6 +1435,128 @@ func TestResult_String(t *testing.T) {
 	assert.Contains(str2, "Duration: 0.1s", "String output should show duration with tenths of seconds")
 }
 
+func TestEval_CaseMetadataLogging(t *testing.T) {
+	// Test that case metadata is properly logged on the eval span
+	require := require.New(t)
+	assert := assert.New(t)
+
+	_, exporter := oteltest.Setup(t)
+
+	// Test task
+	key := newKey("proj-name", "proj-123", "exp-123")
+	expectedParent := "experiment_id:" + key.ExperimentID
+
+	task := func(ctx context.Context, x int) (int, error) {
+		return x * 2, nil
+	}
+
+	// Test cases with metadata
+	cases := []Case[int, int]{
+		{
+			Input:    1,
+			Expected: 2,
+			Metadata: Metadata{
+				"color":      "red",
+				"category":   "fruit",
+				"is_organic": true,
+				"price":      1.5,
+			},
+		},
+		{
+			Input:    2,
+			Expected: 4,
+			Metadata: Metadata{
+				"color":    "green",
+				"category": "vegetable",
+			},
+		},
+	}
+
+	scorers := []Scorer[int, int]{
+		NewScorer("equals", func(ctx context.Context, input, expected, result int, _ Metadata) (Scores, error) {
+			v := 0.0
+			if result == expected {
+				v = 1.0
+			}
+			return S(v), nil
+		}),
+	}
+
+	eval1 := New(key, NewCases(cases), task, scorers)
+	_, err := eval1.Run(context.Background())
+	require.NoError(err)
+
+	spans := exporter.Flush()
+	assert.Equal(len(cases)*3, len(spans))
+
+	// Check first case spans - should have metadata logged on eval span
+	spans[0].AssertEqual(oteltest.TestSpan{
+		Name: "task",
+		Attrs: map[string]any{
+			"braintrust.expected": "2",
+			"braintrust.parent":   expectedParent,
+			"braintrust.app_url":  "https://www.braintrust.dev",
+		},
+		JSONAttrs: map[string]any{
+			"braintrust.input_json":      1,
+			"braintrust.output_json":     2,
+			"braintrust.span_attributes": taskType,
+		},
+	})
+
+	spans[1].AssertEqual(oteltest.TestSpan{
+		Name: "score",
+		Attrs: map[string]any{
+			"braintrust.parent":  expectedParent,
+			"braintrust.app_url": "https://www.braintrust.dev",
+		},
+		JSONAttrs: map[string]any{
+			"braintrust.scores":          map[string]int{"equals": 1},
+			"braintrust.span_attributes": scoreType,
+		},
+	})
+
+	// Eval span should have metadata
+	spans[2].AssertEqual(oteltest.TestSpan{
+		Name: "eval",
+		Attrs: map[string]any{
+			"braintrust.expected": "2",
+			"braintrust.parent":   expectedParent,
+			"braintrust.app_url":  "https://www.braintrust.dev",
+		},
+		JSONAttrs: map[string]any{
+			"braintrust.input_json":      1,
+			"braintrust.output_json":     2,
+			"braintrust.span_attributes": evalType,
+			"braintrust.metadata": map[string]any{
+				"color":      "red",
+				"category":   "fruit",
+				"is_organic": true,
+				"price":      1.5,
+			},
+		},
+	})
+
+	// Check second case spans - should have different metadata
+	spans[5].AssertEqual(oteltest.TestSpan{
+		Name: "eval",
+		Attrs: map[string]any{
+			"braintrust.expected": "4",
+			"braintrust.parent":   expectedParent,
+			"braintrust.app_url":  "https://www.braintrust.dev",
+		},
+		JSONAttrs: map[string]any{
+			"braintrust.input_json":      2,
+			"braintrust.output_json":     4,
+			"braintrust.span_attributes": evalType,
+			"braintrust.metadata": map[string]any{
+				"color":    "green",
+				"category": "vegetable",
+			},
+		},
+	})
+}
+
 func TestQueryDataset_WithLimit(t *testing.T) {
 	// Test that the Limit parameter correctly limits the number of rows returned from a dataset
 	require := require.New(t)
