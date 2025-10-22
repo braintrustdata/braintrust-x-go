@@ -260,6 +260,11 @@ func (e *Eval[I, R]) runCase(ctx context.Context, span trace.Span, c Case[I, R])
 		"braintrust.expected":        c.Expected,
 	}
 
+	// Add case metadata if present
+	if c.Metadata != nil {
+		meta["braintrust.metadata"] = c.Metadata
+	}
+
 	return setJSONAttrs(span, meta)
 }
 

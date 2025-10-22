@@ -49,10 +49,10 @@ func main() {
 		Project:    "go-sdk-examples",
 		Experiment: "go-eval-example",
 		Cases: eval.NewCases([]eval.Case[string, string]{
-			{Input: "strawberry", Expected: "fruit"},
-			{Input: "asparagus", Expected: "vegetable"},
-			{Input: "apple", Expected: "fruit"},
-			{Input: "banana", Expected: "fruit"},
+			{Input: "strawberry", Expected: "fruit", Metadata: map[string]interface{}{"color": "red"}},
+			{Input: "asparagus", Expected: "vegetable", Metadata: map[string]interface{}{"color": "green"}},
+			{Input: "apple", Expected: "fruit", Metadata: map[string]interface{}{"color": "red"}},
+			{Input: "banana", Expected: "fruit", Metadata: map[string]interface{}{"color": "yellow"}},
 		}),
 		Task: getFoodType,
 		Scorers: []eval.Scorer[string, string]{
