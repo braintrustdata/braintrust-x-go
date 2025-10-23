@@ -182,7 +182,7 @@ func main() {
 
 ### LangChainGo Integration
 
-The SDK provides comprehensive tracing support for [LangChainGo](https://github.com/tmc/langchaingo) applications. Automatically trace LLM calls, chains, tools, agents, and retrievers by passing the Braintrust callback handler to your LangChainGo components. See [`examples/langchaingo`](./examples/langchaingo/main.go) for a complete example.
+The SDK provides comprehensive tracing support for [LangChainGo](https://github.com/tmc/langchaingo) applications. Automatically trace LLM calls, chains, tools, agents, and retrievers by passing the Braintrust callback handler to your LangChainGo components. See [`examples/langchaingo`](./examples/langchaingo/main.go) for a simple getting started example, or [`examples/internal/langchaingo`](./examples/internal/langchaingo/comprehensive.go) for a comprehensive demonstration of all features.
 
 ## Features
 
