@@ -7,6 +7,13 @@
 // - Agent actions
 // - Retriever operations
 // - Streaming chunks
+// - System prompts
+// - Temperature variations
+// - Very short max tokens
+// - Prefill
+// - Stop sequences
+// - Long context
+// - Metadata passing
 package main
 
 import (
@@ -114,6 +121,21 @@ func main() {
 	fmt.Println("\n11. Prefill")
 	fmt.Println("-----------")
 	prefillExample(ctx, tracer, llm)
+
+	// Example 12: Stop sequences
+	fmt.Println("\n12. Stop Sequences")
+	fmt.Println("------------------")
+	stopSequencesExample(ctx, tracer, llm)
+
+	// Example 13: Long context
+	fmt.Println("\n13. Long Context")
+	fmt.Println("----------------")
+	longContextExample(ctx, tracer, llm)
+
+	// Example 14: Metadata passing
+	fmt.Println("\n14. Metadata Passing")
+	fmt.Println("--------------------")
+	metadataExample(ctx, tracer, llm)
 
 	// End the root span
 	rootSpan.End()
@@ -492,5 +514,83 @@ func prefillExample(parentCtx context.Context, tracer oteltrace.Tracer, llm *ope
 
 	if len(resp.Choices) > 0 {
 		fmt.Printf("Prefilled: Here is a haiku: %s\n", resp.Choices[0].Content)
+	}
+}
+
+// stopSequencesExample demonstrates stop sequences/stop words
+func stopSequencesExample(parentCtx context.Context, tracer oteltrace.Tracer, llm *openai.LLM) {
+	ctx, span := tracer.Start(parentCtx, "stop-sequences")
+	defer span.End()
+
+	messages := []llms.MessageContent{
+		llms.TextParts(llms.ChatMessageTypeHuman, "Count from 1 to 10."),
+	}
+
+	// Stop at "5" to demonstrate stop sequences
+	resp, err := llm.GenerateContent(ctx, messages, llms.WithStopWords([]string{"5"}))
+	if err != nil {
+		log.Printf("Error: %v", err)
+		return
+	}
+
+	if len(resp.Choices) > 0 {
+		fmt.Printf("Response (stopped at '5'): %s\n", resp.Choices[0].Content)
+		fmt.Printf("Stop reason: %s\n", resp.Choices[0].StopReason)
+	}
+}
+
+// longContextExample demonstrates handling long context
+func longContextExample(parentCtx context.Context, tracer oteltrace.Tracer, llm *openai.LLM) {
+	ctx, span := tracer.Start(parentCtx, "long-context")
+	defer span.End()
+
+	// Create a long context by repeating text
+	longText := "This is a test sentence. "
+	for i := 0; i < 100; i++ {
+		longText += "The quick brown fox jumps over the lazy dog. "
+	}
+
+	messages := []llms.MessageContent{
+		llms.TextParts(llms.ChatMessageTypeHuman, longText+"What animal was mentioned?"),
+	}
+
+	resp, err := llm.GenerateContent(ctx, messages)
+	if err != nil {
+		log.Printf("Error: %v", err)
+		return
+	}
+
+	if len(resp.Choices) > 0 {
+		fmt.Printf("Input length: %d chars\n", len(longText))
+		fmt.Printf("Response: %s\n", resp.Choices[0].Content)
+	}
+}
+
+// metadataExample demonstrates passing custom metadata
+func metadataExample(parentCtx context.Context, tracer oteltrace.Tracer, llm *openai.LLM) {
+	ctx, span := tracer.Start(parentCtx, "metadata-passing")
+	defer span.End()
+
+	messages := []llms.MessageContent{
+		llms.TextParts(llms.ChatMessageTypeHuman, "What is 2+2?"),
+	}
+
+	// Pass custom metadata - this will be included in the request/trace
+	metadata := map[string]any{
+		"user_id":    "user-123",
+		"session_id": "session-456",
+		"experiment": "metadata-test",
+	}
+
+	resp, err := llm.GenerateContent(ctx, messages, llms.WithMetadata(metadata))
+	if err != nil {
+		log.Printf("Error: %v", err)
+		return
+	}
+
+	if len(resp.Choices) > 0 {
+		fmt.Printf("Response with metadata: %s\n", resp.Choices[0].Content)
+		fmt.Printf("Metadata: user_id=%s, session_id=%s, experiment=%s\n",
+			metadata["user_id"], metadata["session_id"], metadata["experiment"])
 	}
 }
