@@ -67,7 +67,8 @@ func TestHandleLLMGenerateContentStart(t *testing.T) {
 
 	message, ok := inputSlice[0].(map[string]interface{})
 	require.True(t, ok)
-	assert.Equal(t, "human", message["role"])
+	// Role should be mapped to OpenAI standard ("user" not "human")
+	assert.Equal(t, "user", message["role"])
 }
 
 func TestHandleLLMGenerateContentEnd(t *testing.T) {
@@ -129,7 +130,12 @@ func TestHandleLLMGenerateContentEnd(t *testing.T) {
 
 	choice, ok := outputSlice[0].(map[string]interface{})
 	require.True(t, ok)
-	assert.Equal(t, "Hi there!", choice["content"])
+
+	// Check OpenAI-style format: message is nested
+	message, ok := choice["message"].(map[string]interface{})
+	require.True(t, ok, "choice should contain a message object")
+	assert.Equal(t, "Hi there!", message["content"])
+	assert.Equal(t, "assistant", message["role"])
 	assert.Equal(t, "stop", choice["stop_reason"])
 
 	// Verify metrics are captured
@@ -341,8 +347,12 @@ func TestHandleLLMGenerateContentWithToolCalls(t *testing.T) {
 	choice, ok := outputSlice[0].(map[string]interface{})
 	require.True(t, ok)
 
-	// Tool calls exist in the output
-	assert.Contains(t, choice, "tool_calls")
-	assert.Equal(t, "", choice["content"]) // Content is empty when tool calls are present
+	// Check OpenAI-style format: message is nested, tool_calls inside message
+	message, ok := choice["message"].(map[string]interface{})
+	require.True(t, ok, "choice should contain a message object")
+
+	assert.Contains(t, message, "tool_calls")
+	assert.Equal(t, "", message["content"]) // Content is empty when tool calls are present
+	assert.Equal(t, "assistant", message["role"])
 	assert.Equal(t, "tool_calls", choice["stop_reason"])
 }

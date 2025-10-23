@@ -10,7 +10,7 @@ This library provides tools for **evaluating** and **tracing** AI applications i
 
 - **Evaluate** your AI models with custom test cases and scoring functions
 - **Trace** LLM calls and monitor AI application performance with OpenTelemetry
-- **Integrate** seamlessly with OpenAI, Anthropic, Google Gemini, and other LLM providers
+- **Integrate** seamlessly with OpenAI, Anthropic, Google Gemini, LangChainGo, and other LLM providers
 
 This SDK is currently in BETA status and APIs may change.
 
@@ -180,10 +180,14 @@ func main() {
 }
 ```
 
+### LangChainGo Integration
+
+The SDK provides comprehensive tracing support for [LangChainGo](https://github.com/tmc/langchaingo) applications. Automatically trace LLM calls, chains, tools, agents, and retrievers by passing the Braintrust callback handler to your LangChainGo components. See [`examples/langchaingo`](./examples/langchaingo/main.go) for a complete example.
+
 ## Features
 
 - **Evaluations**: Run systematic evaluations of your AI systems with custom scoring functions
-- **Tracing**: Automatic instrumentation for OpenAI, Anthropic, and Google Gemini API calls
+- **Tracing**: Automatic instrumentation for OpenAI, Anthropic, Google Gemini, and LangChainGo
 - **Datasets**: Manage and version your evaluation datasets
 - **Experiments**: Track different versions and configurations of your AI systems
 - **Observability**: Monitor your AI applications in production
@@ -196,6 +200,7 @@ Check out the [`examples/`](./examples/) directory for complete working examples
 - [openai](./examples/openai/main.go) - Automatically trace OpenAI API calls
 - [anthropic](./examples/anthropic/main.go) - Automatically trace Anthropic API calls
 - [genai](./examples/genai/main.go) - Automatically trace Google Gemini API calls
+- [langchaingo](./examples/langchaingo/main.go) - Trace LangChainGo applications (chains, tools, agents, retrievers)
 - [datasets](./examples/datasets/main.go) - Run evaluations using datasets stored in Braintrust
 
 ## Documentation

@@ -4,6 +4,9 @@
 // - Multi-turn conversations
 // - Chain executions
 // - Tool usage
+// - Agent actions
+// - Retriever operations
+// - Streaming chunks
 package main
 
 import (
@@ -11,8 +14,13 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/tmc/langchaingo/agents"
+	"github.com/tmc/langchaingo/chains"
 	"github.com/tmc/langchaingo/llms"
 	"github.com/tmc/langchaingo/llms/openai"
+	"github.com/tmc/langchaingo/prompts"
+	"github.com/tmc/langchaingo/schema"
+	"github.com/tmc/langchaingo/tools"
 	"go.opentelemetry.io/otel"
 	oteltrace "go.opentelemetry.io/otel/trace"
 
@@ -22,7 +30,7 @@ import (
 )
 
 func main() {
-	fmt.Println("=== Braintrust LangChainGo Comprehensive Example ===\n")
+	fmt.Println("=== Braintrust LangChainGo Comprehensive Example ===")
 
 	// Initialize Braintrust tracing with blocking login to ensure permalinks work immediately
 	teardown, err := trace.Quickstart(
@@ -33,8 +41,12 @@ func main() {
 	}
 	defer teardown()
 
-	// Create the Braintrust callback handler
-	handler := tracelangchaingo.NewHandler()
+	// Create the Braintrust callback handler with model information
+	// This enables the "Try prompt" button in the Braintrust UI
+	handler := tracelangchaingo.NewHandlerWithOptions(tracelangchaingo.HandlerOptions{
+		Model:    "gpt-4o-mini",
+		Provider: "openai",
+	})
 
 	// Create LangChainGo OpenAI LLM with callback
 	llm, err := openai.New(openai.WithCallback(handler))
@@ -46,7 +58,7 @@ func main() {
 	tracer := otel.Tracer("langchaingo-example")
 
 	// Create a root span that will contain all examples
-	ctx, rootSpan := tracer.Start(context.Background(), "langchaingo-examples")
+	ctx, rootSpan := tracer.Start(context.Background(), "examples/tracelangchaingo/main")
 
 	// Example 1: Simple LLM call
 	fmt.Println("1. Simple LLM Call")
@@ -67,6 +79,21 @@ func main() {
 	fmt.Println("\n4. Simulated Tool Usage")
 	fmt.Println("-----------------------")
 	simulatedTool(ctx, tracer, handler)
+
+	// Example 5: Simulated agent actions
+	fmt.Println("\n5. Simulated Agent Actions")
+	fmt.Println("--------------------------")
+	simulatedAgent(ctx, tracer, handler, llm)
+
+	// Example 6: Simulated retriever
+	fmt.Println("\n6. Simulated Retriever")
+	fmt.Println("----------------------")
+	simulatedRetriever(ctx, tracer, handler)
+
+	// Example 7: Streaming chunks
+	fmt.Println("\n7. Streaming Chunks")
+	fmt.Println("-------------------")
+	streamingChunks(ctx, tracer, handler)
 
 	// End the root span
 	rootSpan.End()
@@ -153,62 +180,181 @@ func multiTurnConversation(parentCtx context.Context, tracer oteltrace.Tracer, l
 	}
 }
 
-// simulatedChain demonstrates chain callback tracing
+// simulatedChain demonstrates chain callback tracing using a real LLMChain
 func simulatedChain(parentCtx context.Context, tracer oteltrace.Tracer, handler *tracelangchaingo.Handler, llm *openai.LLM) {
 	ctx, span := tracer.Start(parentCtx, "summarize-chain")
 	defer span.End()
 
-	// Simulate chain start
-	chainInputs := map[string]any{
-		"text": "LangChain is a framework for developing applications powered by language models.",
-		"task": "summarize",
-	}
-	handler.HandleChainStart(ctx, chainInputs)
+	// Create a real prompt template
+	prompt := prompts.NewPromptTemplate(
+		"Summarize this in 5 words: {{.text}}",
+		[]string{"text"},
+	)
 
-	// Make LLM call within the chain
-	messages := []llms.MessageContent{
-		llms.TextParts(llms.ChatMessageTypeHuman,
-			"Summarize this in 5 words: LangChain is a framework for developing applications powered by language models."),
-	}
+	// Create a real LLMChain with our callback handler
+	chain := chains.NewLLMChain(llm, prompt, chains.WithCallback(handler))
 
-	resp, err := llm.GenerateContent(ctx, messages)
+	// Call the chain with real input
+	inputText := "LangChain is a framework for developing applications powered by language models."
+	result, err := chains.Call(ctx, chain, map[string]any{
+		"text": inputText,
+	})
 	if err != nil {
-		handler.HandleChainError(ctx, err)
 		log.Printf("Error: %v", err)
 		return
 	}
 
-	summary := ""
-	if len(resp.Choices) > 0 {
-		summary = resp.Choices[0].Content
-		fmt.Printf("Input: %s\n", chainInputs["text"])
+	// Display the result
+	fmt.Printf("Input: %s\n", inputText)
+	if summary, ok := result["text"].(string); ok {
 		fmt.Printf("Summary: %s\n", summary)
 	}
-
-	// Simulate chain end
-	chainOutputs := map[string]any{
-		"summary": summary,
-	}
-	handler.HandleChainEnd(ctx, chainOutputs)
 }
 
-// simulatedTool demonstrates tool callback tracing
+// simulatedTool demonstrates tool callback tracing using a real Calculator tool
 func simulatedTool(parentCtx context.Context, tracer oteltrace.Tracer, handler *tracelangchaingo.Handler) {
-	ctx, span := tracer.Start(parentCtx, "weather-tool")
+	ctx, span := tracer.Start(parentCtx, "calculator-tool")
 	defer span.End()
 
-	// Simulate tool start
-	toolInput := "Boston, MA"
-	handler.HandleToolStart(ctx, toolInput)
+	// Create a real Calculator tool with our callback handler
+	calculator := tools.Calculator{
+		CallbacksHandler: handler,
+	}
 
-	// Simulate tool execution (mock weather lookup)
-	fmt.Printf("Tool: get_weather\n")
-	fmt.Printf("Input: %s\n", toolInput)
+	// Call the tool with a real math expression
+	input := "25 * 4"
+	fmt.Printf("Tool: %s\n", calculator.Name())
+	fmt.Printf("Input: %s\n", input)
 
-	// Mock tool response
-	toolOutput := `{"temperature": 72, "condition": "sunny", "location": "Boston, MA"}`
-	fmt.Printf("Output: %s\n", toolOutput)
+	result, err := calculator.Call(ctx, input)
+	if err != nil {
+		log.Printf("Error: %v", err)
+		return
+	}
 
-	// Simulate tool end
-	handler.HandleToolEnd(ctx, toolOutput)
+	fmt.Printf("Output: %s\n", result)
+}
+
+// simulatedAgent demonstrates agent callback tracing using a real agent executor
+func simulatedAgent(parentCtx context.Context, tracer oteltrace.Tracer, handler *tracelangchaingo.Handler, llm *openai.LLM) {
+	ctx, span := tracer.Start(parentCtx, "agent-workflow")
+	defer span.End()
+
+	// Create tools for the agent (Calculator)
+	agentTools := []tools.Tool{
+		tools.Calculator{},
+	}
+
+	// Create a real agent executor with callback handler
+	agent := agents.NewOneShotAgent(
+		llm,
+		agentTools,
+		agents.WithCallbacksHandler(handler),
+	)
+	executor := agents.NewExecutor(
+		agent,
+		agents.WithCallbacksHandler(handler),
+		agents.WithMaxIterations(3),
+	)
+
+	// Ask the agent a question that requires calculation
+	question := "What is 25 multiplied by 4?"
+	fmt.Printf("Question: %s\n", question)
+
+	result, err := chains.Call(ctx, executor, map[string]any{
+		"input": question,
+	})
+	if err != nil {
+		log.Printf("Error: %v", err)
+		return
+	}
+
+	if output, ok := result["output"].(string); ok {
+		fmt.Printf("Answer: %s\n", output)
+	}
+}
+
+// inMemoryRetriever is a simple retriever implementation with pre-populated documents
+type inMemoryRetriever struct {
+	documents []schema.Document
+}
+
+func (r *inMemoryRetriever) GetRelevantDocuments(ctx context.Context, query string) ([]schema.Document, error) {
+	// Simple filtering: return documents that contain keywords from the query
+	// In a real retriever, you'd use embeddings or more sophisticated search
+	return r.documents, nil
+}
+
+// simulatedRetriever demonstrates retriever callback tracing using a real retriever
+func simulatedRetriever(parentCtx context.Context, tracer oteltrace.Tracer, handler *tracelangchaingo.Handler) {
+	ctx, span := tracer.Start(parentCtx, "document-retrieval")
+	defer span.End()
+
+	// Create a real in-memory retriever with pre-populated documents
+	retriever := &inMemoryRetriever{
+		documents: []schema.Document{
+			{
+				PageContent: "LangChain is a framework for developing applications powered by language models.",
+				Metadata:    map[string]any{"source": "docs.langchain.com", "page": 1},
+			},
+			{
+				PageContent: "It enables applications that are context-aware and can reason about data.",
+				Metadata:    map[string]any{"source": "docs.langchain.com", "page": 2},
+			},
+		},
+	}
+
+	query := "What is LangChain?"
+	fmt.Printf("Query: %s\n", query)
+
+	// Manually wrap with callbacks (retrievers don't auto-call callbacks)
+	handler.HandleRetrieverStart(ctx, query)
+
+	documents, err := retriever.GetRelevantDocuments(ctx, query)
+	if err != nil {
+		log.Printf("Error: %v", err)
+		return
+	}
+
+	handler.HandleRetrieverEnd(ctx, query, documents)
+
+	fmt.Printf("Retrieved %d documents\n", len(documents))
+}
+
+// streamingChunks demonstrates streaming chunk tracing with real OpenAI streaming
+func streamingChunks(parentCtx context.Context, tracer oteltrace.Tracer, handler *tracelangchaingo.Handler) {
+	ctx, span := tracer.Start(parentCtx, "streaming-llm-call")
+	defer span.End()
+
+	// Create LLM client with callback handler
+	llm, err := openai.New(openai.WithCallback(handler))
+	if err != nil {
+		log.Printf("Error creating LLM: %v", err)
+		return
+	}
+
+	messages := []llms.MessageContent{
+		llms.TextParts(llms.ChatMessageTypeHuman, "Say hello in 5 words or less"),
+	}
+
+	// Use WithStreamingFunc to enable streaming
+	// The handler's HandleStreamingFunc will be called for each chunk automatically
+	streamingFunc := func(ctx context.Context, chunk []byte) error {
+		fmt.Print(string(chunk))
+		return nil
+	}
+
+	fmt.Print("Streaming: ")
+	resp, err := llm.GenerateContent(ctx, messages, llms.WithStreamingFunc(streamingFunc))
+	if err != nil {
+		log.Printf("Error: %v", err)
+		return
+	}
+	fmt.Println()
+
+	// The response will contain the full accumulated content
+	// Chunks were automatically accumulated by the Handler's HandleStreamingFunc
+	if len(resp.Choices) > 0 {
+		fmt.Printf("(Full response accumulated: %d chars)\n", len(resp.Choices[0].Content))
+	}
 }
