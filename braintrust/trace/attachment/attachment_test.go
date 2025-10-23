@@ -13,6 +13,60 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// Test the new reader-based Attachment API
+func TestAttachment_NewAPI_FromBytes(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	// Create attachment from raw bytes
+	data := []byte("test data")
+	att := FromBytes(ImageJPEG, data)
+
+	require.NotNil(att)
+
+	// Test Base64URL() returns data URL
+	url, err := att.Base64URL()
+	require.NoError(err)
+	assert.Contains(url, "data:image/jpeg;base64,")
+	// "test data" in base64 is "dGVzdCBkYXRh"
+	assert.Contains(url, "dGVzdCBkYXRh")
+}
+
+func TestAttachment_NewAPI_Base64Message(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	// Create attachment from raw bytes
+	data := []byte("test data")
+	att := FromBytes(ImageJPEG, data)
+
+	require.NotNil(att)
+
+	// Test Base64Message() returns proper message format
+	msg, err := att.Base64Message()
+	require.NoError(err)
+	assert.Equal("base64_attachment", msg["type"])
+	assert.Contains(msg["content"], "data:image/jpeg;base64,")
+	assert.Contains(msg["content"], "dGVzdCBkYXRh")
+}
+
+func TestAttachment_NewAPI_SingleUse(t *testing.T) {
+	require := require.New(t)
+
+	// Create attachment
+	data := []byte("test data")
+	att := FromBytes(ImageJPEG, data)
+
+	// First call should succeed
+	_, err := att.Base64URL()
+	require.NoError(err)
+
+	// Second call should fail (reader consumed)
+	_, err = att.Base64URL()
+	require.Error(err)
+	assert.Contains(t, err.Error(), "already consumed")
+}
+
 func TestAttachment_FromBytes_EncodesCorrectly(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -22,12 +76,16 @@ func TestAttachment_FromBytes_EncodesCorrectly(t *testing.T) {
 	att := FromBytes(ImageJPEG, data)
 
 	require.NotNil(att)
-	assert.Equal("base64_attachment", att.Type)
+
+	// Get the message format
+	msg, err := att.Base64Message()
+	require.NoError(err)
+	assert.Equal("base64_attachment", msg["type"])
 
 	// Should contain data URL with base64 encoding
-	assert.Contains(att.Content, "data:image/jpeg;base64,")
+	assert.Contains(msg["content"], "data:image/jpeg;base64,")
 	// "test data" in base64 is "dGVzdCBkYXRh"
-	assert.Contains(att.Content, "dGVzdCBkYXRh")
+	assert.Contains(msg["content"], "dGVzdCBkYXRh")
 }
 
 func TestAttachment_FromFile_ReadsJPEG(t *testing.T) {
@@ -46,10 +104,13 @@ func TestAttachment_FromFile_ReadsJPEG(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(att)
 
-	assert.Equal("base64_attachment", att.Type)
-	assert.Contains(att.Content, "data:image/jpeg;base64,")
+	// Get the message format
+	msg, err := att.Base64Message()
+	require.NoError(err)
+	assert.Equal("base64_attachment", msg["type"])
+	assert.Contains(msg["content"], "data:image/jpeg;base64,")
 	// "fake jpeg data" base64 encoded
-	assert.Contains(att.Content, "ZmFrZSBqcGVnIGRhdGE=")
+	assert.Contains(msg["content"], "ZmFrZSBqcGVnIGRhdGE=")
 }
 
 func TestAttachment_FromFile_ErrorOnNonExistentFile(t *testing.T) {
@@ -60,7 +121,7 @@ func TestAttachment_FromFile_ErrorOnNonExistentFile(t *testing.T) {
 
 	require.Error(err)
 	assert.Nil(t, att)
-	assert.Contains(t, err.Error(), "failed to open file")
+	assert.Contains(t, err.Error(), "failed to read file")
 }
 
 func TestAttachment_FromReader_ReadsStream(t *testing.T) {
@@ -81,32 +142,16 @@ func TestAttachment_FromReader_ReadsStream(t *testing.T) {
 	}()
 
 	// Read attachment from reader
-	att, err := FromReader(ImagePNG, file)
+	att := FromReader(ImagePNG, file)
+	require.NotNil(att)
+
+	// Get the message format
+	msg, err := att.Base64Message()
 	require.NoError(err)
-	require.NotNil(att)
-
-	assert.Equal("base64_attachment", att.Type)
-	assert.Contains(att.Content, "data:image/png;base64,")
+	assert.Equal("base64_attachment", msg["type"])
+	assert.Contains(msg["content"], "data:image/png;base64,")
 	// "fake png data" base64 encoded
-	assert.Contains(att.Content, "ZmFrZSBwbmcgZGF0YQ==")
-}
-
-func TestAttachment_FromBase64_WrapsData(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-
-	// Use already base64-encoded data
-	// This is a tiny 1x1 transparent PNG
-	base64Data := "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
-
-	att := FromBase64(ImagePNG, base64Data)
-	require.NotNil(att)
-
-	assert.Equal("base64_attachment", att.Type)
-	assert.Contains(att.Content, "data:image/png;base64,")
-	// Should contain the exact base64 data without re-encoding
-	assert.Contains(att.Content, base64Data)
-	assert.Equal("data:image/png;base64,"+base64Data, att.Content)
+	assert.Contains(msg["content"], "ZmFrZSBwbmcgZGF0YQ==")
 }
 
 func TestAttachment_JSONMarshal_CorrectFormat(t *testing.T) {
@@ -117,8 +162,12 @@ func TestAttachment_JSONMarshal_CorrectFormat(t *testing.T) {
 	data := []byte("test image")
 	att := FromBytes(ImageJPEG, data)
 
-	// Marshal to JSON
-	jsonData, err := json.Marshal(att)
+	// Get the message format
+	msg, err := att.Base64Message()
+	require.NoError(err)
+
+	// Marshal the message to JSON
+	jsonData, err := json.Marshal(msg)
 	require.NoError(err)
 
 	// Parse the JSON back
@@ -131,6 +180,10 @@ func TestAttachment_JSONMarshal_CorrectFormat(t *testing.T) {
 	assert.Contains(result["content"], "data:image/jpeg;base64,")
 
 	// Verify it can be used in a message structure
+	att2 := FromBytes(ImageJPEG, data)
+	msg2, err := att2.Base64Message()
+	require.NoError(err)
+
 	message := map[string]interface{}{
 		"role": "user",
 		"content": []interface{}{
@@ -138,7 +191,7 @@ func TestAttachment_JSONMarshal_CorrectFormat(t *testing.T) {
 				"type": "text",
 				"text": "What's in this image?",
 			},
-			att, // Include attachment
+			msg2, // Include attachment message
 		},
 	}
 
@@ -185,10 +238,13 @@ func TestAttachment_FromURL_FetchesImage(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(att)
 
-	assert.Equal("base64_attachment", att.Type)
-	assert.Contains(att.Content, "data:image/png;base64,")
+	// Get the message format
+	msg, err := att.Base64Message()
+	require.NoError(err)
+	assert.Equal("base64_attachment", msg["type"])
+	assert.Contains(msg["content"], "data:image/png;base64,")
 	// "image from url" base64 encoded
-	assert.Contains(att.Content, "aW1hZ2UgZnJvbSB1cmw=")
+	assert.Contains(msg["content"], "aW1hZ2UgZnJvbSB1cmw=")
 }
 
 func TestAttachment_FromURL_ErrorOn404(t *testing.T) {
@@ -229,8 +285,13 @@ func Example() {
 		panic(err)
 	}
 
+	// Get the attachment in message format
+	attachMsg, err := attach.Base64Message()
+	if err != nil {
+		panic(err)
+	}
+
 	// Embed the attachment in a message structure (OpenAI/Anthropic format)
-	// The attachment will be automatically marshaled to the correct JSON format
 	message := map[string]interface{}{
 		"role": "user",
 		"content": []interface{}{
@@ -238,7 +299,7 @@ func Example() {
 				"type": "text",
 				"text": "What's in this image?",
 			},
-			attach, // Attachment automatically marshals to correct format
+			attachMsg, // Attachment message in correct format
 		},
 	}
 
@@ -258,6 +319,10 @@ func Example_multipleAttachments() {
 	imageAttach, _ := FromFile(ImagePNG, "./chart.png")
 	pdfAttach, _ := FromFile(PDF, "./report.pdf")
 
+	// Get message format for each attachment
+	imageMsg, _ := imageAttach.Base64Message()
+	pdfMsg, _ := pdfAttach.Base64Message()
+
 	// Build a message with text and multiple attachments
 	message := map[string]interface{}{
 		"role": "user",
@@ -266,8 +331,8 @@ func Example_multipleAttachments() {
 				"type": "text",
 				"text": "Compare the data in this chart with the report.",
 			},
-			imageAttach,
-			pdfAttach,
+			imageMsg,
+			pdfMsg,
 		},
 	}
 

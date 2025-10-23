@@ -36,95 +36,42 @@ const (
 	PDF       = "application/pdf"
 )
 
-// Attachment represents a file or binary data attachment in Braintrust format.
-// When serialized to JSON, it produces the format expected by Braintrust:
-//
-//	{"type": "base64_attachment", "content": "data:image/jpeg;base64,..."}
+// Attachment represents a file or binary data attachment.
+// Attachments are single-use - once consumed, subsequent calls will error.
 type Attachment struct {
-	Type    string `json:"type"`
-	Content string `json:"content"`
+	contentType string
+	reader      io.Reader
+	consumed    bool
 }
 
-// FromReader creates an attachment by reading from an io.Reader.
-// All data from the reader is consumed and base64-encoded.
-// Returns an error if reading fails.
-//
-// Common content types: "image/jpeg", "image/png", "image/gif", "image/webp",
-// "application/pdf", "text/plain"
-//
-// Example:
-//
-//	file, _ := os.Open("image.jpg")
-//	defer file.Close()
-//	att, err := attachment.FromReader("image/jpeg", file)
-func FromReader(contentType string, r io.Reader) (*Attachment, error) {
-	data, err := io.ReadAll(r)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read from reader: %w", err)
-	}
-	encoded := base64.StdEncoding.EncodeToString(data)
+// FromReader creates an attachment from an io.Reader.
+// The reader is consumed lazily when Base64URL() or Base64Message() is called.
+func FromReader(contentType string, r io.Reader) *Attachment {
 	return &Attachment{
-		Type:    "base64_attachment",
-		Content: formatDataURL(contentType, encoded),
-	}, nil
+		contentType: contentType,
+		reader:      r,
+		consumed:    false,
+	}
 }
 
 // FromBytes creates an attachment from raw bytes.
-// The bytes are base64-encoded and wrapped in a data URL.
-//
-// Example:
-//
-//	data, _ := os.ReadFile("image.jpg")
-//	att := attachment.FromBytes("image/jpeg", data)
 func FromBytes(contentType string, data []byte) *Attachment {
-	att, _ := FromReader(contentType, bytes.NewReader(data))
-	return att
+	return FromReader(contentType, bytes.NewReader(data))
 }
 
-// FromFile creates an attachment by reading a file from the filesystem.
-// Returns an error if the file cannot be read.
-//
-// Example:
-//
-//	att, err := attachment.FromFile("image/jpeg", "/path/to/image.jpg")
-//	if err != nil {
-//	    log.Fatal(err)
-//	}
+// FromFile reads a file and creates an attachment.
+// The file is read into memory and closed before returning.
 func FromFile(contentType string, path string) (*Attachment, error) {
-	file, err := os.Open(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open file %s: %w", path, err)
+		return nil, fmt.Errorf("failed to read file %s: %w", path, err)
 	}
-	defer func() {
-		_ = file.Close()
-	}()
-	return FromReader(contentType, file)
+	return FromBytes(contentType, data), nil
 }
 
-// FromBase64 creates an attachment from already base64-encoded data.
-// The base64 data is wrapped in a data URL without re-encoding.
-//
-// Example:
-//
-//	base64Data := "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
-//	att := attachment.FromBase64("image/png", base64Data)
-func FromBase64(contentType string, base64Data string) *Attachment {
-	return &Attachment{
-		Type:    "base64_attachment",
-		Content: formatDataURL(contentType, base64Data),
-	}
-}
-
-// FromURL creates an attachment by fetching data from an HTTP/HTTPS URL.
-// The content type is automatically derived from the Content-Type response header.
-// Returns an error if the HTTP request fails or if the response status is not 200 OK.
-//
-// Example:
-//
-//	att, err := attachment.FromURL("https://example.com/image.png")
-//	if err != nil {
-//	    log.Fatal(err)
-//	}
+// FromURL fetches a URL and creates an attachment.
+// Content type is derived from the Content-Type header.
+// Returns an error if the request fails or status is not 200 OK.
 func FromURL(url string) (*Attachment, error) {
 	resp, err := http.Get(url)
 	if err != nil {
@@ -144,11 +91,51 @@ func FromURL(url string) (*Attachment, error) {
 		contentType = "application/octet-stream"
 	}
 
-	return FromReader(contentType, resp.Body)
+	// Read the response body into memory
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body from %s: %w", url, err)
+	}
+
+	return FromBytes(contentType, data), nil
 }
 
-// formatDataURL formats a data URL with the given content type and base64 data.
-// Returns a string in the format: "data:image/jpeg;base64,..."
-func formatDataURL(contentType, base64Data string) string {
-	return fmt.Sprintf("data:%s;base64,%s", contentType, base64Data)
+// Base64URL returns the attachment as a data URL string.
+// Format: "data:image/jpeg;base64,..."
+func (a *Attachment) Base64URL() (string, error) {
+	if a.consumed {
+		return "", fmt.Errorf("attachment already consumed")
+	}
+	a.consumed = true
+
+	// Stream encode the data
+	var buf bytes.Buffer
+	buf.WriteString(fmt.Sprintf("data:%s;base64,", a.contentType))
+
+	encoder := base64.NewEncoder(base64.StdEncoding, &buf)
+	_, err := io.Copy(encoder, a.reader)
+	if err != nil {
+		return "", fmt.Errorf("failed to encode data: %w", err)
+	}
+
+	err = encoder.Close()
+	if err != nil {
+		return "", fmt.Errorf("failed to finalize encoding: %w", err)
+	}
+
+	return buf.String(), nil
+}
+
+// Base64Message returns the attachment in message format for AI providers.
+// Returns: {"type": "base64_attachment", "content": "data:..."}
+func (a *Attachment) Base64Message() (map[string]string, error) {
+	url, err := a.Base64URL()
+	if err != nil {
+		return nil, err
+	}
+
+	return map[string]string{
+		"type":    "base64_attachment",
+		"content": url,
+	}, nil
 }
