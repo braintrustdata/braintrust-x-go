@@ -37,6 +37,7 @@ examples/struct-dataset-eval/struct-dataset-eval
 examples/traceopenai/traceopenai
 examples/scorers/scorers
 examples/prompts/prompts
+examples/langchaingo/langchaingo
 
 # Example binaries (if built in root directory)
 /dataset-eval
@@ -46,6 +47,7 @@ examples/prompts/prompts
 /traceopenai
 /scorers
 /prompts
+/langchaingo
 
 **/.claude/settings.local.json
 *.DS_Store
