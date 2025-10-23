@@ -467,23 +467,26 @@ func extractTokensFromUsage(metrics map[string]int64, usage map[string]any) {
 // extractTopLevelTokens looks for token counts at the top level of genInfo
 func extractTopLevelTokens(metrics map[string]int64, genInfo map[string]any) {
 	topLevelFields := []string{
+		// snake_case (some providers)
 		"prompt_tokens", "completion_tokens", "total_tokens",
 		"input_tokens", "output_tokens",
+		// PascalCase (LangChainGo OpenAI)
+		"PromptTokens", "CompletionTokens", "TotalTokens",
 	}
 
 	for _, field := range topLevelFields {
 		if value, ok := genInfo[field]; ok {
 			if ok, i := internal.ToInt64(value); ok && i > 0 {
 				switch field {
-				case "input_tokens", "prompt_tokens":
+				case "input_tokens", "prompt_tokens", "PromptTokens":
 					if _, exists := metrics["prompt_tokens"]; !exists {
 						metrics["prompt_tokens"] = i
 					}
-				case "output_tokens", "completion_tokens":
+				case "output_tokens", "completion_tokens", "CompletionTokens":
 					if _, exists := metrics["completion_tokens"]; !exists {
 						metrics["completion_tokens"] = i
 					}
-				case "total_tokens":
+				case "total_tokens", "TotalTokens":
 					if _, exists := metrics["tokens"]; !exists {
 						metrics["tokens"] = i
 					}
@@ -675,6 +678,18 @@ func (h *Handler) HandleRetrieverEnd(ctx context.Context, query string, document
 	span.End()
 }
 
+// HandleRetrieverError is called when a retrieval operation results in an error.
+func (h *Handler) HandleRetrieverError(ctx context.Context, err error) {
+	span := h.popSpan(ctx, "retriever")
+	if span == nil {
+		return
+	}
+
+	span.RecordError(err)
+	span.SetStatus(codes.Error, err.Error())
+	span.End()
+}
+
 // Utility callbacks
 
 // HandleText is called to handle text events.
@@ -811,5 +826,6 @@ var _ interface {
 	HandleAgentFinish(ctx context.Context, finish schema.AgentFinish)
 	HandleRetrieverStart(ctx context.Context, query string)
 	HandleRetrieverEnd(ctx context.Context, query string, documents []schema.Document)
+	HandleRetrieverError(ctx context.Context, err error)
 	HandleStreamingFunc(ctx context.Context, chunk []byte)
 } = (*Handler)(nil)

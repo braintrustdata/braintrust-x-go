@@ -356,3 +356,58 @@ func TestHandleLLMGenerateContentWithToolCalls(t *testing.T) {
 	assert.Equal(t, "assistant", message["role"])
 	assert.Equal(t, "tool_calls", choice["stop_reason"])
 }
+
+func TestHandleLLMGenerateContentWithPascalCaseTokens(t *testing.T) {
+	tracer, exporter := oteltest.Setup(t)
+
+	handler := NewHandler()
+
+	// Create a parent span
+	ctx, parentSpan := tracer.Start(context.Background(), "test-parent")
+
+	// Start an LLM call
+	messages := []llms.MessageContent{
+		llms.TextParts(llms.ChatMessageTypeHuman, "Hello!"),
+	}
+	handler.HandleLLMGenerateContentStart(ctx, messages)
+
+	// End with response containing PascalCase token fields (like LangChainGo OpenAI)
+	response := &llms.ContentResponse{
+		Choices: []*llms.ContentChoice{
+			{
+				Content:    "Hi there!",
+				StopReason: "stop",
+				GenerationInfo: map[string]any{
+					// PascalCase fields (LangChainGo OpenAI format)
+					"CompletionTokens": 5,
+					"PromptTokens":     10,
+					"TotalTokens":      15,
+				},
+			},
+		},
+	}
+	handler.HandleLLMGenerateContentEnd(ctx, response)
+
+	// End the parent span to flush traces
+	parentSpan.End()
+
+	// Check spans
+	spans := exporter.Flush()
+	require.Len(t, spans, 2)
+
+	// Find the LLM span
+	var llmSpan oteltest.Span
+	for _, span := range spans {
+		if span.Name() == "langchain.llm.generate_content" {
+			llmSpan = span
+			break
+		}
+	}
+	require.NotNil(t, llmSpan, "LLM span not found")
+
+	// Verify metrics are extracted from PascalCase fields
+	metrics := llmSpan.Metrics()
+	assert.Equal(t, float64(10), metrics["prompt_tokens"], "Should extract PromptTokens")
+	assert.Equal(t, float64(5), metrics["completion_tokens"], "Should extract CompletionTokens")
+	assert.Equal(t, float64(15), metrics["tokens"], "Should extract TotalTokens")
+}
