@@ -1819,3 +1819,79 @@ func TestEval_UpdateBehavior(t *testing.T) {
 	assert.NotEqual(result1.ID(), result3.ID())
 	assert.True(strings.HasPrefix(result3.Name(), result1.Name()))
 }
+
+func TestScoreMetadata(t *testing.T) {
+	// Test that score metadata is properly logged on the score span
+	require := require.New(t)
+	assert := assert.New(t)
+
+	_, exporter := oteltest.Setup(t)
+
+	task := func(ctx context.Context, x int) (int, error) {
+		return x * 2, nil
+	}
+
+	// Scorer that returns scores with metadata
+	scorers := []Scorer[int, int]{
+		NewScorer("with_metadata", func(ctx context.Context, input, expected, result int, _ Metadata) (Scores, error) {
+			return Scores{
+				{
+					Name:  "accuracy",
+					Score: 0.95,
+					Metadata: map[string]any{
+						"reasoning":    "Result is close to expected",
+						"diff":         expected - result,
+						"debug_info":   map[string]any{"checked": true, "method": "comparison"},
+					},
+				},
+			}, nil
+		}),
+		NewScorer("without_metadata", func(ctx context.Context, input, expected, result int, _ Metadata) (Scores, error) {
+			return S(0.8), nil
+		}),
+	}
+
+	cases := []Case[int, int]{
+		{Input: 1, Expected: 2},
+	}
+
+	key := newKey("proj-name", "proj-123", "exp-metadata")
+	eval := New(key, NewCases(cases), task, scorers)
+	_, err := eval.Run(context.Background())
+	require.NoError(err)
+
+	spans := exporter.Flush()
+	require.Equal(3, len(spans)) // task, score, eval spans
+
+	// Find the score span
+	scoreSpan := spans[1]
+	assert.Equal("score", scoreSpan.Name)
+
+	// Check that braintrust.scores contains the score values
+	scoresAttr, ok := scoreSpan.JSONAttrs["braintrust.scores"]
+	require.True(ok, "braintrust.scores should be present")
+	scoresMap, ok := scoresAttr.(map[string]any)
+	require.True(ok)
+	assert.Equal(0.95, scoresMap["accuracy"])
+	assert.Equal(0.8, scoresMap["without_metadata"])
+
+	// Check that braintrust.score_details contains metadata for scores that have it
+	scoreDetailsAttr, ok := scoreSpan.JSONAttrs["braintrust.score_details"]
+	require.True(ok, "braintrust.score_details should be present when scores have metadata")
+	scoreDetails, ok := scoreDetailsAttr.(map[string]any)
+	require.True(ok)
+
+	// Verify the score with metadata is in score_details
+	accuracyDetail, ok := scoreDetails["accuracy"]
+	require.True(ok, "accuracy score should be in score_details")
+	accuracyMap, ok := accuracyDetail.(map[string]any)
+	require.True(ok)
+	assert.Equal(0.95, accuracyMap["score"])
+
+	metadata, ok := accuracyMap["metadata"]
+	require.True(ok, "metadata should be present in score details")
+	metadataMap, ok := metadata.(map[string]any)
+	require.True(ok)
+	assert.Equal("Result is close to expected", metadataMap["reasoning"])
+	assert.Equal(float64(-1), metadataMap["diff"]) // 2 - 2 = 0, but input was 1, so expected 2, result 2
+}
