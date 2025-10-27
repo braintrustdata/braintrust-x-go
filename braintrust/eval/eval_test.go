@@ -148,6 +148,7 @@ func TestEval_TaskErrors(t *testing.T) {
 		},
 		JSONAttrs: map[string]any{
 			"braintrust.scores":          map[string]int{"equals": 0},
+			"braintrust.output":          map[string]any{"score": float64(0)},
 			"braintrust.span_attributes": scoreType,
 		},
 	})
@@ -238,7 +239,11 @@ func TestEval_ScorerErrors(t *testing.T) {
 			"braintrust.app_url": "https://www.braintrust.dev",
 		},
 		JSONAttrs: map[string]any{
-			"braintrust.scores":          map[string]float64{"equals": 1, "failing_scorer": 1},
+			"braintrust.scores": map[string]float64{"equals": 1, "failing_scorer": 1},
+			"braintrust.output": map[string]any{
+				"equals":         map[string]any{"score": float64(1)},
+				"failing_scorer": map[string]any{"score": float64(1)},
+			},
 			"braintrust.span_attributes": scoreType,
 		},
 	})
@@ -273,6 +278,7 @@ func TestEval_ScorerErrors(t *testing.T) {
 	})
 
 	// Score span should have exception event for the failing scorer
+	// Only 1 score succeeded (equals), so output should be flat (not nested)
 	spans[4].AssertEqual(oteltest.TestSpan{
 		Name: "score",
 		Attrs: map[string]any{
@@ -281,6 +287,7 @@ func TestEval_ScorerErrors(t *testing.T) {
 		},
 		JSONAttrs: map[string]any{
 			"braintrust.scores":          map[string]int{"equals": 1},
+			"braintrust.output":          map[string]any{"score": float64(1)},
 			"braintrust.span_attributes": scoreType,
 		},
 		StatusCode:        codes.Error,
@@ -359,7 +366,11 @@ func TestScorerNames(t *testing.T) {
 			"braintrust.app_url": "https://www.braintrust.dev",
 		},
 		JSONAttrs: map[string]any{
-			"braintrust.scores":          map[string]float64{"different": 0.5, "no-name": 0.6},
+			"braintrust.scores": map[string]float64{"different": 0.5, "no-name": 0.6},
+			"braintrust.output": map[string]any{
+				"different": map[string]any{"score": 0.5},
+				"no-name":   map[string]any{"score": 0.6},
+			},
 			"braintrust.span_attributes": scoreType,
 		},
 	})
@@ -434,6 +445,7 @@ func TestHardcodedEval(t *testing.T) {
 		},
 		JSONAttrs: map[string]any{
 			"braintrust.scores":          map[string]int{"equals": 1},
+			"braintrust.output":          map[string]any{"score": float64(1)},
 			"braintrust.span_attributes": scoreType,
 		},
 	})
@@ -476,6 +488,7 @@ func TestHardcodedEval(t *testing.T) {
 		},
 		JSONAttrs: map[string]any{
 			"braintrust.scores":          map[string]int{"equals": 0},
+			"braintrust.output":          map[string]any{"score": float64(0)},
 			"braintrust.span_attributes": scoreType,
 		},
 	})
@@ -637,6 +650,7 @@ func TestEvalWithCasesIteratorError(t *testing.T) {
 		},
 		JSONAttrs: map[string]any{
 			"braintrust.scores":          map[string]int{"equals": 1},
+			"braintrust.output":          map[string]any{"score": float64(1)},
 			"braintrust.span_attributes": scoreType,
 		},
 	})
@@ -700,6 +714,7 @@ func TestEvalWithCasesIteratorError(t *testing.T) {
 		},
 		JSONAttrs: map[string]any{
 			"braintrust.scores":          map[string]int{"equals": 1},
+			"braintrust.output":          map[string]any{"score": float64(1)},
 			"braintrust.span_attributes": scoreType,
 		},
 	})
@@ -1512,6 +1527,7 @@ func TestEval_CaseMetadataLogging(t *testing.T) {
 		},
 		JSONAttrs: map[string]any{
 			"braintrust.scores":          map[string]int{"equals": 1},
+			"braintrust.output":          map[string]any{"score": float64(1)},
 			"braintrust.span_attributes": scoreType,
 		},
 	})
@@ -1818,4 +1834,191 @@ func TestEval_UpdateBehavior(t *testing.T) {
 	assert.NoError(err)
 	assert.NotEqual(result1.ID(), result3.ID())
 	assert.True(strings.HasPrefix(result3.Name(), result1.Name()))
+}
+
+func TestScoreMetadata_SingleScorer(t *testing.T) {
+	// Test single scorer with metadata - matches Python/TypeScript behavior
+	// Single score: metadata and output should be flat at top level
+	require := require.New(t)
+
+	_, exporter := oteltest.Setup(t)
+
+	task := func(ctx context.Context, x int) (int, error) {
+		return x * 2, nil
+	}
+
+	// Single scorer that returns metadata
+	scorer := NewScorer("with_metadata", func(ctx context.Context, input, expected, result int, _ Metadata) (Scores, error) {
+		return Scores{
+			{
+				Name:  "accuracy",
+				Score: 0.95,
+				Metadata: map[string]any{
+					"reasoning":  "Result is close to expected",
+					"diff":       expected - result,
+					"debug_info": map[string]any{"checked": true, "method": "comparison"},
+				},
+			},
+		}, nil
+	})
+
+	cases := []Case[int, int]{
+		{Input: 1, Expected: 2},
+	}
+
+	key := newKey("proj-name", "proj-123", "exp-metadata")
+	expectedParent := "experiment_id:" + key.ExperimentID
+	eval := New(key, NewCases(cases), task, []Scorer[int, int]{scorer})
+	_, err := eval.Run(context.Background())
+	require.NoError(err)
+
+	spans := exporter.Flush()
+	require.Equal(3, len(spans))
+
+	scoreSpan := spans[1]
+	scoreSpan.AssertEqual(oteltest.TestSpan{
+		Name: "score",
+		Attrs: map[string]any{
+			"braintrust.parent":  expectedParent,
+			"braintrust.app_url": "https://www.braintrust.dev",
+		},
+		JSONAttrs: map[string]any{
+			"braintrust.scores": map[string]float64{"accuracy": 0.95},
+			"braintrust.metadata": map[string]any{
+				"reasoning":  "Result is close to expected",
+				"diff":       float64(0), // 2 - 2 = 0
+				"debug_info": map[string]any{"checked": true, "method": "comparison"},
+			},
+			"braintrust.output": map[string]any{
+				"score": 0.95,
+			},
+			"braintrust.span_attributes": scoreType,
+		},
+	})
+}
+
+func TestScoreMetadata_MultipleScorers(t *testing.T) {
+	// Test multiple scorers with mixed metadata - matches Python/TypeScript behavior
+	// Multiple scores: metadata and output should be nested by score name
+	require := require.New(t)
+
+	_, exporter := oteltest.Setup(t)
+
+	task := func(ctx context.Context, x int) (int, error) {
+		return x * 2, nil
+	}
+
+	scorers := []Scorer[int, int]{
+		NewScorer("with_metadata", func(ctx context.Context, input, expected, result int, _ Metadata) (Scores, error) {
+			return Scores{
+				{
+					Name:  "accuracy",
+					Score: 0.95,
+					Metadata: map[string]any{
+						"reasoning": "Result is close to expected",
+					},
+				},
+			}, nil
+		}),
+		NewScorer("without_metadata", func(ctx context.Context, input, expected, result int, _ Metadata) (Scores, error) {
+			return S(0.8), nil
+		}),
+	}
+
+	cases := []Case[int, int]{
+		{Input: 1, Expected: 2},
+	}
+
+	key := newKey("proj-name", "proj-123", "exp-metadata")
+	expectedParent := "experiment_id:" + key.ExperimentID
+	eval := New(key, NewCases(cases), task, scorers)
+	_, err := eval.Run(context.Background())
+	require.NoError(err)
+
+	spans := exporter.Flush()
+	require.Equal(3, len(spans))
+
+	scoreSpan := spans[1]
+	scoreSpan.AssertEqual(oteltest.TestSpan{
+		Name: "score",
+		Attrs: map[string]any{
+			"braintrust.parent":  expectedParent,
+			"braintrust.app_url": "https://www.braintrust.dev",
+		},
+		JSONAttrs: map[string]any{
+			"braintrust.scores": map[string]float64{
+				"accuracy":         0.95,
+				"without_metadata": 0.8,
+			},
+			// For multiple scores, metadata is nested by score name
+			// Only scores with metadata appear here
+			"braintrust.metadata": map[string]any{
+				"accuracy": map[string]any{
+					"reasoning": "Result is close to expected",
+				},
+				// "without_metadata" should not appear here since it has no metadata
+			},
+			// For multiple scores, output is nested by score name
+			"braintrust.output": map[string]any{
+				"accuracy": map[string]any{
+					"score": 0.95,
+				},
+				"without_metadata": map[string]any{
+					"score": 0.8,
+				},
+			},
+			"braintrust.span_attributes": scoreType,
+		},
+	})
+}
+
+func TestScoreMetadata_NoMetadata(t *testing.T) {
+	// Test that when a single score has no metadata, metadata attribute is not set
+	require := require.New(t)
+	assert := assert.New(t)
+
+	_, exporter := oteltest.Setup(t)
+
+	task := func(ctx context.Context, x int) (int, error) {
+		return x * 2, nil
+	}
+
+	scorer := NewScorer("no_metadata", func(ctx context.Context, input, expected, result int, _ Metadata) (Scores, error) {
+		return S(0.5), nil
+	})
+
+	cases := []Case[int, int]{
+		{Input: 1, Expected: 2},
+	}
+
+	key := newKey("proj-name", "proj-123", "exp-no-metadata")
+	eval := New(key, NewCases(cases), task, []Scorer[int, int]{scorer})
+	_, err := eval.Run(context.Background())
+	require.NoError(err)
+
+	spans := exporter.Flush()
+	require.Equal(3, len(spans))
+
+	scoreSpan := spans[1]
+	scoreSpan.AssertEqual(oteltest.TestSpan{
+		Name: "score",
+		Attrs: map[string]any{
+			"braintrust.parent":  "experiment_id:" + key.ExperimentID,
+			"braintrust.app_url": "https://www.braintrust.dev",
+		},
+		JSONAttrs: map[string]any{
+			"braintrust.scores": map[string]float64{
+				"no_metadata": 0.5,
+			},
+			// For single score with no metadata, braintrust.metadata should not be present
+			// "braintrust.metadata": (should not exist)
+			"braintrust.output": map[string]any{
+				"score": 0.5,
+			},
+			"braintrust.span_attributes": scoreType,
+		},
+	})
+
+	// Explicitly verify metadata is NOT present
+	assert.False(scoreSpan.HasAttr("braintrust.metadata"), "braintrust.metadata should not be present when score has no metadata")
 }
