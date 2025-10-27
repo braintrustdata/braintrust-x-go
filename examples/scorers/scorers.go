@@ -23,6 +23,14 @@ func main() {
 	}
 	defer teardown()
 
+	// Helper function for absolute value
+	abs := func(x int) int {
+		if x < 0 {
+			return -x
+		}
+		return x
+	}
+
 	// Build scorers list with local scorers
 	scorers := []eval.Scorer[int, int]{
 		autoevals.NewEquals[int, int](),
@@ -37,6 +45,29 @@ func main() {
 				{Name: "poor", Score: 0},
 				{Name: "average", Score: 0.5},
 				{Name: "excellent", Score: 1},
+			}, nil
+		}),
+		// an example of a scorer that returns a score with metadata
+		eval.NewScorer[int, int]("scorer_with_metadata", func(ctx context.Context, input, expected, result int, _ eval.Metadata) (eval.Scores, error) {
+			diff := result - expected
+			accuracy := 1.0
+			if diff != 0 {
+				accuracy = 1.0 / (1.0 + float64(abs(diff)))
+			}
+
+			return eval.Scores{
+				{
+					Name:  "scorer_with_metadata",
+					Score: accuracy,
+					Metadata: map[string]any{
+						"input":      input,
+						"expected":   expected,
+						"result":     result,
+						"difference": diff,
+						"is_exact":   diff == 0,
+						"error_rate": float64(abs(diff)) / float64(expected),
+					},
+				},
 			}, nil
 		}),
 	}

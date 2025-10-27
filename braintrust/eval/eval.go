@@ -295,6 +295,7 @@ func (e *Eval[I, R]) runScorers(ctx context.Context, c Case[I, R], result R) (Sc
 		}
 	}
 
+	// Build scores map (name -> score value)
 	valsByName := make(map[string]float64, len(scores))
 	for _, score := range scores {
 		valsByName[score.Name] = score.Score
@@ -302,6 +303,41 @@ func (e *Eval[I, R]) runScorers(ctx context.Context, c Case[I, R], result R) (Sc
 
 	if err := setJSONAttr(span, "braintrust.scores", valsByName); err != nil {
 		return nil, err
+	}
+
+	// Build metadata and output following Python/TypeScript conventions
+	// Always build nested structure, then flatten if single score
+	metadata := make(map[string]any, len(scores))
+	output := make(map[string]any, len(scores))
+
+	for _, score := range scores {
+		if score.Metadata != nil {
+			metadata[score.Name] = score.Metadata
+		}
+		output[score.Name] = map[string]any{"score": score.Score}
+	}
+
+	// For single score: flatten metadata and output to top level
+	if len(scores) == 1 {
+		score := scores[0]
+		if score.Metadata != nil {
+			if err := setJSONAttr(span, "braintrust.metadata", score.Metadata); err != nil {
+				return nil, err
+			}
+		}
+		if err := setJSONAttr(span, "braintrust.output", map[string]any{"score": score.Score}); err != nil {
+			return nil, err
+		}
+	} else if len(scores) > 1 {
+		// Multiple scores: use nested structure
+		if len(metadata) > 0 {
+			if err := setJSONAttr(span, "braintrust.metadata", metadata); err != nil {
+				return nil, err
+			}
+		}
+		if err := setJSONAttr(span, "braintrust.output", output); err != nil {
+			return nil, err
+		}
 	}
 
 	err := errors.Join(errs...) // will be nil if there are no errors
@@ -510,8 +546,9 @@ type Case[I, R any] struct {
 
 // Score represents the result of a scorer evaluation.
 type Score struct {
-	Name  string  `json:"name"`
-	Score float64 `json:"score"`
+	Name     string         `json:"name"`
+	Score    float64        `json:"score"`
+	Metadata map[string]any `json:"metadata,omitempty"`
 }
 
 // Scores is a list of scores.
