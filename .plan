@@ -1,0 +1,727 @@
+# Braintrust Go SDK v0.1 Plan
+
+**Status:** Draft for Review
+**Goal:** Clean break release with improved architecture, better state management, and extensible APIs
+
+---
+
+## 1. Module & Package Restructure
+
+### Module Rename
+- **Old:** `github.com/braintrustdata/braintrust-x-go`
+- **New:** `github.com/braintrustdata/braintrust-sdk-go`
+- **Approach:** Clean break, no backward compatibility
+
+### Package Structure (Flat)
+```
+github.com/braintrustdata/braintrust-sdk-go/
+├── trace/              # Core tracing (was braintrust/trace/)
+├── eval/               # Evaluations (was braintrust/eval/)
+├── api/                # API client (was braintrust/api/)
+├── contrib/            # Third-party integrations
+│   ├── openai/         # (was trace/traceopenai/)
+│   ├── anthropic/      # (was trace/traceanthropic/)
+│   ├── genai/          # (was trace/tracegenai/)
+│   └── langchaingo/    # (was trace/tracelangchaingo/)
+├── internal/           # Internal packages
+├── TBD: config         # Config management (location TBD: root vs config/ vs auth/)
+└── TBD: auth           # Login/auth (location TBD)
+```
+
+### Import Path Changes
+```go
+// Before
+import "github.com/braintrustdata/braintrust-x-go/braintrust/trace"
+import "github.com/braintrustdata/braintrust-x-go/braintrust/eval"
+import "github.com/braintrustdata/braintrust-x-go/braintrust/trace/traceopenai"
+
+// After
+import "github.com/braintrustdata/braintrust-sdk-go/trace"
+import "github.com/braintrustdata/braintrust-sdk-go/eval"
+import "github.com/braintrustdata/braintrust-sdk-go/contrib/openai"
+```
+
+**Open Questions:**
+- Exact location for config.go and login.go (root, config/, auth/, or core/)
+- Other packages to consider: autoevals, attachment
+
+---
+
+## 2. Config & State Architecture
+
+### Current Problems with Global State
+
+**Issue 1: Config Cache Can't Be Changed** (`env.go:14-15`)
+```go
+var cachedConfig *Config  // Package-level global
+
+func GetConfig(opts ...Option) Config {
+    if cachedConfig != nil {
+        return *cachedConfig  // Returns cached, ignores new opts!
+    }
+    // First call caches forever
+}
+```
+
+**Problems:**
+- First call caches config forever
+- Can't override for different parts of app
+- Can't have different configs in same process
+- Test isolation impossible - tests share cached state
+- No way to reset without restarting process
+
+**Example failure:**
+```go
+// Test A runs first
+trace.Quickstart() // caches BRAINTRUST_API_KEY from env
+
+// Test B wants different config
+os.Setenv("BRAINTRUST_API_KEY", "different-key")
+trace.Quickstart() // STILL USES OLD KEY from cache!
+```
+
+**Issue 2: Testing Anti-Pattern** (`env.go:182`)
+```go
+if !testing.Testing() {
+    cachedConfig = &config  // Only cache if not in test
+}
+```
+
+**Problems:**
+- Different behavior in tests vs production (bad!)
+- `testing.Testing()` checks if ANY test is running (brittle)
+- Can't test caching behavior itself
+- Violates principle: tests should run production code paths
+
+**Issue 3: No Isolation**
+```go
+// Package A
+trace.Quickstart(braintrust.WithAPIKey("key1"))
+
+// Package B (different service)
+trace.Quickstart(braintrust.WithAPIKey("key2"))  // Too late! Uses key1
+```
+
+Can't support:
+- Multiple projects in same app
+- Different API keys for different services
+- Isolated test environments
+
+---
+
+### Option A: Client-Based Architecture
+
+```go
+// Create client with explicit config
+client := braintrust.NewClient(
+    braintrust.WithAPIKey("..."),
+    braintrust.WithProject("my-project"),
+)
+
+// All operations through client
+result := client.Eval().Run(ctx, eval.Opts{...})
+exp := client.API().Experiments.Register(ctx, ...)
+teardown := client.Trace().Quickstart()
+```
+
+**Pros:**
+- Explicit config ownership
+- Easy to have multiple clients with different configs
+- Clear testing story (inject mock client)
+- Familiar pattern (AWS SDK, many Go SDKs)
+
+**Cons:**
+- More verbose
+- Doesn't play as nicely with OpenTelemetry global patterns
+- Every function needs client reference
+
+---
+
+### Option B: Init-Based State (Ruby SDK Pattern)
+
+```go
+// Explicit initialization
+state := braintrust.Init(
+    braintrust.WithAPIKey("..."),
+    braintrust.WithProject("my-project"),
+)
+defer state.Shutdown()
+
+// State flows through context
+ctx := state.WithContext(context.Background())
+
+// OR register as global default
+braintrust.SetGlobalState(state)
+
+// Package functions use state from context or global
+trace.Quickstart(ctx)
+eval.Run(ctx, opts)  // pulls state from context
+```
+
+**How it works:**
+```go
+// State object holds configuration (not global)
+type State struct {
+    config    Config
+    apiClient *api.Client
+}
+
+// Init creates state without using globals
+func Init(opts ...Option) *State {
+    cfg := buildConfig(opts...)
+    return &State{
+        config:    cfg,
+        apiClient: api.NewClient(cfg),
+    }
+}
+
+// State can be stored in context
+func (s *State) WithContext(ctx context.Context) context.Context {
+    return context.WithValue(ctx, stateKey, s)
+}
+
+// Or set as optional global default
+func SetGlobalState(s *State)
+
+// Functions pull state from context, then global, then env
+func stateFromContext(ctx context.Context) *State {
+    if s := ctx.Value(stateKey); s != nil {
+        return s.(*State)
+    }
+    if globalState != nil {
+        return globalState
+    }
+    return defaultStateFromEnv()  // Fallback
+}
+```
+
+**Usage - Simple case:**
+```go
+func main() {
+    state := braintrust.Init()  // from env vars
+    defer state.Shutdown()
+
+    // Optionally set as global
+    braintrust.SetGlobalState(state)
+
+    trace.Quickstart()  // uses global state
+    eval.Run(ctx, opts) // uses global state
+}
+```
+
+**Usage - Explicit case:**
+```go
+func main() {
+    state := braintrust.Init(braintrust.WithAPIKey("..."))
+    defer state.Shutdown()
+
+    ctx := state.WithContext(context.Background())
+
+    trace.Quickstart(ctx)
+    eval.Run(ctx, opts)  // gets state from ctx
+}
+```
+
+**Usage - Multiple configs:**
+```go
+prodState := braintrust.Init(braintrust.WithAPIKey("prod"))
+testState := braintrust.Init(braintrust.WithAPIKey("test"))
+
+prodCtx := prodState.WithContext(ctx)
+testCtx := testState.WithContext(ctx)
+
+// Different states in same process
+eval.Run(prodCtx, opts)
+eval.Run(testCtx, opts)
+```
+
+**Usage - Test isolation:**
+```go
+func TestA(t *testing.T) {
+    state := braintrust.Init(braintrust.WithAPIKey("test-a"))
+    defer state.Shutdown()
+    ctx := state.WithContext(context.Background())
+    // Completely isolated from other tests
+}
+
+func TestB(t *testing.T) {
+    state := braintrust.Init(braintrust.WithAPIKey("test-b"))
+    defer state.Shutdown()
+    ctx := state.WithContext(context.Background())
+    // Completely isolated from TestA
+}
+```
+
+**Pros:**
+- Explicit initialization (`Init()`)
+- Context-based propagation (idiomatic Go)
+- Multiple configs possible (via context)
+- Test isolation (each test creates own state)
+- Familiar pattern (Ruby SDK, similar to `sql.Open()`)
+- Optional global for simple cases
+- Explicit shutdown
+
+**Cons:**
+- Still has optional global state (but explicit, not cached)
+- Requires threading context
+
+**Comparison to Current:**
+
+| Issue | Current | Option B (Init) |
+|-------|---------|-----------------|
+| Can change config? | ❌ Cached forever | ✅ Create new state |
+| Test isolation? | ❌ Shares global cache | ✅ Each test gets own state |
+| Multiple configs? | ❌ Impossible | ✅ Via context |
+| Explicit setup? | ❌ Implicit on first call | ✅ Explicit `Init()` |
+| Shutdown control? | ❌ No cleanup | ✅ `state.Shutdown()` |
+| Testing hacks? | ❌ `testing.Testing()` check | ✅ No special behavior |
+
+---
+
+### Decision: TBD in follow-up design session
+
+**For v0.1:**
+- Remove global config cache
+- Remove `testing.Testing()` check
+- Design both patterns in detail
+- Choose one (or support both)
+- Keep login cache but make injectable for tests
+
+---
+
+## 3. Context Threading
+
+### Add context.Context to All API Functions
+
+**Files to update:**
+- `api/experiment.go` - `RegisterExperiment(ctx, name, projectID, opts)`
+- `api/project.go` - `RegisterProject(ctx, name)`
+- `api/dataset.go` - all dataset functions
+- `login.go` - `Login(ctx, opts)`
+
+**Already correct:**
+- ✅ `eval.Run(ctx, ...)` and all eval functions
+- ✅ All trace operations (via OpenTelemetry)
+
+**Benefits:**
+- Standard Go practice for I/O operations
+- Enables cancellation and timeouts
+- Required for context-based config propagation
+- Consistent API surface
+
+---
+
+## 4. API Package - Namespaced Client Architecture
+
+### Design: Primitives + Helpers with Namespaces
+
+```go
+// Create API client
+client := api.NewClient(ctx,
+    api.WithAPIKey("..."),
+    api.WithBaseURL("..."),
+)
+
+// Or use default client from env vars
+client := api.DefaultClient(ctx)
+```
+
+### Experiments Namespace
+```go
+// Low-level primitives (direct API wrappers)
+exp, err := client.Experiments.Create(ctx, api.CreateExperimentRequest{
+    ProjectID: "proj-123",
+    Name:      "my-experiment",
+})
+exp, err := client.Experiments.Get(ctx, "exp-id")
+exp, err := client.Experiments.Update(ctx, "exp-id", api.UpdateExperimentRequest{...})
+exps, err := client.Experiments.List(ctx, "proj-id")
+
+// Helpful helpers (common patterns)
+exp, err := client.Experiments.Register(ctx, "name", "proj-id", api.RegisterOpts{
+    Tags:     []string{"tag1"},
+    Metadata: map[string]any{"key": "val"},
+})
+id, err := client.Experiments.ResolveID(ctx, "nameOrID", "proj-id")
+```
+
+### Projects Namespace
+```go
+// Low-level primitives
+proj, err := client.Projects.Create(ctx, api.CreateProjectRequest{Name: "my-proj"})
+proj, err := client.Projects.Get(ctx, "proj-id")
+proj, err := client.Projects.GetByName(ctx, "proj-name")
+projs, err := client.Projects.List(ctx)
+
+// Helpful helpers
+proj, err := client.Projects.Register(ctx, "name")  // get-or-create
+id, err := client.Projects.ResolveID(ctx, "nameOrID")
+```
+
+### Datasets Namespace
+```go
+// Low-level primitives
+ds, err := client.Datasets.Create(ctx, api.CreateDatasetRequest{...})
+ds, err := client.Datasets.Get(ctx, "dataset-id")
+records, err := client.Datasets.Query(ctx, "dataset-id", api.QueryOpts{
+    Version: "v1",
+    Limit:   100,
+})
+
+// Helpful helpers
+ds, err := client.Datasets.GetByName(ctx, "proj-id", "dataset-name")
+ds, err := client.Datasets.Register(ctx, "proj-id", "name")
+```
+
+### Integration with Eval Package
+
+```go
+// Eval uses API client under the hood
+cases := eval.LoadDataset(ctx, "dataset-name",
+    eval.WithProject("my-project"),
+    eval.WithVersion("v1"),
+)
+// ^ Internally uses api.DefaultClient() or injected client
+
+// Advanced: inject custom client
+result := eval.Run(ctx, eval.Opts{
+    APIClient: myCustomClient,  // optional override
+    // ...
+})
+```
+
+**Design Notes:**
+- Primitives are thin wrappers around HTTP API
+- Helpers implement common patterns (get-or-create, resolve name→ID)
+- Both coexist in same namespace
+- Clear naming: `Create/Get/Update` = primitives, `Register/Resolve` = helpers
+
+---
+
+## 5. Eval Package - Dual API Design
+
+### Pattern 1: Object-Oriented API (Explicit & Composable)
+
+*Suggested APIs (detailed design in future session):*
+
+```go
+// Create evaluation with experiment config
+e := eval.New(ctx, eval.Config{
+    Project:    "my-project",
+    Experiment: "my-experiment",
+    Tags:       []string{"v1", "production"},
+    Metadata:   map[string]any{"model": "gpt-4"},
+})
+
+// Load test cases
+cases := eval.LoadDataset(ctx, "dataset-name",
+    eval.WithProject("my-project"),
+    eval.WithVersion("v1"),
+    eval.WithLimit(100),
+)
+// OR
+cases := eval.NewCases([]eval.Case[string, string]{
+    {Input: "hello", Expected: "world"},
+})
+
+// Run evaluation
+result, err := e.Run(ctx, eval.RunConfig{
+    Cases:       cases,
+    Task:        myTask,
+    Scorers:     myScorers,
+    Parallelism: 4,
+    Quiet:       false,
+})
+```
+
+**Alternative fluent style:**
+```go
+e := eval.New(ctx, config).
+    WithCases(cases).
+    WithTask(myTask).
+    WithScorers(myScorers)
+result, err := e.Run(ctx)
+```
+
+### Pattern 2: Convenience Helper (One-Call)
+
+```go
+// Keep current API - everything in one call
+result, err := eval.Run(ctx, eval.Opts[string, string]{
+    Project:     "my-project",
+    Experiment:  "my-experiment",
+    Dataset:     "dataset-name",
+    Task:        myTask,
+    Scorers:     myScorers,
+    Parallelism: 4,
+    Tags:        []string{"v1"},
+    Metadata:    map[string]any{"model": "gpt-4"},
+})
+```
+
+### Opts Struct Improvements
+
+**Current issues:**
+- 15+ fields mixing different concerns
+- Redundant fields: `Project`/`ProjectID`, `Dataset`/`DatasetID`
+
+**Proposed changes:**
+- Keep separate name/ID fields (explicit is better)
+- Group related options (to be designed)
+- Add extension points for future features
+
+**Decision:** Design details in follow-up session. For v0.1:
+- Keep `eval.Run()` helper working
+- Add `eval.New()` + `e.Run()` pattern
+- Reduce redundancy where possible
+
+---
+
+## 6. Eval Feature Parity - Future Extension Points
+
+### Python/TypeScript Features Not Yet Supported
+
+Based on SDK research, these features need support:
+
+#### A. EvalHooks (High Priority)
+**Purpose:** Runtime access to evaluation metadata in task functions
+
+*Suggested APIs (design in future session):*
+```go
+// Future: Task signature will accept hooks
+type Task[I, R any] func(ctx context.Context, input I, hooks EvalHooks) (R, error)
+
+// EvalHooks interface (v0.1: define but don't use yet)
+type EvalHooks interface {
+    Metadata() Metadata              // Get/mutate case metadata
+    SetMetadata(key string, val any)
+    Tags() []string                  // Get/mutate tags
+    AddTag(tag string)
+    Expected() R                     // Access expected value
+    TrialIndex() int                 // Current trial (when TrialCount > 1)
+    Span() trace.Span                // Access underlying span
+}
+```
+
+#### B. Trial Support (High Priority)
+**Purpose:** Run each case multiple times for non-deterministic tasks
+
+*Suggested APIs (design in future session):*
+```go
+type Opts struct {
+    // ...existing fields...
+    TrialCount int  // Run each case N times, Braintrust aggregates scores
+}
+```
+
+#### C. Error Score Handler (High Priority)
+**Purpose:** Custom scoring behavior when task/scorer fails
+
+*Suggested APIs (design in future session):*
+```go
+type ErrorScoreFunc func(error) Scores
+
+type Opts struct {
+    // ...existing fields...
+    ErrorScoreHandler ErrorScoreFunc  // Custom error handling
+}
+```
+
+#### D. BaseExperiment (Medium Priority)
+**Purpose:** Compare against previous experiment outputs as baseline
+
+*Suggested APIs (design in future session):*
+```go
+type Opts struct {
+    // ...existing fields...
+    BaseExperiment string  // Experiment name/ID to use as baseline
+}
+// Auto-selects best baseline using git history or timestamps
+```
+
+#### E. Additional Options (Medium Priority)
+
+*Suggested APIs (design in future session):*
+```go
+type Opts struct {
+    // ...existing fields...
+    Timeout        time.Duration  // Max evaluation duration
+    NoSendLogs     bool          // Local evaluation only, don't send to Braintrust
+    MaxConcurrency int           // Fine-grained concurrency control
+}
+```
+
+### v0.1 Implementation Strategy
+
+**What we'll do:**
+1. Define extension point interfaces (`EvalHooks`, `ErrorScoreFunc`)
+2. Add reserved fields to `Opts` (`TrialCount`, `BaseExperiment`, etc.)
+3. Document fields as "reserved for future use"
+4. Ensure APIs can support these features without breaking changes
+5. **Don't implement the logic yet** - just the extension points
+
+**Example:**
+```go
+// v0.1: Add to Opts, document but don't implement
+type Opts[I, R any] struct {
+    // ...existing fields...
+
+    // Reserved for future features (documented, not yet implemented)
+    TrialCount        int             // Reserved: will support N trials per case
+    ErrorScoreHandler ErrorScoreFunc  // Reserved: custom error scoring
+    BaseExperiment    string          // Reserved: baseline comparison
+    Timeout           time.Duration   // Reserved: eval timeout
+    NoSendLogs        bool            // Reserved: local-only mode
+}
+
+// v0.1: Define interface for documentation
+type EvalHooks interface {
+    // Future: will be passed to Task function
+    // Allows runtime mutation of metadata, tags, etc.
+    Metadata() Metadata
+    SetMetadata(key string, val any)
+    Tags() []string
+    AddTag(tag string)
+    Expected() R
+    TrialIndex() int
+    Span() trace.Span
+}
+```
+
+---
+
+## 7. API Cleanup - Remove Redundancy
+
+### Functions to Remove
+
+**In `api/` package:**
+- ❌ `GetOrCreateExperiment()` - redundant with `RegisterExperiment()`
+
+**In `eval/` package:**
+- ❌ `ResolveProjectExperimentID()` - redundant with `ResolveExperimentID()`
+- ❌ `ResolveKey()` - make internal/private (not needed publicly)
+
+### Keep Separate Name vs ID Fields
+
+**Decision:** Keep explicit separation between name and ID fields
+
+```go
+// In Opts - user picks one or the other
+type Opts struct {
+    Project   string  // by name
+    ProjectID string  // by ID (mutually exclusive with Project)
+
+    Dataset   string  // by name
+    DatasetID string  // by ID (mutually exclusive with Dataset)
+}
+```
+
+**In API functions:**
+```go
+// Separate ByName and ByID methods
+client.Projects.Get(ctx, id)           // by ID
+client.Projects.GetByName(ctx, name)   // by name
+client.Projects.Register(ctx, name)    // get-or-create by name
+
+client.Datasets.Get(ctx, id)           // by ID
+client.Datasets.GetByName(ctx, projectID, name)  // by name
+```
+
+**Benefits:**
+- Explicit and clear
+- No magic auto-detection
+- Easier to document and understand
+
+### Other Cleanup
+
+- Remove `testing.Testing()` check in `env.go:182`
+- Remove global `cachedConfig` (replaced by new architecture)
+- Make `globalLoginCache` injectable for tests
+
+---
+
+## 8. Testing Strategy
+
+### Test Requirements
+- All existing tests pass with new structure
+- Add tests for context-based config
+- Test config injection (no globals)
+- Test API namespaces
+- Test eval dual API (New() + Run())
+- Test contrib packages in new locations
+
+### CI Requirements
+- `make test` passes
+- `make ci` passes (lint, fmt, build, tests)
+- All examples updated and working
+- No breaking changes for documented APIs (besides module/package paths)
+
+---
+
+## 9. Migration Guide
+
+**TODO:** Write comprehensive migration guide before v0.1 release
+
+The guide should cover:
+- Module path changes (braintrust-x-go → braintrust-sdk-go)
+- Package import path changes (flat structure, contrib/ location)
+- API signature changes (context parameters)
+- Breaking vs non-breaking changes
+- Example code updates
+- Common migration issues and solutions
+
+---
+
+## 10. Areas Requiring Detailed Design
+
+These topics need deeper design sessions after v0.1 plan approval:
+
+### A. Config Architecture Decision
+- Client-based vs Init-based vs hybrid
+- Config propagation patterns
+- Testing strategies
+
+### B. API Client Implementation
+- Request/response types for all endpoints
+- Error handling patterns
+- Retry logic
+- Rate limiting
+
+### C. Eval Object-Oriented API
+- Exact signatures for `eval.New()` and `e.Run()`
+- Config struct groupings
+- Fluent vs explicit patterns
+- Integration with API client
+
+### D. EvalHooks Implementation
+- How hooks are created and passed to tasks
+- Span access patterns
+- Metadata mutation during execution
+- Thread-safety considerations
+
+### E. Trial Execution
+- Aggregation logic for multiple trials
+- Bucketing strategy by input
+- Score variance calculation
+- Performance implications
+
+### F. Error Handling
+- Default error score handler behavior
+- Custom handler patterns
+- Partial failure modes
+- Error reporting
+
+### G. Package Organization
+- Final location for config, auth, login
+- Autoevals package location and integration
+- Attachment package location
+- Internal vs public boundaries
+
+---
+
+## 11. Next Steps
+
+1. Review and approve this plan
+2. Schedule detailed design sessions for areas marked "design in future session"
+3. Begin implementation
+4. Release v0.1.0
