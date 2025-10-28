@@ -43,6 +43,8 @@ type Options struct {
 	AppURL string
 	// AppPublicURL is the public URL of the Braintrust app
 	AppPublicURL string
+	// APIURL is the URL of the Braintrust API
+	APIURL string
 	// APIKey is the API key to use
 	APIKey string
 	// OrgName is the name of a specific organization to connect to (optional)
@@ -56,6 +58,7 @@ type Info struct {
 	LoginToken   string
 	OrgID        string
 	OrgName      string
+	APIKey       string
 	APIURL       string
 	ProxyURL     string
 	AppURL       string
@@ -138,6 +141,7 @@ func Login(ctx context.Context, opts Options) (*Info, error) {
 		AppURL:       appURL,
 		AppPublicURL: appPublicURL,
 		LoginToken:   apiKey,
+		APIKey:       apiKey,
 	}
 
 	// Handle test API key

@@ -1,4 +1,4 @@
-.PHONY: help ci build clean test cover lint fmt mod-verify fix godoc examples
+.PHONY: help ci build clean test cover cover-path lint fmt mod-verify fix godoc examples
 
 help:
 	@echo "Available commands:"
@@ -6,6 +6,7 @@ help:
 	@echo "  build         - Build all packages"
 	@echo "  test          - Run all tests"
 	@echo "  cover         - Run tests with coverage report"
+	@echo "  cover-path    - Run coverage for specific path (e.g., make cover-path PATH=./config)"
 	@echo "  clean         - Clean build artifacts and coverage files"
 	@echo "  fmt           - Format Go code"
 	@echo "  lint          - Run golangci-lint"

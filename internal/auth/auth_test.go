@@ -272,3 +272,96 @@ func TestSession_BlockingLogin(t *testing.T) {
 	assert.NotNil(t, result)
 	assert.Equal(t, "test-org-id", result.OrgID)
 }
+
+// TestSession_Endpoints tests that Endpoints() returns credentials immediately
+func TestSession_Endpoints(t *testing.T) {
+	t.Parallel()
+
+	t.Run("with all fields", func(t *testing.T) {
+		session, err := NewSession(context.Background(), Options{
+			AppURL: "https://www.braintrust.dev",
+			APIURL: "https://api.braintrust.dev",
+			APIKey: "test-key-123",
+			Logger: tests.NewNoopLogger(),
+		})
+		require.NoError(t, err)
+		defer session.Close()
+
+		// Endpoints() should return immediately, no login required
+		endpoints := session.Endpoints()
+
+		assert.Equal(t, "test-key-123", endpoints.APIKey)
+		assert.Equal(t, "https://api.braintrust.dev", endpoints.APIURL)
+		assert.Equal(t, "https://www.braintrust.dev", endpoints.AppURL)
+	})
+
+	t.Run("with default APIURL", func(t *testing.T) {
+		session, err := NewSession(context.Background(), Options{
+			AppURL: "https://www.braintrust.dev",
+			// APIURL not specified - should use default
+			APIKey: "test-key-456",
+			Logger: tests.NewNoopLogger(),
+		})
+		require.NoError(t, err)
+		defer session.Close()
+
+		endpoints := session.Endpoints()
+
+		assert.Equal(t, "test-key-456", endpoints.APIKey)
+		assert.Equal(t, "https://api.braintrust.dev", endpoints.APIURL) // Default
+		assert.Equal(t, "https://www.braintrust.dev", endpoints.AppURL)
+	})
+
+	t.Run("available before login completes", func(t *testing.T) {
+		// Create session with invalid URL so login hangs
+		session, err := NewSession(context.Background(), Options{
+			AppURL: "http://localhost:99999", // Invalid - will retry forever
+			APIKey: "test-key-789",
+			Logger: tests.NewNoopLogger(),
+		})
+		require.NoError(t, err)
+		defer session.Close()
+
+		// Endpoints() should work immediately even though login hasn't completed
+		endpoints := session.Endpoints()
+
+		assert.Equal(t, "test-key-789", endpoints.APIKey)
+		assert.Equal(t, "https://api.braintrust.dev", endpoints.APIURL)
+		assert.Equal(t, "http://localhost:99999", endpoints.AppURL)
+	})
+}
+
+// TestSession_OrgName tests that OrgName() returns org name after login
+func TestSession_OrgName(t *testing.T) {
+	t.Parallel()
+
+	t.Run("returns empty before login completes", func(t *testing.T) {
+		session, err := NewSession(context.Background(), Options{
+			AppURL: "http://localhost:99999", // Invalid - will hang
+			APIKey: "test-key",
+			Logger: tests.NewNoopLogger(),
+		})
+		require.NoError(t, err)
+		defer session.Close()
+
+		// Should return empty string before login completes
+		assert.Equal(t, "", session.OrgName())
+	})
+
+	t.Run("returns org name after successful login", func(t *testing.T) {
+		session, err := NewSession(context.Background(), Options{
+			AppURL: "https://www.braintrust.dev",
+			APIKey: TestAPIKey,
+			Logger: tests.NewFailTestLogger(t),
+		})
+		require.NoError(t, err)
+		defer session.Close()
+
+		// Wait for login to complete
+		_, err = session.Login(context.Background())
+		require.NoError(t, err)
+
+		// Should return org name
+		assert.Equal(t, "test-org-name", session.OrgName())
+	})
+}

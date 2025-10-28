@@ -17,6 +17,14 @@ type Session struct {
 	logger logger.Logger
 	ctx    context.Context
 	cancel context.CancelFunc
+	opts   Options // Store original options for access before login completes
+}
+
+// Endpoints holds the API credentials and URLs from session options.
+type Endpoints struct {
+	APIKey string
+	APIURL string
+	AppURL string
 }
 
 // NewSession creates a session and starts login with retry in the background.
@@ -43,6 +51,7 @@ func NewSession(ctx context.Context, opts Options) (*Session, error) {
 		done:   make(chan struct{}),
 		ctx:    sessionCtx,
 		cancel: cancel,
+		opts:   opts,
 	}
 	go s.loginWithRetry(opts)
 	return s, nil
@@ -53,6 +62,32 @@ func (s *Session) Close() {
 	if s.cancel != nil {
 		s.cancel()
 	}
+}
+
+// Endpoints returns the API credentials that were passed to the session.
+// This is always available immediately, no login required.
+func (s *Session) Endpoints() Endpoints {
+	apiURL := s.opts.APIURL
+	if apiURL == "" {
+		apiURL = "https://api.braintrust.dev" // Default
+	}
+	return Endpoints{
+		APIKey: s.opts.APIKey,
+		APIURL: apiURL,
+		AppURL: s.opts.AppURL,
+	}
+}
+
+// OrgName returns the organization name if available.
+// Returns empty string if login hasn't completed yet.
+func (s *Session) OrgName() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if s.info != nil {
+		return s.info.OrgName
+	}
+	return ""
 }
 
 // Info returns current auth info (non-blocking).

@@ -21,12 +21,9 @@ type Config struct {
 	BlockingLogin      bool
 
 	// Tracing configuration
-	TracingEnabled  bool
-	TracerProvider  *trace.TracerProvider
-	SetGlobalTracer bool
 	FilterAISpans   bool
 	SpanFilterFuncs []SpanFilterFunc
-	SpanProcessor   trace.SpanProcessor
+	Exporter        trace.SpanExporter
 
 	// Logger
 	Logger logger.Logger
@@ -46,7 +43,6 @@ type SpanFilterFunc func(span trace.ReadOnlySpan) int
 //   - BRAINTRUST_DEFAULT_PROJECT_ID: Default project ID
 //   - BRAINTRUST_DEFAULT_PROJECT: Default project name (default: "default-go-project")
 //   - BRAINTRUST_BLOCKING_LOGIN: Enable blocking login (default: false)
-//   - BRAINTRUST_TRACING_ENABLED: Enable tracing (default: true)
 //   - BRAINTRUST_OTEL_FILTER_AI_SPANS: Filter to keep only AI-related spans (default: false)
 func FromEnv() *Config {
 	return &Config{
@@ -57,9 +53,7 @@ func FromEnv() *Config {
 		DefaultProjectID:   getEnvString("BRAINTRUST_DEFAULT_PROJECT_ID", ""),
 		DefaultProjectName: getEnvString("BRAINTRUST_DEFAULT_PROJECT", "default-go-project"),
 		BlockingLogin:      getEnvBool("BRAINTRUST_BLOCKING_LOGIN", false),
-		TracingEnabled:     getEnvBool("BRAINTRUST_TRACING_ENABLED", true),
 		FilterAISpans:      getEnvBool("BRAINTRUST_OTEL_FILTER_AI_SPANS", false),
-		SetGlobalTracer:    true, // default to true for convenience
 	}
 }
 

@@ -69,28 +69,12 @@ func WithBlockingLogin(enabled bool) Option {
 	}
 }
 
-// WithTracingEnabled enables or disables OpenTelemetry tracing
-// Default: true
-func WithTracingEnabled(enabled bool) Option {
+// WithExporter injects a custom OpenTelemetry SpanExporter
+// If not provided, an OTLP HTTP exporter will be created automatically
+// This is primarily useful for testing with a memory exporter
+func WithExporter(exporter trace.SpanExporter) Option {
 	return func(c *config.Config) {
-		c.TracingEnabled = enabled
-	}
-}
-
-// WithTracerProvider injects a custom OpenTelemetry TracerProvider
-// If not provided, a new TracerProvider will be created
-// The client will NOT shut down an injected provider - you must manage its lifecycle
-func WithTracerProvider(tp *trace.TracerProvider) Option {
-	return func(c *config.Config) {
-		c.TracerProvider = tp
-	}
-}
-
-// WithGlobalTracer controls whether to set the TracerProvider as the global default
-// Default: true (for convenience, most apps have one global provider)
-func WithGlobalTracer(enabled bool) Option {
-	return func(c *config.Config) {
-		c.SetGlobalTracer = enabled
+		c.Exporter = exporter
 	}
 }
 
@@ -107,12 +91,5 @@ func WithFilterAISpans(enabled bool) Option {
 func WithSpanFilterFuncs(filterFuncs ...config.SpanFilterFunc) Option {
 	return func(c *config.Config) {
 		c.SpanFilterFuncs = append(c.SpanFilterFuncs, filterFuncs...)
-	}
-}
-
-// WithSpanProcessor injects a custom SpanProcessor (primarily for testing)
-func WithSpanProcessor(processor trace.SpanProcessor) Option {
-	return func(c *config.Config) {
-		c.SpanProcessor = processor
 	}
 }

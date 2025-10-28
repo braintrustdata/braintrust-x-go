@@ -6,10 +6,12 @@ import (
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/sdk/trace"
+	oteltrace "go.opentelemetry.io/otel/trace"
 
 	"github.com/braintrustdata/braintrust-x-go/config"
 	"github.com/braintrustdata/braintrust-x-go/internal/auth"
 	"github.com/braintrustdata/braintrust-x-go/logger"
+	bttrace "github.com/braintrustdata/braintrust-x-go/trace"
 )
 
 // Client is the main Braintrust SDK client
@@ -18,30 +20,31 @@ type Client struct {
 	logger         logger.Logger
 	session        *auth.Session
 	tracerProvider *trace.TracerProvider
-	ownedProvider  bool
+	ownedProvider  bool // true if NewWithOtel created the provider
 }
 
-// New creates a new Braintrust client.
+// New creates a new Braintrust client with the provided TracerProvider.
+//
+// The TracerProvider is required and should be managed by the caller.
+// The client will NOT shut down the provider - you must do this yourself.
 //
 // Configuration is loaded from environment variables first, then
 // explicit options are applied (options take precedence).
 //
-// By default, New():
-//   - Creates and configures an OpenTelemetry TracerProvider
-//   - Starts login in the background (async)
-//   - Sets the TracerProvider as the global default
+// Login happens asynchronously in the background by default.
 //
 // Example:
 //
-//	bt, err := braintrust.New(
+//	tp := trace.NewTracerProvider()
+//	bt, err := braintrust.New(tp,
 //	    braintrust.WithAPIKey("your-api-key"),
 //	    braintrust.WithProject("my-project"),
 //	)
 //	if err != nil {
 //	    log.Fatal(err)
 //	}
-//	defer bt.Shutdown(context.Background())
-func New(opts ...Option) (*Client, error) {
+//	defer tp.Shutdown(context.Background())
+func New(tp *trace.TracerProvider, opts ...Option) (*Client, error) {
 	// Build config from environment variables
 	cfg := config.FromEnv()
 
@@ -65,13 +68,13 @@ func New(opts ...Option) (*Client, error) {
 		"project", cfg.DefaultProjectName,
 		"org", cfg.OrgName,
 		"api_url", cfg.APIURL,
-		"tracing_enabled", cfg.TracingEnabled,
 		"blocking_login", cfg.BlockingLogin)
 
 	// Create auth session - starts async login immediately
 	session, err := auth.NewSession(context.Background(), auth.Options{
 		AppURL:       cfg.AppURL,
 		AppPublicURL: cfg.AppURL,
+		APIURL:       cfg.APIURL,
 		APIKey:       cfg.APIKey,
 		OrgName:      cfg.OrgName,
 		Logger:       log,
@@ -82,15 +85,14 @@ func New(opts ...Option) (*Client, error) {
 	}
 
 	client.session = session
+	client.tracerProvider = tp
 
-	// Setup tracing (can use session even if login not complete yet)
-	if cfg.TracingEnabled {
-		if err := client.setupTracing(); err != nil {
-			log.Error("failed to setup tracing", "error", err)
-			return nil, fmt.Errorf("failed to setup tracing: %w", err)
-		}
-		log.Debug("tracing setup complete", "owned_provider", client.ownedProvider)
+	// Setup tracing with provided TracerProvider
+	if err := client.setupTracing(); err != nil {
+		log.Error("failed to setup tracing", "error", err)
+		return nil, fmt.Errorf("failed to setup tracing: %w", err)
 	}
+	log.Debug("tracing setup complete")
 
 	// If blocking login requested, wait for it
 	if cfg.BlockingLogin {
@@ -106,48 +108,95 @@ func New(opts ...Option) (*Client, error) {
 	return client, nil
 }
 
-// setupTracing initializes OpenTelemetry tracing
-func (c *Client) setupTracing() error {
-	var tp *trace.TracerProvider
+// NewWithOtel creates a new Braintrust client and automatically sets up OpenTelemetry.
+//
+// This convenience constructor:
+//   - Creates a new TracerProvider
+//   - Configures it with Braintrust tracing
+//   - Sets it as the global default
+//   - The client owns the provider and will shut it down on Shutdown()
+//
+// Configuration is loaded from environment variables first, then
+// explicit options are applied (options take precedence).
+//
+// Login happens asynchronously in the background by default.
+//
+// Example:
+//
+//	bt, err := braintrust.NewWithOtel(
+//	    braintrust.WithAPIKey("your-api-key"),
+//	    braintrust.WithProject("my-project"),
+//	)
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//	defer bt.Shutdown(context.Background())
+func NewWithOtel(opts ...Option) (*Client, error) {
+	// Create a new TracerProvider
+	tp := trace.NewTracerProvider()
 
-	if c.config.TracerProvider != nil {
-		// Use provided TracerProvider
-		tp = c.config.TracerProvider
-		c.tracerProvider = tp
-		c.ownedProvider = false
-		c.logger.Debug("using provided tracer provider")
-	} else {
-		// Create new TracerProvider
-		tp = trace.NewTracerProvider()
-		c.tracerProvider = tp
-		c.ownedProvider = true
-		c.logger.Debug("created new tracer provider")
+	// Create client with the provider
+	client, err := New(tp, opts...)
+	if err != nil {
+		return nil, err
 	}
 
-	// Enable Braintrust tracing on the provider
-	// TODO: Call trace.Enable() once we refactor trace package
-	c.logger.Debug("enabling braintrust tracing on provider")
+	// Mark provider as owned by this client (will shut down on Shutdown())
+	client.ownedProvider = true
 
-	// Set as global if requested
-	if c.config.SetGlobalTracer {
-		otel.SetTracerProvider(tp)
-		c.logger.Debug("set tracer provider as global")
+	// Set as global tracer provider
+	otel.SetTracerProvider(tp)
+	client.logger.Debug("set tracer provider as global")
+
+	return client, nil
+}
+
+// setupTracing initializes OpenTelemetry tracing
+func (c *Client) setupTracing() error {
+	// Build trace config from client config
+	traceConfig := bttrace.Config{
+		DefaultProjectID:   c.config.DefaultProjectID,
+		DefaultProjectName: c.config.DefaultProjectName,
+		FilterAISpans:      c.config.FilterAISpans,
+		SpanFilterFuncs:    convertSpanFilters(c.config.SpanFilterFuncs),
+		EnableConsoleLog:   false,
+		Exporter:           c.config.Exporter,
+		Logger:             c.logger,
+	}
+
+	// Add Braintrust span processor to the provided TracerProvider
+	c.logger.Debug("enabling braintrust tracing on provider")
+	if err := bttrace.AddSpanProcessor(c.tracerProvider, c.session, traceConfig); err != nil {
+		c.logger.Error("failed to setup tracing", "error", err)
+		return fmt.Errorf("failed to setup tracing: %w", err)
 	}
 
 	return nil
 }
 
+// convertSpanFilters converts config.SpanFilterFunc to trace.SpanFilterFunc
+func convertSpanFilters(funcs []config.SpanFilterFunc) []bttrace.SpanFilterFunc {
+	result := make([]bttrace.SpanFilterFunc, len(funcs))
+	for i, f := range funcs {
+		result[i] = bttrace.SpanFilterFunc(f)
+	}
+	return result
+}
+
 // Shutdown gracefully shuts down the client.
-// If the client owns the TracerProvider, this flushes and shuts it down.
 //
-// Always call Shutdown before your program exits:
+// If the client was created with NewWithOtel(), this also shuts down the TracerProvider.
+// If the client was created with New(), the caller must shut down the TracerProvider separately.
+//
+// Always call Shutdown before your program exits to flush any pending data:
 //
 //	defer bt.Shutdown(context.Background())
 func (c *Client) Shutdown(ctx context.Context) error {
 	c.logger.Debug("shutting down client")
 
+	// If we own the provider, shut it down
 	if c.ownedProvider && c.tracerProvider != nil {
-		c.logger.Debug("shutting down tracer provider")
+		c.logger.Debug("shutting down owned tracer provider")
 		if err := c.tracerProvider.Shutdown(ctx); err != nil {
 			c.logger.Error("error shutting down tracer provider", "error", err)
 			return fmt.Errorf("tracer provider shutdown failed: %w", err)
@@ -179,14 +228,28 @@ func (c *Client) String() string {
   Organization: %s
   Project: %s
   API URL: %s
-  App URL: %s
-  Tracing: %v
-  Global Tracer: %v`,
+  App URL: %s`,
 		orgInfo,
 		c.config.DefaultProjectName,
 		c.config.APIURL,
 		c.config.AppURL,
-		c.config.TracingEnabled,
-		c.config.SetGlobalTracer,
 	)
+}
+
+// TracerProvider returns the OpenTelemetry TracerProvider used by this client.
+// This can be used to create tracers or access the provider for advanced use cases.
+func (c *Client) TracerProvider() *trace.TracerProvider {
+	return c.tracerProvider
+}
+
+// Tracer returns an OpenTelemetry Tracer with the given name.
+// This is a convenience method equivalent to calling TracerProvider().Tracer(name, opts...).
+//
+// Example:
+//
+//	tracer := client.Tracer("my-app")
+//	ctx, span := tracer.Start(ctx, "my-operation")
+//	defer span.End()
+func (c *Client) Tracer(name string, opts ...oteltrace.TracerOption) oteltrace.Tracer {
+	return c.tracerProvider.Tracer(name, opts...)
 }
