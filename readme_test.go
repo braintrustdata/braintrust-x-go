@@ -1,4 +1,4 @@
-package main
+package braintrust
 
 import (
 	_ "embed"
