@@ -110,30 +110,25 @@ func makeLoginRequest(ctx context.Context, appURL, apiKey string) (*loginRespons
 	return &loginResp, nil
 }
 
-// Login authenticates with the Braintrust API and returns login information.
+// login authenticates with the Braintrust API and returns login information.
 // It implements the same logic as the Python SDK's login() function.
 // Note: Caching is now handled by auth.Session, not by this function.
-func Login(ctx context.Context, opts Options) (*Info, error) {
-	if opts.APIKey == "" {
+func login(ctx context.Context, apiKey, appURL, appPublicURL, orgName string, log logger.Logger) (*Info, error) {
+	if apiKey == "" {
 		return nil, fmt.Errorf("API key is required")
 	}
-	if opts.AppURL == "" {
+	if appURL == "" {
 		return nil, fmt.Errorf("app URL is required")
 	}
 
 	// Use discard logger if none provided
-	log := opts.Logger
 	if log == nil {
 		log = logger.Discard()
 	}
 
-	apiKey := opts.APIKey
-	appURL := opts.AppURL
-	appPublicURL := opts.AppPublicURL
 	if appPublicURL == "" {
 		appPublicURL = appURL
 	}
-	orgName := opts.OrgName
 
 	log.Debug("Login: attempting login", "api_key", maskAPIKey(apiKey), "org", orgName, "app_url", appURL)
 
@@ -252,27 +247,26 @@ func isRetryableError(err error) bool {
 	return true
 }
 
-// LoginUntilSuccess attempts to login with exponential backoff retry.
+// loginUntilSuccess attempts to login with exponential backoff retry.
 // It retries indefinitely on 5xx errors and network errors, but returns immediately on 4xx errors.
 // Backoff starts at 10ms and doubles each attempt, capped at 10 seconds.
 // Returns early if context is cancelled.
-func LoginUntilSuccess(ctx context.Context, opts Options) (*Info, error) {
+func loginUntilSuccess(ctx context.Context, apiKey, appURL, appPublicURL, orgName string, log logger.Logger) (*Info, error) {
 	// Use discard logger if none provided
-	log := opts.Logger
 	if log == nil {
 		log = logger.Discard()
 	}
 
 	attempt := 0
 	for {
-		result, err := Login(ctx, opts)
+		result, err := login(ctx, apiKey, appURL, appPublicURL, orgName, log)
 		if err == nil {
 			return result, nil
 		}
 
 		// Check if error is retryable
 		if !isRetryableError(err) {
-			log.Debug("LoginUntilSuccess: non-retryable error", "error", err)
+			log.Debug("loginUntilSuccess: non-retryable error", "error", err)
 			return nil, err
 		}
 
@@ -282,7 +276,7 @@ func LoginUntilSuccess(ctx context.Context, opts Options) (*Info, error) {
 		if delay > maxDelay {
 			delay = maxDelay
 		}
-		log.Debug("LoginUntilSuccess: retrying after failure", "attempt", attempt+1, "error", err, "delay", delay)
+		log.Debug("loginUntilSuccess: retrying after failure", "attempt", attempt+1, "error", err, "delay", delay)
 
 		// Sleep with context cancellation
 		timer := time.NewTimer(delay)

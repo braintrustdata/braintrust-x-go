@@ -121,8 +121,8 @@ func (s *Session) loginWithRetry(opts Options) {
 
 	s.logger.Debug("starting login with retry")
 
-	// Use LoginUntilSuccess which retries on network/5xx errors
-	info, err := LoginUntilSuccess(s.ctx, opts)
+	// Use loginUntilSuccess which retries on network/5xx errors
+	info, err := loginUntilSuccess(s.ctx, opts.APIKey, opts.AppURL, opts.AppPublicURL, opts.OrgName, opts.Logger)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
