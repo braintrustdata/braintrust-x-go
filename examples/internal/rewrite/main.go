@@ -7,14 +7,26 @@ import (
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/sdk/trace"
 
 	braintrust "github.com/braintrustdata/braintrust-x-go"
-	"github.com/braintrustdata/braintrust-x-go/trace"
+	bttrace "github.com/braintrustdata/braintrust-x-go/trace"
 )
 
 func main() {
-	// Create Braintrust client with OpenTelemetry auto-setup
-	bt, err := braintrust.NewWithOtel(
+	// Create TracerProvider
+	tp := trace.NewTracerProvider()
+	defer func() {
+		if err := tp.Shutdown(context.Background()); err != nil {
+			log.Printf("Failed to shutdown tracer provider: %v", err)
+		}
+	}()
+
+	// Set as global tracer provider so otel.Tracer() works
+	otel.SetTracerProvider(tp)
+
+	// Create Braintrust client with the TracerProvider
+	bt, err := braintrust.New(tp,
 		braintrust.WithAPIKey(os.Getenv("BRAINTRUST_API_KEY")),
 		braintrust.WithProject("rewrite-test"),
 		braintrust.WithBlockingLogin(true),
@@ -22,11 +34,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to create Braintrust client: %v", err)
 	}
-	defer func() {
-		if err := bt.Shutdown(context.Background()); err != nil {
-			log.Printf("Failed to shutdown Braintrust client: %v", err)
-		}
-	}()
 
 	log.Println(bt)
 
@@ -41,8 +48,8 @@ func demonstrateManualTracing() {
 	ctx := context.Background()
 
 	// Set project parent context
-	ctx = trace.SetParent(ctx, trace.Parent{
-		Type: trace.ParentTypeProjectName,
+	ctx = bttrace.SetParent(ctx, bttrace.Parent{
+		Type: bttrace.ParentTypeProjectName,
 		ID:   "rewrite-test",
 	})
 
@@ -64,7 +71,7 @@ func demonstrateManualTracing() {
 	parentSpan.End()
 
 	// Generate permalink
-	if link, err := trace.Permalink(parentSpan); err == nil {
+	if link, err := bttrace.Permalink(parentSpan); err == nil {
 		log.Printf("\nView trace: %s", link)
 	}
 }

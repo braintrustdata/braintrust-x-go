@@ -6,7 +6,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
@@ -32,9 +31,6 @@ func TestNew_WithMinimalConfig(t *testing.T) {
 
 	// Test TracerProvider() accessor
 	assert.Equal(t, tp, client.TracerProvider())
-
-	// Test that provider is not owned
-	assert.False(t, client.ownedProvider)
 
 	// Test Tracer() method creates a working tracer
 	tracer := client.Tracer("test-tracer")
@@ -101,131 +97,29 @@ func TestNew_MissingAPIKey(t *testing.T) {
 	assert.Contains(t, err.Error(), "API key")
 }
 
-func TestNewWithOtel_SetsGlobalProvider(t *testing.T) {
-	t.Parallel()
-
-	// Save original global provider and restore after test
-	original := otel.GetTracerProvider()
-	defer otel.SetTracerProvider(original)
-
-	// Create client with NewWithOtel
-	client, err := NewWithOtel(
-		WithAPIKey(auth.TestAPIKey),
-		WithProject("test-project"),
-		WithLogger(tests.NewFailTestLogger(t)),
-	)
-	require.NoError(t, err)
-	require.NotNil(t, client)
-	defer func() { _ = client.Shutdown(context.Background()) }()
-
-	// Verify global provider was set
-	globalTP := otel.GetTracerProvider()
-	assert.NotEqual(t, original, globalTP)
-
-	// Verify it's the same as the client's provider
-	assert.Equal(t, client.TracerProvider(), globalTP)
-
-	// Verify provider is owned by client
-	assert.True(t, client.ownedProvider)
-}
-
-func TestShutdown_Behavior(t *testing.T) {
-	t.Parallel()
-
-	t.Run("owned provider is shut down", func(t *testing.T) {
-		// Save/restore global provider
-		original := otel.GetTracerProvider()
-		defer otel.SetTracerProvider(original)
-
-		// Create client with NewWithOtel (owns provider)
-		client, err := NewWithOtel(
-			WithAPIKey(auth.TestAPIKey),
-			WithProject("test-project"),
-			WithLogger(tests.NewFailTestLogger(t)),
-		)
-		require.NoError(t, err)
-
-		// Get provider reference
-		tp := client.TracerProvider()
-
-		// Shutdown client
-		err = client.Shutdown(context.Background())
-		require.NoError(t, err)
-
-		// Provider should be shut down (we can't directly test this,
-		// but we can verify Shutdown() succeeded without error)
-		assert.NotNil(t, tp)
-	})
-
-	t.Run("external provider is not shut down", func(t *testing.T) {
-		// Create external provider
-		tp := trace.NewTracerProvider()
-		defer func() { _ = tp.Shutdown(context.Background()) }()
-
-		// Create client with New() (doesn't own provider)
-		client, err := New(tp,
-			WithAPIKey(auth.TestAPIKey),
-			WithProject("test-project"),
-			WithLogger(tests.NewFailTestLogger(t)),
-		)
-		require.NoError(t, err)
-
-		// Shutdown client
-		err = client.Shutdown(context.Background())
-		require.NoError(t, err)
-
-		// Provider should still be usable
-		tracer := tp.Tracer("test")
-		_, span := tracer.Start(context.Background(), "test-span")
-		span.End()
-	})
-
-	t.Run("multiple shutdowns are safe", func(t *testing.T) {
-		// Save/restore global provider
-		original := otel.GetTracerProvider()
-		defer otel.SetTracerProvider(original)
-
-		client, err := NewWithOtel(
-			WithAPIKey(auth.TestAPIKey),
-			WithProject("test-project"),
-			WithLogger(tests.NewFailTestLogger(t)),
-		)
-		require.NoError(t, err)
-
-		// Call shutdown multiple times
-		err = client.Shutdown(context.Background())
-		require.NoError(t, err)
-
-		err = client.Shutdown(context.Background())
-		require.NoError(t, err)
-
-		err = client.Shutdown(context.Background())
-		require.NoError(t, err)
-	})
-}
-
 func TestTracing_EndToEnd(t *testing.T) {
 	t.Parallel()
-
-	// Save/restore global provider
-	original := otel.GetTracerProvider()
-	defer otel.SetTracerProvider(original)
 
 	// Create a memory exporter to capture spans without making API calls
 	exporter := tracetest.NewInMemoryExporter()
 
-	// Create client with NewWithOtel and memory exporter
-	client, err := NewWithOtel(
+	// Create TracerProvider with simple processor
+	tp := trace.NewTracerProvider(
+		trace.WithSyncer(exporter),
+	)
+	defer func() { _ = tp.Shutdown(context.Background()) }()
+
+	// Create client with custom exporter
+	client, err := New(tp,
 		WithAPIKey(auth.TestAPIKey),
 		WithProject("test-project"),
 		WithExporter(exporter),
 		WithLogger(tests.NewFailTestLogger(t)),
 	)
 	require.NoError(t, err)
-	defer func() { _ = client.Shutdown(context.Background()) }()
 
-	// Create a span using the global tracer (since NewWithOtel sets global)
-	tracer := otel.Tracer("test-app")
+	// Create a span using the client's tracer
+	tracer := client.Tracer("test-app")
 	ctx, span := tracer.Start(context.Background(), "test-operation")
 	span.End()
 

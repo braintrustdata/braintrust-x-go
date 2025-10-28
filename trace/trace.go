@@ -3,17 +3,22 @@
 // This package is built on OpenTelemetry and integrates with the Braintrust Client
 // for session-based authentication.
 //
-// To enable tracing, create a Braintrust client (uses NewWithOtel for automatic setup):
+// To enable tracing, create a TracerProvider and Braintrust client:
 //
-//	bt, err := braintrust.NewWithOtel(
+//	tp := trace.NewTracerProvider()
+//	defer tp.Shutdown(context.Background())
+//
+//	bt, err := braintrust.New(tp,
 //	    braintrust.WithAPIKey(os.Getenv("BRAINTRUST_API_KEY")),
 //	    braintrust.WithProject("my-project"),
 //	)
-//	defer bt.Shutdown(context.Background())
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
 //
 // Once the client is created, create spans using OpenTelemetry:
 //
-//	tracer := otel.Tracer("my-app")
+//	tracer := bt.Tracer("my-app")
 //	ctx, span := tracer.Start(ctx, "my-operation")
 //	span.SetAttributes(attribute.String("user.id", "123"))
 //	span.End()

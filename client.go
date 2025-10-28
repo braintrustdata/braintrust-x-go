@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/sdk/trace"
 	oteltrace "go.opentelemetry.io/otel/trace"
 
@@ -20,7 +19,6 @@ type Client struct {
 	logger         logger.Logger
 	session        *auth.Session
 	tracerProvider *trace.TracerProvider
-	ownedProvider  bool // true if NewWithOtel created the provider
 }
 
 // New creates a new Braintrust client with the provided TracerProvider.
@@ -108,49 +106,6 @@ func New(tp *trace.TracerProvider, opts ...Option) (*Client, error) {
 	return client, nil
 }
 
-// NewWithOtel creates a new Braintrust client and automatically sets up OpenTelemetry.
-//
-// This convenience constructor:
-//   - Creates a new TracerProvider
-//   - Configures it with Braintrust tracing
-//   - Sets it as the global default
-//   - The client owns the provider and will shut it down on Shutdown()
-//
-// Configuration is loaded from environment variables first, then
-// explicit options are applied (options take precedence).
-//
-// Login happens asynchronously in the background by default.
-//
-// Example:
-//
-//	bt, err := braintrust.NewWithOtel(
-//	    braintrust.WithAPIKey("your-api-key"),
-//	    braintrust.WithProject("my-project"),
-//	)
-//	if err != nil {
-//	    log.Fatal(err)
-//	}
-//	defer bt.Shutdown(context.Background())
-func NewWithOtel(opts ...Option) (*Client, error) {
-	// Create a new TracerProvider
-	tp := trace.NewTracerProvider()
-
-	// Create client with the provider
-	client, err := New(tp, opts...)
-	if err != nil {
-		return nil, err
-	}
-
-	// Mark provider as owned by this client (will shut down on Shutdown())
-	client.ownedProvider = true
-
-	// Set as global tracer provider
-	otel.SetTracerProvider(tp)
-	client.logger.Debug("set tracer provider as global")
-
-	return client, nil
-}
-
 // setupTracing initializes OpenTelemetry tracing
 func (c *Client) setupTracing() error {
 	// Build trace config from client config
@@ -181,30 +136,6 @@ func convertSpanFilters(funcs []config.SpanFilterFunc) []bttrace.SpanFilterFunc 
 		result[i] = bttrace.SpanFilterFunc(f)
 	}
 	return result
-}
-
-// Shutdown gracefully shuts down the client.
-//
-// If the client was created with NewWithOtel(), this also shuts down the TracerProvider.
-// If the client was created with New(), the caller must shut down the TracerProvider separately.
-//
-// Always call Shutdown before your program exits to flush any pending data:
-//
-//	defer bt.Shutdown(context.Background())
-func (c *Client) Shutdown(ctx context.Context) error {
-	c.logger.Debug("shutting down client")
-
-	// If we own the provider, shut it down
-	if c.ownedProvider && c.tracerProvider != nil {
-		c.logger.Debug("shutting down owned tracer provider")
-		if err := c.tracerProvider.Shutdown(ctx); err != nil {
-			c.logger.Error("error shutting down tracer provider", "error", err)
-			return fmt.Errorf("tracer provider shutdown failed: %w", err)
-		}
-	}
-
-	c.logger.Debug("client shutdown complete")
-	return nil
 }
 
 // String returns a string representation of the client

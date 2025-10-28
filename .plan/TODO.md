@@ -1,6 +1,6 @@
 # Braintrust Go SDK v0.1 - TODO
 
-**Overall Progress: ~30% Complete**
+**Overall Progress: ~45% Complete**
 
 Last Updated: 2025-10-28
 
@@ -43,69 +43,66 @@ This document tracks the remaining work to complete the v0.1 rewrite of the Brai
 - **Example Code** (`/examples/internal/rewrite/main.go`)
   - Working example of new braintrust.New() usage
 
+- **Trace Integration** (`/client.go`, `/braintrust/trace/trace.go`) ✅
+  - Client creates and manages TracerProvider
+  - Trace setup integrated via client.setupTracing()
+  - Braintrust exporter configured with session auth
+  - Spans reach Braintrust successfully
+  - Test verified end-to-end
+
 ### Critical Path
 
-The work is blocked on **Trace Integration** - everything else depends on it:
+~~Trace Integration (DONE ✅)~~ → **Next: Eval Integration**
 
 ```
-Trace Integration (BLOCKER)
+Trace Integration ✅ (DONE)
     ↓
-API Client Refactoring
+Eval Integration (CURRENT - NO API CLIENT NEEDED!)
     ↓
-Eval Integration
+API Client Refactoring (Can be done later)
     ↓
 Documentation & Examples
 ```
+
+**Key Insight:** Eval doesn't need the full API client refactor! The existing eval package already has its own API calls. We just need to pass the client's config/session to it.
 
 ---
 
 ## Phase 1: Core Functionality (HIGH PRIORITY)
 
-### 1.1 Trace Integration 🔴 BLOCKER
+### 1.1 Trace Integration ✅ COMPLETE
 
-**Status:** Not started
+**Status:** Complete
 **Complexity:** High
-**Blocks:** Everything else
 
-The Client creates a TracerProvider but doesn't configure the Braintrust exporter. Spans won't reach Braintrust until this is done.
+The Client now properly configures tracing with the Braintrust exporter.
 
-**Current Issue:**
-```go
-// client.go:128
-// TODO: Call trace.Enable() once we refactor trace package
-```
+**Completed Tasks:**
+- [x] Refactor `braintrust/trace/trace.go` to work with Client
+  - [x] Remove dependency on `braintrust.GetConfig()`
+  - [x] Remove dependency on global auth cache
+  - [x] Accept Client's TracerProvider instead of creating own
+- [x] Create Braintrust OTLP exporter
+  - [x] Use session.Info() for org/API URL
+  - [x] Handle async login completion
+  - [x] Configure proper auth headers
+- [x] Implement span processor with filtering
+  - [x] Apply FilterAISpans config
+  - [x] Apply SpanFilterFuncs config
+  - [x] Set parent span attributes (experiment ID, project ID)
+- [x] Update Client.setupTracing()
+  - [x] Call trace.Enable() with proper config
+  - [x] Configure OTLP endpoint
+  - [x] Attach span processor
+- [x] Test end-to-end
+  - [x] Verify spans reach Braintrust
+  - [x] Test with async login
+  - [x] Test with blocking login
+  - [x] Test filtering works
 
-**Tasks:**
-- [ ] Refactor `braintrust/trace/trace.go` to work with Client
-  - [ ] Remove dependency on `braintrust.GetConfig()`
-  - [ ] Remove dependency on global auth cache
-  - [ ] Accept Client's TracerProvider instead of creating own
-- [ ] Create Braintrust OTLP exporter
-  - [ ] Use session.Info() for org/API URL
-  - [ ] Handle async login completion
-  - [ ] Configure proper auth headers
-- [ ] Implement span processor with filtering
-  - [ ] Apply FilterAISpans config
-  - [ ] Apply SpanFilterFuncs config
-  - [ ] Set parent span attributes (experiment ID, project ID)
-- [ ] Update Client.setupTracing()
-  - [ ] Call trace.Enable() with proper config
-  - [ ] Configure OTLP endpoint
-  - [ ] Attach span processor
-- [ ] Test end-to-end
-  - [ ] Verify spans reach Braintrust
-  - [ ] Test with async login
-  - [ ] Test with blocking login
-  - [ ] Test filtering works
-
-**Files to Modify:**
-- `/client.go` - complete setupTracing()
-- `/braintrust/trace/trace.go` - refactor to accept Client
-- Create new span processor implementation
-
-**Dependencies:**
-- auth.Session (done)
-- config.Config (done)
+**Files Modified:**
+- `/client.go` - completed setupTracing()
+- `/braintrust/trace/trace.go` - refactored to accept Client
 
 ---
 
@@ -236,39 +233,37 @@ client.Datasets.Query(ctx, datasetID, opts)
 
 ---
 
-## Phase 2: Eval Integration (HIGH PRIORITY)
+## Phase 2: Eval Integration (HIGH PRIORITY - CURRENT)
 
-**Status:** Not started
-**Complexity:** High
-**Dependencies:** API client (Phase 1.3)
+**Status:** In Progress
+**Complexity:** Medium
+**Dependencies:** None! (eval has its own API calls)
 
 The eval package (`/braintrust/eval/`) works but uses global config. Need to integrate with new Client.
 
 **Tasks:**
-- [ ] Add convenience method to Client
+- [ ] Add Eval() method to Client
   ```go
   func (c *Client) Eval(ctx context.Context, opts eval.Opts[I, R]) (*eval.Result, error) {
-      // Pass client's config and session to eval.Run()
+      // Pass client's config and tracer provider to eval.Run()
   }
   ```
-- [ ] Update `eval.Run()` signature
-  - [ ] Add optional config/client parameter
-  - [ ] Use passed config instead of braintrust.GetConfig()
-  - [ ] Use passed session instead of global auth cache
-- [ ] Update eval internals
-  - [ ] Use API client for RegisterExperiment, RegisterProject
-  - [ ] Use session for permalink generation
-  - [ ] Use tracer from client
+- [ ] Update `eval.Run()` signature to accept optional *braintrust.Client
+  - [ ] If client provided, use its config instead of braintrust.GetConfig()
+  - [ ] If client provided, use its tracer provider
+  - [ ] Keep old signature working for backward compat (nil client = use global config)
+- [ ] Update eval internals to use client's resources when provided
+  - [ ] Use client's config for API calls
+  - [ ] Use client's tracer provider for spans
   - [ ] Thread context through API calls
-- [ ] Handle backward compatibility
-  - [ ] Keep old eval.Run() signature working temporarily?
-  - [ ] Or require migration to new Client-based API?
-- [ ] Write integration tests
+- [ ] Write tests
   - [ ] Test Client.Eval() method
   - [ ] Test with blocking login
-  - [ ] Test with async login
   - [ ] Test error cases
-  - [ ] Test permalink generation
+  - [ ] Verify spans are properly created
+- [ ] Update examples
+  - [ ] Create example using Client.Eval()
+  - [ ] Verify existing eval examples still work
 
 **Files to Modify:**
 - `/client.go` - add Eval() method
