@@ -411,3 +411,61 @@ func TestHandleLLMGenerateContentWithPascalCaseTokens(t *testing.T) {
 	assert.Equal(t, float64(5), metrics["completion_tokens"], "Should extract CompletionTokens")
 	assert.Equal(t, float64(15), metrics["tokens"], "Should extract TotalTokens")
 }
+
+func TestHandleLLMGenerateContentWithAnthropicTokens(t *testing.T) {
+	// NOTE: This test uses hacked data because Anthropic token data in GenerationInfo
+	// is not supported in the official langchaingo client yet. Once Anthropic callback
+	// support is merged upstream, this test can be replaced with real data from actual
+	// Anthropic responses.
+	tracer, exporter := oteltest.Setup(t)
+
+	handler := NewHandler()
+
+	// Create a parent span
+	ctx, parentSpan := tracer.Start(context.Background(), "test-parent")
+
+	// Start an LLM call
+	messages := []llms.MessageContent{
+		llms.TextParts(llms.ChatMessageTypeHuman, "Hello!"),
+	}
+	handler.HandleLLMGenerateContentStart(ctx, messages)
+
+	// End with response containing Anthropic's InputTokens/OutputTokens format
+	response := &llms.ContentResponse{
+		Choices: []*llms.ContentChoice{
+			{
+				Content:    "Hi there!",
+				StopReason: "end_turn",
+				GenerationInfo: map[string]any{
+					// Anthropic format (InputTokens/OutputTokens)
+					"InputTokens":  17,
+					"OutputTokens": 4,
+				},
+			},
+		},
+	}
+	handler.HandleLLMGenerateContentEnd(ctx, response)
+
+	// End the parent span to flush traces
+	parentSpan.End()
+
+	// Check spans
+	spans := exporter.Flush()
+	require.Len(t, spans, 2)
+
+	// Find the LLM span
+	var llmSpan oteltest.Span
+	for _, span := range spans {
+		if span.Name() == "langchain.llm.generate_content" {
+			llmSpan = span
+			break
+		}
+	}
+	require.NotNil(t, llmSpan, "LLM span not found")
+
+	// Verify metrics are extracted from Anthropic's InputTokens/OutputTokens fields
+	metrics := llmSpan.Metrics()
+	assert.Equal(t, float64(17), metrics["prompt_tokens"], "Should extract InputTokens as prompt_tokens")
+	assert.Equal(t, float64(4), metrics["completion_tokens"], "Should extract OutputTokens as completion_tokens")
+	assert.Equal(t, float64(21), metrics["tokens"], "Should calculate total tokens")
+}
