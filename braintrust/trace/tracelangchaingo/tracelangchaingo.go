@@ -470,19 +470,20 @@ func extractTopLevelTokens(metrics map[string]int64, genInfo map[string]any) {
 		// snake_case (some providers)
 		"prompt_tokens", "completion_tokens", "total_tokens",
 		"input_tokens", "output_tokens",
-		// PascalCase (LangChainGo OpenAI)
+		// PascalCase (LangChainGo OpenAI, Anthropic)
 		"PromptTokens", "CompletionTokens", "TotalTokens",
+		"InputTokens", "OutputTokens",
 	}
 
 	for _, field := range topLevelFields {
 		if value, ok := genInfo[field]; ok {
 			if ok, i := internal.ToInt64(value); ok && i > 0 {
 				switch field {
-				case "input_tokens", "prompt_tokens", "PromptTokens":
+				case "input_tokens", "prompt_tokens", "PromptTokens", "InputTokens":
 					if _, exists := metrics["prompt_tokens"]; !exists {
 						metrics["prompt_tokens"] = i
 					}
-				case "output_tokens", "completion_tokens", "CompletionTokens":
+				case "output_tokens", "completion_tokens", "CompletionTokens", "OutputTokens":
 					if _, exists := metrics["completion_tokens"]; !exists {
 						metrics["completion_tokens"] = i
 					}
