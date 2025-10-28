@@ -8,25 +8,11 @@ import (
 	"github.com/braintrustdata/braintrust-x-go/logger"
 )
 
-// NoopLogger is a logger that does nothing (discards all logs).
-type NoopLogger struct{}
-
-// NewNoopLogger creates a new noop logger for tests that expect errors.
+// NewNoopLogger creates a logger that discards all messages.
+// Useful for tests that expect errors or warnings.
 func NewNoopLogger() logger.Logger {
-	return &NoopLogger{}
+	return logger.Discard()
 }
-
-// Debug discards debug messages.
-func (l *NoopLogger) Debug(msg string, args ...any) {}
-
-// Info discards info messages.
-func (l *NoopLogger) Info(msg string, args ...any) {}
-
-// Warn discards warning messages.
-func (l *NoopLogger) Warn(msg string, args ...any) {}
-
-// Error discards error messages.
-func (l *NoopLogger) Error(msg string, args ...any) {}
 
 // FailTestLogger is a logger that fails the test on Error or Warn calls.
 type FailTestLogger struct {

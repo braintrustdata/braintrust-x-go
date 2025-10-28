@@ -20,7 +20,6 @@ func TestSession_WithTestAPIKey(t *testing.T) {
 	session, err := NewSession(ctx, Options{
 		AppURL: "https://www.braintrust.dev",
 		APIKey: TestAPIKey,
-
 		Logger: tests.NewFailTestLogger(t),
 	})
 	require.NoError(t, err)
@@ -65,7 +64,6 @@ func TestSession_WithValidAPIKey(t *testing.T) {
 	session, err := NewSession(context.Background(), Options{
 		AppURL: server.URL,
 		APIKey: "test-api-key",
-
 		Logger: tests.NewFailTestLogger(t),
 	})
 	require.NoError(t, err)
@@ -95,7 +93,6 @@ func TestSession_WithInvalidAPIKey(t *testing.T) {
 	session, err := NewSession(context.Background(), Options{
 		AppURL: server.URL,
 		APIKey: "invalid-key",
-
 		Logger: tests.NewNoopLogger(),
 	})
 	require.NoError(t, err)

@@ -21,14 +21,6 @@ const (
 	DefaultAppURL = "https://www.braintrust.dev"
 )
 
-// noopLogger is a logger that does nothing
-type noopLogger struct{}
-
-func (l *noopLogger) Debug(msg string, args ...any) {}
-func (l *noopLogger) Info(msg string, args ...any)  {}
-func (l *noopLogger) Warn(msg string, args ...any)  {}
-func (l *noopLogger) Error(msg string, args ...any) {}
-
 // loginError wraps an error with HTTP status code information
 type loginError struct {
 	err        error
@@ -126,10 +118,10 @@ func Login(ctx context.Context, opts Options) (*Info, error) {
 		return nil, fmt.Errorf("app URL is required")
 	}
 
-	// Use noop logger if none provided
+	// Use discard logger if none provided
 	log := opts.Logger
 	if log == nil {
-		log = &noopLogger{}
+		log = logger.Discard()
 	}
 
 	apiKey := opts.APIKey
@@ -261,10 +253,10 @@ func isRetryableError(err error) bool {
 // Backoff starts at 10ms and doubles each attempt, capped at 10 seconds.
 // Returns early if context is cancelled.
 func LoginUntilSuccess(ctx context.Context, opts Options) (*Info, error) {
-	// Use noop logger if none provided
+	// Use discard logger if none provided
 	log := opts.Logger
 	if log == nil {
-		log = &noopLogger{}
+		log = logger.Discard()
 	}
 
 	attempt := 0

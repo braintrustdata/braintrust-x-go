@@ -73,3 +73,24 @@ func formatArgs(args []any) string {
 	}
 	return result
 }
+
+// discardLogger is a logger that discards all log messages.
+type discardLogger struct{}
+
+// Discard returns a logger that discards all log messages.
+// Useful for testing or when logging is not desired.
+func Discard() Logger {
+	return &discardLogger{}
+}
+
+// Debug discards the message.
+func (l *discardLogger) Debug(msg string, args ...any) {}
+
+// Info discards the message.
+func (l *discardLogger) Info(msg string, args ...any) {}
+
+// Warn discards the message.
+func (l *discardLogger) Warn(msg string, args ...any) {}
+
+// Error discards the message.
+func (l *discardLogger) Error(msg string, args ...any) {}

@@ -1,0 +1,611 @@
+# Braintrust Go SDK v0.1 - TODO
+
+**Overall Progress: ~30% Complete**
+
+Last Updated: 2025-10-28
+
+---
+
+## Overview
+
+This document tracks the remaining work to complete the v0.1 rewrite of the Braintrust Go SDK. The rewrite introduces a client-based architecture (`braintrust.New()`) to replace global state and improve testability.
+
+### What's Been Completed ✅
+
+- **Client Architecture** (`/client.go`, `/options.go`)
+  - `braintrust.New()` creates configured client
+  - Functional options pattern (WithAPIKey, WithProject, etc.)
+  - Client lifecycle management (Shutdown)
+  - Per-client configuration (no global state!)
+
+- **Configuration Management** (`/config/config.go`)
+  - Immutable Config struct
+  - Environment variable loading
+  - No global config cache (main fix!)
+  - Test isolation support
+
+- **Authentication/Session** (`/internal/auth/`)
+  - Session-based async login with retry
+  - Exponential backoff on 5xx/network errors
+  - Fast failure on 4xx errors
+  - Non-blocking Info() and blocking Login()
+  - 10 comprehensive tests, all passing
+
+- **Logger Interface** (`/logger/logger.go`, `/internal/tests/logger.go`)
+  - Clean logger interface (Debug, Info, Warn, Error)
+  - Default logger with BRAINTRUST_DEBUG support
+  - Test utilities (NoopLogger, FailTestLogger)
+
+- **Test Infrastructure**
+  - Test loggers for different scenarios
+  - README snippet compilation tests
+
+- **Example Code** (`/examples/internal/rewrite/main.go`)
+  - Working example of new braintrust.New() usage
+
+### Critical Path
+
+The work is blocked on **Trace Integration** - everything else depends on it:
+
+```
+Trace Integration (BLOCKER)
+    ↓
+API Client Refactoring
+    ↓
+Eval Integration
+    ↓
+Documentation & Examples
+```
+
+---
+
+## Phase 1: Core Functionality (HIGH PRIORITY)
+
+### 1.1 Trace Integration 🔴 BLOCKER
+
+**Status:** Not started
+**Complexity:** High
+**Blocks:** Everything else
+
+The Client creates a TracerProvider but doesn't configure the Braintrust exporter. Spans won't reach Braintrust until this is done.
+
+**Current Issue:**
+```go
+// client.go:128
+// TODO: Call trace.Enable() once we refactor trace package
+```
+
+**Tasks:**
+- [ ] Refactor `braintrust/trace/trace.go` to work with Client
+  - [ ] Remove dependency on `braintrust.GetConfig()`
+  - [ ] Remove dependency on global auth cache
+  - [ ] Accept Client's TracerProvider instead of creating own
+- [ ] Create Braintrust OTLP exporter
+  - [ ] Use session.Info() for org/API URL
+  - [ ] Handle async login completion
+  - [ ] Configure proper auth headers
+- [ ] Implement span processor with filtering
+  - [ ] Apply FilterAISpans config
+  - [ ] Apply SpanFilterFuncs config
+  - [ ] Set parent span attributes (experiment ID, project ID)
+- [ ] Update Client.setupTracing()
+  - [ ] Call trace.Enable() with proper config
+  - [ ] Configure OTLP endpoint
+  - [ ] Attach span processor
+- [ ] Test end-to-end
+  - [ ] Verify spans reach Braintrust
+  - [ ] Test with async login
+  - [ ] Test with blocking login
+  - [ ] Test filtering works
+
+**Files to Modify:**
+- `/client.go` - complete setupTracing()
+- `/braintrust/trace/trace.go` - refactor to accept Client
+- Create new span processor implementation
+
+**Dependencies:**
+- auth.Session (done)
+- config.Config (done)
+
+---
+
+### 1.2 Client Tests
+
+**Status:** Not started
+**Complexity:** Medium
+**Priority:** High
+
+No tests exist for the core Client type.
+
+**Tasks:**
+- [ ] Create `/client_test.go`
+- [ ] Test Client creation
+  - [ ] With default options
+  - [ ] With custom options (all option types)
+  - [ ] With invalid config (missing API key, etc.)
+- [ ] Test multiple clients
+  - [ ] Different configs in same process
+  - [ ] Isolated auth sessions
+  - [ ] Separate tracer providers
+- [ ] Test lifecycle
+  - [ ] Shutdown with owned provider
+  - [ ] Shutdown with injected provider
+  - [ ] Error cases
+- [ ] Test blocking vs async login
+  - [ ] Verify blocking login waits
+  - [ ] Verify async login returns immediately
+- [ ] Test String() method output
+- [ ] Test logger integration
+
+**Files to Create:**
+- `/client_test.go`
+
+---
+
+### 1.3 API Client Refactoring
+
+**Status:** Not started
+**Complexity:** High
+**Priority:** High
+**Blocks:** Eval integration
+
+The old API client (`/braintrust/api/`) uses global config. Need to create new namespaced API client.
+
+**Current Old API:**
+```go
+// Old pattern - don't use
+experiment.Get(experimentID)  // uses global config
+```
+
+**Desired New API:**
+```go
+// New pattern - want this
+client.Projects.Get(ctx, projectID)
+client.Projects.Register(ctx, name, opts)
+client.Experiments.Get(ctx, experimentID)
+client.Experiments.Register(ctx, name, projectID, opts)
+client.Datasets.Get(ctx, datasetID)
+client.Datasets.Query(ctx, datasetID, opts)
+```
+
+**Tasks:**
+- [ ] Design API client structure
+  - [ ] Decide on package location (api/ or internal/api/)
+  - [ ] Define base Client struct with session, httpClient
+  - [ ] Define namespaced sub-clients (Projects, Experiments, Datasets)
+- [ ] Implement Projects client
+  - [ ] Get(ctx, id) - get project by ID
+  - [ ] Register(ctx, name, opts) - create/get project
+  - [ ] List(ctx, opts) - list projects
+  - [ ] Update(ctx, id, opts) - update project
+  - [ ] Delete(ctx, id) - delete project
+- [ ] Implement Experiments client
+  - [ ] Get(ctx, id) - get experiment by ID
+  - [ ] Register(ctx, name, projectID, opts) - create/get experiment
+  - [ ] List(ctx, projectID, opts) - list experiments
+  - [ ] Update(ctx, id, opts) - update experiment
+  - [ ] Delete(ctx, id) - delete experiment
+  - [ ] FetchResults(ctx, id, opts) - get experiment results
+- [ ] Implement Datasets client
+  - [ ] Get(ctx, id) - get dataset by ID
+  - [ ] Register(ctx, name, opts) - create/get dataset
+  - [ ] List(ctx, opts) - list datasets
+  - [ ] Update(ctx, id, opts) - update dataset
+  - [ ] Delete(ctx, id) - delete dataset
+  - [ ] Query(ctx, id, opts) - query dataset records
+  - [ ] Insert(ctx, id, records) - insert records
+- [ ] Implement Prompts client
+  - [ ] Get(ctx, id) - get prompt by ID
+  - [ ] Register(ctx, name, opts) - create/get prompt
+  - [ ] List(ctx, opts) - list prompts
+- [ ] Add common infrastructure
+  - [ ] Define request/response types
+  - [ ] Add error handling patterns
+  - [ ] Add retry logic (5xx, network errors)
+  - [ ] Thread context.Context through all calls
+  - [ ] Use session for authentication
+  - [ ] Handle pagination
+- [ ] Write tests
+  - [ ] Mock server for each endpoint
+  - [ ] Test success cases
+  - [ ] Test error cases (4xx, 5xx, network)
+  - [ ] Test retry logic
+  - [ ] Test context cancellation
+- [ ] Integrate with Client
+  - [ ] Add API client fields to Client struct
+  - [ ] Initialize in New()
+  - [ ] Expose via Client methods or fields
+
+**Files to Create:**
+- `/api/client.go` - base API client
+- `/api/projects.go` - Projects client
+- `/api/experiments.go` - Experiments client
+- `/api/datasets.go` - Datasets client
+- `/api/prompts.go` - Prompts client
+- `/api/types.go` - request/response types
+- `/api/errors.go` - error handling
+- `/api/*_test.go` - comprehensive tests
+
+**Files to Modify:**
+- `/client.go` - add API client fields, initialize in New()
+
+**Migration Notes:**
+- Old API at `/braintrust/api/` will be deprecated
+- Keep old API during transition for backward compatibility
+- Eventually remove old API in v0.2 or v1.0
+
+---
+
+## Phase 2: Eval Integration (HIGH PRIORITY)
+
+**Status:** Not started
+**Complexity:** High
+**Dependencies:** API client (Phase 1.3)
+
+The eval package (`/braintrust/eval/`) works but uses global config. Need to integrate with new Client.
+
+**Tasks:**
+- [ ] Add convenience method to Client
+  ```go
+  func (c *Client) Eval(ctx context.Context, opts eval.Opts[I, R]) (*eval.Result, error) {
+      // Pass client's config and session to eval.Run()
+  }
+  ```
+- [ ] Update `eval.Run()` signature
+  - [ ] Add optional config/client parameter
+  - [ ] Use passed config instead of braintrust.GetConfig()
+  - [ ] Use passed session instead of global auth cache
+- [ ] Update eval internals
+  - [ ] Use API client for RegisterExperiment, RegisterProject
+  - [ ] Use session for permalink generation
+  - [ ] Use tracer from client
+  - [ ] Thread context through API calls
+- [ ] Handle backward compatibility
+  - [ ] Keep old eval.Run() signature working temporarily?
+  - [ ] Or require migration to new Client-based API?
+- [ ] Write integration tests
+  - [ ] Test Client.Eval() method
+  - [ ] Test with blocking login
+  - [ ] Test with async login
+  - [ ] Test error cases
+  - [ ] Test permalink generation
+
+**Files to Modify:**
+- `/client.go` - add Eval() method
+- `/braintrust/eval/eval.go` - add config/client parameter, remove global deps
+- `/braintrust/eval/experiment.go` - use passed config
+- `/braintrust/eval/dataset.go` - use passed config
+
+**Example Usage:**
+```go
+bt, _ := braintrust.New(
+    braintrust.WithAPIKey(os.Getenv("BRAINTRUST_API_KEY")),
+    braintrust.WithProject("my-project"),
+)
+defer bt.Shutdown(context.Background())
+
+result, err := bt.Eval(ctx, eval.Opts[string, string]{
+    Experiment: "greeting-experiment",
+    Cases: eval.NewCases([]eval.Case[string, string]{
+        {Input: "World", Expected: "Hello World"},
+    }),
+    Task: func(ctx context.Context, input string) (string, error) {
+        return "Hello " + input, nil
+    },
+    Scorers: []eval.Scorer[string, string]{
+        eval.ExactMatch[string](),
+    },
+})
+```
+
+---
+
+## Phase 3: Documentation & Migration (MEDIUM PRIORITY)
+
+**Status:** Not started
+**Complexity:** Medium
+**Priority:** Medium
+
+Update docs and examples to reflect new Client-based API.
+
+**Tasks:**
+- [ ] Update README.md
+  - [ ] Replace trace.Quickstart() example with braintrust.New()
+  - [ ] Show new eval pattern with Client.Eval()
+  - [ ] Show new API client usage
+  - [ ] Add migration notes section
+- [ ] Update package doc.go
+  - [ ] Explain Client-based architecture
+  - [ ] Show quick start with braintrust.New()
+  - [ ] Explain options pattern
+- [ ] Create migration guide
+  - [ ] Document breaking changes
+  - [ ] Show side-by-side comparisons (old vs new)
+  - [ ] Provide migration checklist
+  - [ ] Explain timeline for deprecation
+- [ ] Update all examples
+  - [ ] `/examples/anthropic/` - use braintrust.New()
+  - [ ] `/examples/openai/` - use braintrust.New()
+  - [ ] `/examples/genai/` - use braintrust.New()
+  - [ ] `/examples/evals/` - use Client.Eval()
+  - [ ] `/examples/datasets/` - use new API client
+  - [ ] `/examples/prompts/` - use new API client
+  - [ ] All other examples
+- [ ] Add comprehensive godoc comments
+  - [ ] Document all exported types
+  - [ ] Document all exported functions
+  - [ ] Add examples in godoc
+  - [ ] Document options and their defaults
+
+**Files to Update:**
+- `/README.md`
+- `/doc.go`
+- Create `/MIGRATION.md`
+- All files in `/examples/`
+
+---
+
+## Phase 4: Cleanup (MEDIUM PRIORITY)
+
+**Status:** Not started
+**Complexity:** Low-Medium
+**Priority:** Medium
+
+Deprecate and eventually remove old global config pattern.
+
+**Tasks:**
+- [ ] Mark deprecated
+  - [ ] Add deprecation comment to braintrust.GetConfig()
+  - [ ] Add deprecation comment to trace.Quickstart()
+  - [ ] Add deprecation comment to old API functions
+  - [ ] Update godoc to point to new patterns
+- [ ] Create deprecation timeline
+  - [ ] v0.1: New API available, old API deprecated
+  - [ ] v0.2: Old API removed?
+  - [ ] v1.0: Clean slate with only new API?
+- [ ] Update tests to avoid deprecated APIs
+- [ ] Eventually remove (decide on version)
+  - [ ] `/braintrust/env.go` - remove GetConfig()
+  - [ ] `/braintrust/login.go` - remove global login
+  - [ ] Old API implementations
+  - [ ] Old trace.Quickstart() if not needed
+
+**Files to Modify:**
+- `/braintrust/env.go` - add deprecation
+- `/braintrust/login.go` - add deprecation
+- `/braintrust/trace/trace.go` - maybe add deprecation to Quickstart()
+
+**Migration Strategy:**
+- Keep both APIs working during transition
+- Give users time to migrate
+- Remove old API in major version bump
+
+---
+
+## Phase 5: Future-Proofing (LOW PRIORITY)
+
+**Status:** Not started
+**Complexity:** Low
+**Priority:** Low
+
+Add extension points for future features without implementing them.
+
+**Tasks:**
+- [ ] Define extension point interfaces
+  ```go
+  // Reserved for future use - do not implement yet
+  type EvalHooks interface {
+      Metadata() Metadata
+      SetMetadata(key string, val any)
+      Tags() []string
+      AddTag(tag string)
+      Expected() R
+      TrialIndex() int
+      Span() trace.Span
+  }
+
+  type ErrorScoreFunc func(error) Scores
+  ```
+- [ ] Add reserved fields to eval.Opts
+  ```go
+  type Opts struct {
+      // ...existing fields...
+
+      // Reserved for future use
+      TrialCount        int           // Future: multiple trials per case
+      ErrorScoreHandler ErrorScoreFunc // Future: custom error scoring
+      BaseExperiment    string        // Future: comparison experiments
+      Timeout           time.Duration // Future: per-task timeout
+      NoSendLogs        bool          // Future: local-only mode
+  }
+  ```
+- [ ] Document as "reserved for future use"
+  - [ ] Add godoc comments explaining they're placeholders
+  - [ ] Note that they will be implemented in future versions
+  - [ ] Prevent API breakage when actually implemented
+
+**Files to Modify:**
+- `/braintrust/eval/eval.go` - add reserved fields
+- Create `/future.go` - define extension interfaces
+
+---
+
+## API Section
+
+### Current State
+
+The old API implementation exists at `/braintrust/api/` with these issues:
+- Uses `braintrust.GetConfig()` (global state)
+- No context.Context threading
+- Not namespaced under client
+- Limited error handling
+- No retry logic
+
+### Desired Client-Based API
+
+We want a namespaced API client that's part of the main Client:
+
+```go
+// Initialize client
+bt, _ := braintrust.New(
+    braintrust.WithAPIKey(apiKey),
+    braintrust.WithProject("my-project"),
+)
+defer bt.Shutdown(ctx)
+
+// Use namespaced API
+project, _ := bt.API.Projects.Register(ctx, "my-project", nil)
+exp, _ := bt.API.Experiments.Register(ctx, "my-exp", project.ID, nil)
+dataset, _ := bt.API.Datasets.Get(ctx, datasetID)
+records, _ := bt.API.Datasets.Query(ctx, datasetID, QueryOpts{Limit: 100})
+```
+
+### API Client Structure
+
+```go
+type APIClient struct {
+    session    *auth.Session
+    httpClient *http.Client
+
+    Projects    *ProjectsClient
+    Experiments *ExperimentsClient
+    Datasets    *DatasetsClient
+    Prompts     *PromptsClient
+}
+
+type ProjectsClient struct {
+    client *APIClient
+}
+
+func (c *ProjectsClient) Get(ctx context.Context, id string) (*Project, error)
+func (c *ProjectsClient) Register(ctx context.Context, name string, opts *ProjectOpts) (*Project, error)
+func (c *ProjectsClient) List(ctx context.Context, opts *ListOpts) ([]*Project, error)
+func (c *ProjectsClient) Update(ctx context.Context, id string, opts *ProjectUpdateOpts) (*Project, error)
+func (c *ProjectsClient) Delete(ctx context.Context, id string) error
+```
+
+### API Implementation Checklist
+
+**Infrastructure:**
+- [ ] Create `/api/client.go` with base APIClient
+- [ ] Add HTTP client with proper User-Agent
+- [ ] Add request builder (method, path, body, auth)
+- [ ] Add response parser (JSON decode, error handling)
+- [ ] Add retry logic (exponential backoff on 5xx)
+- [ ] Add pagination support
+- [ ] Add rate limiting handling
+- [ ] Thread context.Context through all calls
+
+**Projects Client:**
+- [ ] Implement Get - GET /v1/project/:id
+- [ ] Implement Register - POST /v1/project
+- [ ] Implement List - GET /v1/project
+- [ ] Implement Update - PATCH /v1/project/:id
+- [ ] Implement Delete - DELETE /v1/project/:id
+- [ ] Define Project type
+- [ ] Define ProjectOpts type
+- [ ] Write tests with mock server
+
+**Experiments Client:**
+- [ ] Implement Get - GET /v1/experiment/:id
+- [ ] Implement Register - POST /v1/experiment
+- [ ] Implement List - GET /v1/experiment
+- [ ] Implement Update - PATCH /v1/experiment/:id
+- [ ] Implement Delete - DELETE /v1/experiment/:id
+- [ ] Implement FetchResults - GET /v1/experiment/:id/results
+- [ ] Define Experiment type
+- [ ] Define ExperimentOpts type
+- [ ] Define ExperimentResults type
+- [ ] Write tests with mock server
+
+**Datasets Client:**
+- [ ] Implement Get - GET /v1/dataset/:id
+- [ ] Implement Register - POST /v1/dataset
+- [ ] Implement List - GET /v1/dataset
+- [ ] Implement Update - PATCH /v1/dataset/:id
+- [ ] Implement Delete - DELETE /v1/dataset/:id
+- [ ] Implement Query - GET /v1/dataset/:id/query
+- [ ] Implement Insert - POST /v1/dataset/:id/insert
+- [ ] Define Dataset type
+- [ ] Define DatasetOpts type
+- [ ] Define QueryOpts type
+- [ ] Define DatasetRecord type
+- [ ] Write tests with mock server
+
+**Prompts Client:**
+- [ ] Implement Get - GET /v1/prompt/:id
+- [ ] Implement Register - POST /v1/prompt
+- [ ] Implement List - GET /v1/prompt
+- [ ] Define Prompt type
+- [ ] Define PromptOpts type
+- [ ] Write tests with mock server
+
+**Error Handling:**
+- [ ] Define APIError type
+- [ ] Parse error responses from Braintrust API
+- [ ] Wrap network errors appropriately
+- [ ] Handle rate limiting (429 responses)
+- [ ] Handle auth errors (401/403)
+- [ ] Handle server errors (5xx with retry)
+
+**Testing:**
+- [ ] Create test utilities for mock HTTP server
+- [ ] Test each endpoint's success case
+- [ ] Test error responses (4xx, 5xx)
+- [ ] Test retry logic on 5xx
+- [ ] Test context cancellation
+- [ ] Test authentication header
+- [ ] Test pagination
+- [ ] Integration test with real API (optional)
+
+### Migration from Old API
+
+**Old Pattern:**
+```go
+import "github.com/braintrustdata/braintrust-x-go/braintrust/api/experiment"
+
+exp, err := experiment.Get(experimentID)
+```
+
+**New Pattern:**
+```go
+bt, _ := braintrust.New(braintrust.WithAPIKey(key))
+defer bt.Shutdown(ctx)
+
+exp, err := bt.API.Experiments.Get(ctx, experimentID)
+```
+
+**Benefits:**
+- No global state
+- Context cancellation support
+- Better error handling
+- Retry logic built-in
+- Multiple clients possible
+- Testable in isolation
+
+---
+
+## Summary
+
+**Critical Path:**
+1. Trace Integration (blocks everything) - ~2-3 days
+2. API Client Refactoring - ~3-4 days
+3. Eval Integration - ~1-2 days
+4. Documentation & Examples - ~1-2 days
+
+**Estimated Time to v0.1:** ~1-2 weeks of focused work
+
+**Key Decisions Needed:**
+- When to deprecate old API? (suggest v0.1 deprecate, v0.2 remove)
+- Should eval.Run() signature change or keep backward compat?
+- Should trace.Quickstart() still work or force migration?
+- API client location: `/api/` or `/internal/api/`?
+
+**Success Criteria:**
+- [ ] Client works end-to-end with tracing
+- [ ] All examples updated and working
+- [ ] API client fully functional
+- [ ] Eval works with new Client
+- [ ] All tests passing
+- [ ] Documentation complete
+- [ ] Migration guide available

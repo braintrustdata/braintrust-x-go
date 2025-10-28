@@ -31,10 +31,10 @@ func NewSession(ctx context.Context, opts Options) (*Session, error) {
 		return nil, fmt.Errorf("app URL is required")
 	}
 
-	// Use noop logger if none provided
+	// Use discard logger if none provided
 	log := opts.Logger
 	if log == nil {
-		log = &noopLogger{}
+		log = logger.Discard()
 	}
 
 	sessionCtx, cancel := context.WithCancel(ctx)
