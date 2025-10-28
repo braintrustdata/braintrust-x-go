@@ -29,7 +29,7 @@ test:
 	go test ./...
 
 cover:
-	go test ./... -coverprofile=coverage.out
+	go test $$(go list ./... | grep -v /examples/) -coverpkg=./... -coverprofile=coverage.out
 	go tool cover -func=coverage.out
 	go tool cover -html=coverage.out -o coverage.html
 
