@@ -2,19 +2,13 @@
 package tests
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/braintrustdata/braintrust-x-go/logger"
 )
 
-// NewNoopLogger creates a logger that discards all messages.
-// Useful for tests that expect errors or warnings.
-func NewNoopLogger() logger.Logger {
-	return logger.Discard()
-}
-
-// FailTestLogger is a logger that fails the test on Error or Warn calls.
+// FailTestLogger is a logger that fails tests when the application emits warnings or errors.
+// Use this in tests to assert that application code doesn't produce unexpected warnings/errors.
 type FailTestLogger struct {
 	t *testing.T
 }
@@ -25,60 +19,28 @@ func NewFailTestLogger(t *testing.T) logger.Logger {
 	return &FailTestLogger{t: t}
 }
 
-// Debug logs debug messages to the test output.
+// Debug is a no-op. Debug logs are expected and don't indicate problems.
 func (l *FailTestLogger) Debug(msg string, args ...any) {
 	l.t.Helper()
-	if len(args) > 0 {
-		l.t.Logf("[DEBUG] %s %s", msg, format(args))
-	} else {
-		l.t.Logf("[DEBUG] %s", msg)
-	}
+	l.t.Logf("[DEBUG] %s %v", msg, args)
+	// Intentionally silent
 }
 
-// Info logs info messages to the test output.
+// Info is a no-op. Info logs are expected and don't indicate problems.
 func (l *FailTestLogger) Info(msg string, args ...any) {
 	l.t.Helper()
-	if len(args) > 0 {
-		l.t.Logf("[INFO] %s %s", msg, format(args))
-	} else {
-		l.t.Logf("[INFO] %s", msg)
-	}
+	l.t.Logf("[INFO] %s %v", msg, args)
+	// Intentionally silent
 }
 
-// Warn fails the test with a warning message.
+// Warn fails the test. Application code should not emit warnings during tests.
 func (l *FailTestLogger) Warn(msg string, args ...any) {
 	l.t.Helper()
-	if len(args) > 0 {
-		l.t.Fatalf("[WARN] %s %s", msg, format(args))
-	} else {
-		l.t.Fatalf("[WARN] %s", msg)
-	}
+	l.t.Fatalf("[WARN] %s %v", msg, args)
 }
 
+// Error fails the test. Application code should not emit errors during tests.
 func (l *FailTestLogger) Error(msg string, args ...any) {
 	l.t.Helper()
-	if len(args) > 0 {
-		l.t.Fatalf("[ERROR] %s %s", msg, format(args))
-	} else {
-		l.t.Fatalf("[ERROR] %s", msg)
-	}
-}
-
-// format formats key-value pairs as a readable string
-func format(args []any) string {
-	if len(args) == 0 {
-		return ""
-	}
-	result := ""
-	for i := 0; i < len(args); i += 2 {
-		if i > 0 {
-			result += " "
-		}
-		if i+1 < len(args) {
-			result += fmt.Sprintf("%v=%v", args[i], args[i+1])
-		} else {
-			result += fmt.Sprintf("%v", args[i])
-		}
-	}
-	return result
+	l.t.Fatalf("[ERROR] %s %v", msg, args)
 }

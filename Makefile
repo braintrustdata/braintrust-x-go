@@ -1,10 +1,11 @@
-.PHONY: help ci build clean test cover cover-path lint fmt mod-verify fix godoc examples
+.PHONY: help ci build clean test test_quiet cover cover-path lint fmt mod-verify fix godoc examples
 
 help:
 	@echo "Available commands:"
 	@echo "  help          - Show this help message"
 	@echo "  build         - Build all packages"
 	@echo "  test          - Run all tests"
+	@echo "  test_quiet    - Run all tests (quiet - no 'ok' lines)"
 	@echo "  cover         - Run tests with coverage report"
 	@echo "  cover-path    - Run coverage for specific path (e.g., make cover-path PATH=./config)"
 	@echo "  clean         - Clean build artifacts and coverage files"
@@ -27,6 +28,9 @@ clean:
 
 test:
 	go test ./...
+
+test_quiet:
+	go test ./... | grep -v -E "^ok|no test files" || true
 
 cover:
 	go test $$(go list ./... | grep -v /examples/) -coverpkg=./... -coverprofile=coverage.out

@@ -11,18 +11,19 @@ import (
 
 	"github.com/braintrustdata/braintrust-x-go/internal/auth"
 	"github.com/braintrustdata/braintrust-x-go/internal/tests"
+	"github.com/braintrustdata/braintrust-x-go/logger"
 )
 
 func TestNew_WithMinimalConfig(t *testing.T) {
 	t.Parallel()
 
+	// Use real API key if available, otherwise use test key
 	// Create a TracerProvider
 	tp := trace.NewTracerProvider()
 	defer func() { _ = tp.Shutdown(context.Background()) }()
 
 	// Create client with minimal config
 	client, err := New(tp,
-		WithAPIKey(auth.TestAPIKey),
 		WithProject("test-project"),
 		WithLogger(tests.NewFailTestLogger(t)),
 	)
@@ -88,7 +89,7 @@ func TestNew_MissingAPIKey(t *testing.T) {
 	// Try to create client without API key
 	client, err := New(tp,
 		WithProject("test-project"),
-		WithLogger(tests.NewNoopLogger()),
+		WithLogger(logger.Discard()),
 	)
 
 	// Should fail with error about API key

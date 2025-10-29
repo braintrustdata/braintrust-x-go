@@ -45,11 +45,11 @@ func NewSession(ctx context.Context, opts Options) (*Session, error) {
 		log = logger.Discard()
 	}
 
-	sessionCtx, cancel := context.WithCancel(ctx)
+	ctx, cancel := context.WithCancel(ctx)
 	s := &Session{
 		logger: log,
 		done:   make(chan struct{}),
-		ctx:    sessionCtx,
+		ctx:    ctx,
 		cancel: cancel,
 		opts:   opts,
 	}
@@ -134,7 +134,7 @@ func (s *Session) loginWithRetry(opts Options) {
 	}
 
 	s.info = info
-	s.logger.Info("login successful",
+	s.logger.Debug("login successful",
 		"org_name", s.info.OrgName,
 		"org_id", s.info.OrgID)
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/braintrustdata/braintrust-x-go/internal/tests"
+	"github.com/braintrustdata/braintrust-x-go/logger"
 )
 
 // TestSession_WithTestAPIKey tests login with the special test API key
@@ -23,6 +24,7 @@ func TestSession_WithTestAPIKey(t *testing.T) {
 		Logger: tests.NewFailTestLogger(t),
 	})
 	require.NoError(t, err)
+	defer session.Close()
 
 	result, err := session.Login(ctx)
 
@@ -67,6 +69,7 @@ func TestSession_WithValidAPIKey(t *testing.T) {
 		Logger: tests.NewFailTestLogger(t),
 	})
 	require.NoError(t, err)
+	defer session.Close()
 
 	result, err := session.Login(context.Background())
 
@@ -93,9 +96,10 @@ func TestSession_WithInvalidAPIKey(t *testing.T) {
 	session, err := NewSession(context.Background(), Options{
 		AppURL: server.URL,
 		APIKey: "invalid-key",
-		Logger: tests.NewNoopLogger(),
+		Logger: logger.Discard(),
 	})
 	require.NoError(t, err)
+	defer session.Close()
 
 	_, err = session.Login(context.Background())
 
@@ -137,6 +141,7 @@ func TestSession_OrgSelection(t *testing.T) {
 		Logger: tests.NewFailTestLogger(t),
 	})
 	require.NoError(t, err)
+	defer session.Close()
 
 	result, err := session.Login(context.Background())
 
@@ -171,9 +176,10 @@ func TestSession_OrgNotFound(t *testing.T) {
 		APIKey:  "test-api-key",
 		OrgName: "non-existent-org",
 
-		Logger: tests.NewNoopLogger(),
+		Logger: logger.Discard(),
 	})
 	require.NoError(t, err)
+	defer session.Close()
 
 	_, err = session.Login(context.Background())
 
@@ -220,6 +226,7 @@ func TestSession_WithRealAPIKey(t *testing.T) {
 		Logger: tests.NewFailTestLogger(t),
 	})
 	require.NoError(t, err)
+	defer session.Close()
 
 	result, err := session.Login(context.Background())
 
@@ -237,10 +244,10 @@ func TestSession_NonBlockingInfo(t *testing.T) {
 	session, err := NewSession(context.Background(), Options{
 		AppURL: "https://www.braintrust.dev",
 		APIKey: TestAPIKey,
-
 		Logger: tests.NewFailTestLogger(t),
 	})
 	require.NoError(t, err)
+	defer session.Close()
 
 	// Info() should return immediately even if login not complete
 	// (In this case with TestAPIKey it will be fast, but still async)
@@ -260,10 +267,10 @@ func TestSession_BlockingLogin(t *testing.T) {
 	session, err := NewSession(context.Background(), Options{
 		AppURL: "https://www.braintrust.dev",
 		APIKey: TestAPIKey,
-
 		Logger: tests.NewFailTestLogger(t),
 	})
 	require.NoError(t, err)
+	defer session.Close()
 
 	// Login() should block until complete
 	result, err := session.Login(context.Background())
@@ -282,7 +289,7 @@ func TestSession_Endpoints(t *testing.T) {
 			AppURL: "https://www.braintrust.dev",
 			APIURL: "https://api.braintrust.dev",
 			APIKey: "test-key-123",
-			Logger: tests.NewNoopLogger(),
+			Logger: logger.Discard(),
 		})
 		require.NoError(t, err)
 		defer session.Close()
@@ -300,7 +307,7 @@ func TestSession_Endpoints(t *testing.T) {
 			AppURL: "https://www.braintrust.dev",
 			// APIURL not specified - should use default
 			APIKey: "test-key-456",
-			Logger: tests.NewNoopLogger(),
+			Logger: logger.Discard(),
 		})
 		require.NoError(t, err)
 		defer session.Close()
@@ -317,7 +324,7 @@ func TestSession_Endpoints(t *testing.T) {
 		session, err := NewSession(context.Background(), Options{
 			AppURL: "http://localhost:99999", // Invalid - will retry forever
 			APIKey: "test-key-789",
-			Logger: tests.NewNoopLogger(),
+			Logger: logger.Discard(),
 		})
 		require.NoError(t, err)
 		defer session.Close()
@@ -339,7 +346,7 @@ func TestSession_OrgName(t *testing.T) {
 		session, err := NewSession(context.Background(), Options{
 			AppURL: "http://localhost:99999", // Invalid - will hang
 			APIKey: "test-key",
-			Logger: tests.NewNoopLogger(),
+			Logger: logger.Discard(),
 		})
 		require.NoError(t, err)
 		defer session.Close()

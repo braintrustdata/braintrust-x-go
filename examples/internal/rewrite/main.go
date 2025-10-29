@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"log"
-	"os"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -18,7 +17,7 @@ func main() {
 	tp := trace.NewTracerProvider()
 	defer func() {
 		if err := tp.Shutdown(context.Background()); err != nil {
-			log.Printf("Failed to shutdown tracer provider: %v", err)
+			log.Printf("Error shutting down tracer provider: %v", err)
 		}
 	}()
 
@@ -26,16 +25,13 @@ func main() {
 	otel.SetTracerProvider(tp)
 
 	// Create Braintrust client with the TracerProvider
-	bt, err := braintrust.New(tp,
-		braintrust.WithAPIKey(os.Getenv("BRAINTRUST_API_KEY")),
+	_, err := braintrust.New(tp,
 		braintrust.WithProject("rewrite-test"),
 		braintrust.WithBlockingLogin(true),
 	)
 	if err != nil {
 		log.Fatalf("Failed to create Braintrust client: %v", err)
 	}
-
-	log.Println(bt)
 
 	// Demonstrate manual tracing with two spans
 	demonstrateManualTracing()
@@ -47,31 +43,16 @@ func demonstrateManualTracing() {
 	tracer := otel.Tracer("rewrite-example")
 	ctx := context.Background()
 
-	// Set project parent context
-	ctx = bttrace.SetParent(ctx, bttrace.Parent{
-		Type: bttrace.ParentTypeProjectName,
-		ID:   "rewrite-test",
-	})
-
 	// Span 1: Parent operation
-	ctx, parentSpan := tracer.Start(ctx, "parent_operation")
-	parentSpan.SetAttributes(
+	_, span := tracer.Start(ctx, "parent_operation")
+	defer span.End()
+	span.SetAttributes(
 		attribute.String("example.type", "parent"),
 		attribute.Int("example.id", 1),
 	)
 
-	// Span 2: Child operation
-	_, childSpan := tracer.Start(ctx, "child_operation")
-	childSpan.SetAttributes(
-		attribute.String("example.type", "child"),
-		attribute.String("status", "complete"),
-	)
-	childSpan.End()
-
-	parentSpan.End()
-
 	// Generate permalink
-	if link, err := bttrace.Permalink(parentSpan); err == nil {
+	if link, err := bttrace.Permalink(span); err == nil {
 		log.Printf("\nView trace: %s", link)
 	}
 }
