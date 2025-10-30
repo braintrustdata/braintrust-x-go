@@ -53,6 +53,7 @@ func initializeDataset(projectID string) (string, error) {
 			Expected: map[string]interface{}{
 				"response": "Hello World",
 			},
+			Tags: []string{"basic", "english"},
 		},
 		{
 			Input: map[string]interface{}{
@@ -63,6 +64,7 @@ func initializeDataset(projectID string) (string, error) {
 			Expected: map[string]interface{}{
 				"response": "Braintrust Is Awesome",
 			},
+			Tags: []string{"company", "english"},
 		},
 		{
 			Input: map[string]interface{}{
@@ -73,6 +75,7 @@ func initializeDataset(projectID string) (string, error) {
 			Expected: map[string]interface{}{
 				"response": "Artificial Intelligence",
 			},
+			Tags: []string{"technical", "english"},
 		},
 	}
 

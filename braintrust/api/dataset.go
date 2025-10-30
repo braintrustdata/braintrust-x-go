@@ -17,6 +17,7 @@ type DatasetEvent struct {
 	Input    interface{} `json:"input"`
 	Expected interface{} `json:"expected,omitempty"`
 	Metadata interface{} `json:"metadata,omitempty"`
+	Tags     []string    `json:"tags,omitempty"`
 }
 
 // DatasetRequest represents the request payload for creating a dataset

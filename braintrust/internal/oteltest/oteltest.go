@@ -157,6 +157,17 @@ func (s *Span) AssertAttrEquals(key string, expected any) {
 	attr.AssertEquals(expected)
 }
 
+// AssertJSONAttrEquals asserts that a JSON-encoded attribute equals the expected value.
+// The attribute value is expected to be a JSON string that will be unmarshaled and compared.
+func (s *Span) AssertJSONAttrEquals(key string, expected any) {
+	s.t.Helper()
+	attrStr := s.Attr(key).String()
+	var actual any
+	err := json.Unmarshal([]byte(attrStr), &actual)
+	require.NoError(s.t, err, "failed to unmarshal JSON attribute %s", key)
+	assert.Equal(s.t, expected, actual, "attribute %s value mismatch", key)
+}
+
 // Attrs returns all the span's attributes matching the key.
 func (s *Span) Attrs(key string) []Attr {
 	attrs := []Attr{}
@@ -256,6 +267,30 @@ func (s *Span) Output() any {
 
 	s.t.Fatalf("No output attribute found. Tried: %v", outputKeys)
 	return nil
+}
+
+// AssertTags asserts that the span has the expected tags.
+// Tags are stored as an OTel StringSlice attribute.
+func (s *Span) AssertTags(expected []string) {
+	s.t.Helper()
+
+	// Get the tags attribute
+	attrs := s.Attrs("braintrust.tags")
+	require.Len(s.t, attrs, 1, "expected exactly one braintrust.tags attribute")
+
+	// Extract the slice value
+	value := attrs[0].Value
+	require.Equal(s.t, attr.STRINGSLICE, value.Type(), "braintrust.tags should be a string slice")
+
+	actual := value.AsStringSlice()
+	assert.Equal(s.t, expected, actual, "tags mismatch")
+}
+
+// AssertMetadata asserts that the span has the expected metadata.
+// Metadata is stored as a JSON object in the "braintrust.metadata" attribute.
+func (s *Span) AssertMetadata(expected map[string]any) {
+	s.t.Helper()
+	s.AssertJSONAttrEquals("braintrust.metadata", expected)
 }
 
 // Metadata returns the Braintrust metadata from the span attributes.

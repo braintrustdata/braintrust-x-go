@@ -1210,6 +1210,7 @@ func TestRun_WithDatasetID(t *testing.T) {
 		Scorers: []Scorer[int, int]{
 			NewEqualsScorer[int, int](),
 		},
+		Quiet: true,
 	})
 	require.NoError(err)
 
@@ -1267,12 +1268,115 @@ func TestRun_WithDatasetName(t *testing.T) {
 		Scorers: []Scorer[int, int]{
 			NewEqualsScorer[int, int](),
 		},
+		Quiet: true,
 	})
 	require.NoError(err)
 
 	// Verify spans were created
 	spans := exporter.Flush()
 	assert.Equal(6, len(spans)) // 2 cases * 3 spans each
+}
+
+func TestRun_WithDatasetTags(t *testing.T) {
+	// Integration test that verifies tags are preserved when using datasets
+	require := require.New(t)
+	assert := assert.New(t)
+
+	_, exporter := oteltest.Setup(t)
+
+	// Create a project
+	projectName := "go-sdk-unit-tests"
+	project, err := api.RegisterProject(projectName)
+	require.NoError(err)
+
+	// Create a dataset with unique name
+	datasetName := internal.RandomName(t)
+	datasetInfo, err := api.CreateDataset(api.DatasetRequest{
+		ProjectID:   project.ID,
+		Name:        datasetName,
+		Description: "Test dataset for verifying tags are preserved",
+	})
+	require.NoError(err)
+	defer func() {
+		_ = api.DeleteDataset(datasetInfo.ID)
+	}()
+
+	// Insert test data WITH TAGS AND METADATA
+	events := []api.DatasetEvent{
+		{
+			Input:    2,
+			Expected: 4,
+			Tags:     []string{"even", "small"},
+			Metadata: map[string]interface{}{
+				"category": "simple",
+				"priority": 1,
+			},
+		},
+		{
+			Input:    5,
+			Expected: 10,
+			Tags:     []string{"odd", "small"},
+			Metadata: map[string]interface{}{
+				"category": "medium",
+				"priority": 2,
+			},
+		},
+	}
+	err = api.InsertDatasetEvents(datasetInfo.ID, events)
+	require.NoError(err)
+
+	// Run eval using DatasetID
+	_, err = Run(context.Background(), Opts[int, int]{
+		ProjectID:  project.ID,
+		Experiment: internal.RandomName(t),
+		DatasetID:  datasetInfo.ID,
+		Task: func(ctx context.Context, input int) (int, error) {
+			return input * 2, nil
+		},
+		Scorers: []Scorer[int, int]{
+			NewEqualsScorer[int, int](),
+		},
+		Quiet: true,
+	})
+	require.NoError(err)
+
+	// Verify spans were created
+	spans := exporter.Flush()
+	assert.Equal(6, len(spans)) // 2 cases * 3 spans each
+
+	// Verify tags and metadata values in eval spans
+	// Find the span with input=2 and verify its metadata
+	var input2Span oteltest.Span
+	var input5Span oteltest.Span
+
+	for _, span := range spans {
+		if span.Name() == "eval" {
+			input := span.Input()
+			if input == float64(2) {
+				input2Span = span
+			} else if input == float64(5) {
+				input5Span = span
+			}
+		}
+	}
+
+	// Verify input=2 span exists and has correct expected value, tags, and metadata
+	require.NotNil(input2Span.Name, "Expected to find eval span with input=2")
+	input2Span.AssertAttrEquals("braintrust.expected", "4")
+	input2Span.AssertTags([]string{"even", "small"})
+	input2Span.AssertMetadata(map[string]any{
+		"category": "simple",
+		"priority": float64(1), // JSON numbers are float64
+	})
+
+	// Verify input=5 span exists and has correct expected value, tags, and metadata
+	require.NotNil(input5Span.Name, "Expected to find eval span with input=5")
+	input5Span.AssertAttrEquals("braintrust.expected", "10")
+	input5Span.AssertTags([]string{"odd", "small"})
+	input5Span.AssertMetadata(map[string]any{
+		"category": "medium",
+		"priority": float64(2),
+	})
 }
 
 func TestEval_Permalink(t *testing.T) {
