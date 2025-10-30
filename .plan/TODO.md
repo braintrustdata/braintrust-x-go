@@ -2,7 +2,7 @@
 
 **Overall Progress: ~45% Complete**
 
-Last Updated: 2025-10-28
+Last Updated: 2025-10-30
 
 ---
 
@@ -239,59 +239,127 @@ client.Datasets.Query(ctx, datasetID, opts)
 **Complexity:** Medium
 **Dependencies:** None! (eval has its own API calls)
 
-The eval package (`/braintrust/eval/`) works but uses global config. Need to integrate with new Client.
+Build a brand new eval package at `/eval` (not `/braintrust/eval/`) designed from the ground up to work with Client. No backward compatibility with old `eval.Run()`.
+
+**Scope:**
+- ✅ Cases with iterator interface
+- ❌ No dataset loading initially (add later)
+- ❌ No functions/prompts integration (add later)
+- ❌ No parallel execution initially (add later)
 
 **Tasks:**
-- [ ] Add Eval() method to Client
+
+### Phase 1: Write tests first (TDD)
+- [ ] Write test for basic eval flow
+  - [ ] Create client, call `client.Eval(ctx, opts)` with simple cases
+  - [ ] Task function runs for each case
+  - [ ] Scorers run and produce scores
+  - [ ] Result contains scores, summary, permalink
+  - [ ] Experiment is created in Braintrust
+  - [ ] Spans are created with client's TracerProvider
+
+- [ ] Write test for client integration
+  - [ ] Eval uses client's project from config
+  - [ ] Eval uses client's session for auth
+  - [ ] Multiple clients stay isolated
+
+- [ ] Write test for error cases
+  - [ ] Missing experiment name
+  - [ ] Empty cases
+  - [ ] Task function returns error
+  - [ ] Scorer returns error
+
+### Phase 2: Build core types
+- [ ] Create `/eval/types.go`
+  - [ ] Define Opts[I, R] struct (Experiment, Cases, Task, Scorers, Metadata, Update)
+  - [ ] Define Case[I, R] struct (Input, Expected, Tags, Metadata)
+  - [ ] Define Cases[I, R] iterator interface
+  - [ ] Define Task[I, R] function type
+  - [ ] Define Scorer[I, R] interface
+  - [ ] Define Result struct
+- [ ] Create `/eval/cases.go`
+  - [ ] Implement NewCases() helper for slice of cases
+  - [ ] Implement iterator pattern
+
+### Phase 3: Implement eval execution
+- [ ] Create `/eval/eval.go`
+  - [ ] Internal run function that accepts client resources (config, session, tracerProvider)
+  - [ ] Iterate over cases, call task function
+  - [ ] Run scorers for each case
+  - [ ] Log results to experiment (spans + summaries)
+  - [ ] Generate permalink
+  - [ ] Return Result
+
+- [ ] Create `/eval/experiment.go`
+  - [ ] Register/get experiment using client's session
+  - [ ] Log spans for each case
+  - [ ] Set proper parent span attributes
+  - [ ] Use client's TracerProvider
+
+- [ ] Create `/eval/scorers.go`
+  - [ ] Implement ExactMatch scorer
+
+### Phase 4: Wire up Client
+- [ ] Add to `/client.go`
   ```go
-  func (c *Client) Eval(ctx context.Context, opts eval.Opts[I, R]) (*eval.Result, error) {
-      // Pass client's config and tracer provider to eval.Run()
+  func (c *Client) Eval[I, R any](ctx context.Context, opts eval.Opts[I, R]) (*eval.Result, error) {
+      return eval.Run(ctx, opts, c.config, c.session, c.tracerProvider)
   }
   ```
-- [ ] Update `eval.Run()` signature to accept optional *braintrust.Client
-  - [ ] If client provided, use its config instead of braintrust.GetConfig()
-  - [ ] If client provided, use its tracer provider
-  - [ ] Keep old signature working for backward compat (nil client = use global config)
-- [ ] Update eval internals to use client's resources when provided
-  - [ ] Use client's config for API calls
-  - [ ] Use client's tracer provider for spans
-  - [ ] Thread context through API calls
-- [ ] Write tests
-  - [ ] Test Client.Eval() method
-  - [ ] Test with blocking login
-  - [ ] Test error cases
-  - [ ] Verify spans are properly created
-- [ ] Update examples
-  - [ ] Create example using Client.Eval()
-  - [ ] Verify existing eval examples still work
+
+- [ ] Write integration test
+  - [ ] End-to-end test with real client
+  - [ ] Verify experiment appears in Braintrust
+  - [ ] Verify spans appear in Braintrust
+
+### Phase 5: Example and verification
+- [ ] Create `/examples/eval/main.go` - simple working example
+- [ ] Run tests and verify
+  - [ ] `make test` passes
+  - [ ] `make ci` passes
+  - [ ] Example runs successfully
+
+### Phase 6: Validate API compatibility
+- [ ] Add task to TODO.md: "Figure out eval hooks / validate compatibility with Python API"
+  - [ ] Verify hooks API matches Python
+  - [ ] Verify metadata handling matches Python
+  - [ ] Verify span attributes match Python
+
+**Files to Create:**
+- `/eval/types.go` - Core types (Opts, Case, Cases interface, Task, Scorer, Result)
+- `/eval/cases.go` - Cases iterator implementation and helpers
+- `/eval/eval.go` - Execution engine
+- `/eval/experiment.go` - Experiment API
+- `/eval/scorers.go` - ExactMatch scorer
+- `/eval/eval_test.go` - Comprehensive tests
+- `/examples/eval/main.go` - Working example
 
 **Files to Modify:**
-- `/client.go` - add Eval() method
-- `/braintrust/eval/eval.go` - add config/client parameter, remove global deps
-- `/braintrust/eval/experiment.go` - use passed config
-- `/braintrust/eval/dataset.go` - use passed config
+- `/client.go` - add Eval[I, R]() method
 
 **Example Usage:**
 ```go
-bt, _ := braintrust.New(
-    braintrust.WithAPIKey(os.Getenv("BRAINTRUST_API_KEY")),
-    braintrust.WithProject("my-project"),
-)
-defer bt.Shutdown(context.Background())
+client := braintrust.New(braintrust.WithProject("my-project"))
+defer client.Shutdown(ctx)
 
-result, err := bt.Eval(ctx, eval.Opts[string, string]{
-    Experiment: "greeting-experiment",
+result, err := client.Eval(ctx, eval.Opts[string, string]{
+    Experiment: "greeting-test",
     Cases: eval.NewCases([]eval.Case[string, string]{
-        {Input: "World", Expected: "Hello World"},
+        {Input: "World", Expected: "Hello, World!"},
+        {Input: "Alice", Expected: "Hello, Alice!"},
     }),
     Task: func(ctx context.Context, input string) (string, error) {
-        return "Hello " + input, nil
+        return "Hello, " + input + "!", nil
     },
     Scorers: []eval.Scorer[string, string]{
-        eval.ExactMatch[string](),
+        eval.ExactMatch[string, string](),
     },
 })
 ```
+
+**Estimated effort:** 1 day (focused scope, TDD)
+
+**⚠️ NOTE:** PICKUP AFTER REBASE WITH CASE.TAGS CHANGES
 
 ---
 
