@@ -1210,6 +1210,7 @@ func TestRun_WithDatasetID(t *testing.T) {
 		Scorers: []Scorer[int, int]{
 			NewEqualsScorer[int, int](),
 		},
+		Quiet: true,
 	})
 	require.NoError(err)
 
@@ -1267,6 +1268,7 @@ func TestRun_WithDatasetName(t *testing.T) {
 		Scorers: []Scorer[int, int]{
 			NewEqualsScorer[int, int](),
 		},
+		Quiet: true,
 	})
 	require.NoError(err)
 
@@ -1299,17 +1301,25 @@ func TestRun_WithDatasetTags(t *testing.T) {
 		_ = api.DeleteDataset(datasetInfo.ID)
 	}()
 
-	// Insert test data WITH TAGS
+	// Insert test data WITH TAGS AND METADATA
 	events := []api.DatasetEvent{
 		{
 			Input:    2,
 			Expected: 4,
 			Tags:     []string{"even", "small"},
+			Metadata: map[string]interface{}{
+				"category": "simple",
+				"priority": 1,
+			},
 		},
 		{
 			Input:    5,
 			Expected: 10,
 			Tags:     []string{"odd", "small"},
+			Metadata: map[string]interface{}{
+				"category": "medium",
+				"priority": 2,
+			},
 		},
 	}
 	err = api.InsertDatasetEvents(datasetInfo.ID, events)
@@ -1326,6 +1336,7 @@ func TestRun_WithDatasetTags(t *testing.T) {
 		Scorers: []Scorer[int, int]{
 			NewEqualsScorer[int, int](),
 		},
+		Quiet: true,
 	})
 	require.NoError(err)
 
@@ -1333,18 +1344,39 @@ func TestRun_WithDatasetTags(t *testing.T) {
 	spans := exporter.Flush()
 	assert.Equal(6, len(spans)) // 2 cases * 3 spans each
 
-	// Verify tags appear in the eval spans
-	// First case (input=2) should have tags ["even", "small"]
-	// Second case (input=5) should have tags ["odd", "small"]
-	evalSpansWithTags := 0
+	// Verify tags and metadata values in eval spans
+	// Find the span with input=2 and verify its metadata
+	var input2Span oteltest.Span
+	var input5Span oteltest.Span
+
 	for _, span := range spans {
-		if span.Name() == "eval" && span.HasAttr("braintrust.tags") {
-			evalSpansWithTags++
+		if span.Name() == "eval" {
+			input := span.Input()
+			if input == float64(2) {
+				input2Span = span
+			} else if input == float64(5) {
+				input5Span = span
+			}
 		}
 	}
 
-	// Both eval spans should have tags
-	assert.Equal(2, evalSpansWithTags, "Expected both eval spans to have braintrust.tags attribute")
+	// Verify input=2 span exists and has correct expected value, tags, and metadata
+	require.NotNil(input2Span.Name, "Expected to find eval span with input=2")
+	input2Span.AssertAttrEquals("braintrust.expected", "4")
+	input2Span.AssertTags([]string{"even", "small"})
+	input2Span.AssertMetadata(map[string]any{
+		"category": "simple",
+		"priority": float64(1), // JSON numbers are float64
+	})
+
+	// Verify input=5 span exists and has correct expected value, tags, and metadata
+	require.NotNil(input5Span.Name, "Expected to find eval span with input=5")
+	input5Span.AssertAttrEquals("braintrust.expected", "10")
+	input5Span.AssertTags([]string{"odd", "small"})
+	input5Span.AssertMetadata(map[string]any{
+		"category": "medium",
+		"priority": float64(2),
+	})
 }
 
 func TestEval_Permalink(t *testing.T) {

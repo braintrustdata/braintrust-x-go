@@ -150,6 +150,7 @@ func (s *datasetIterator[InputType, ExpectedType]) Next() (Case[InputType, Expec
 		Input    InputType    `json:"input"`
 		Expected ExpectedType `json:"expected"`
 		Tags     []string     `json:"tags"`
+		Metadata Metadata     `json:"metadata"`
 	}
 
 	err := s.dataset.NextAs(&fullEvent)
@@ -162,5 +163,6 @@ func (s *datasetIterator[InputType, ExpectedType]) Next() (Case[InputType, Expec
 		Input:    fullEvent.Input,
 		Expected: fullEvent.Expected,
 		Tags:     fullEvent.Tags,
+		Metadata: fullEvent.Metadata,
 	}, nil
 }
