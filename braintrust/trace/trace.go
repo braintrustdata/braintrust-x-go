@@ -38,6 +38,7 @@ import (
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/baggage"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
@@ -50,6 +51,17 @@ import (
 )
 
 // Enable adds Braintrust tracing to an existing OpenTelemetry tracer provider.
+//
+// For distributed tracing across process boundaries (e.g., microservices, Temporal workflows,
+// gRPC services), you must also configure OpenTelemetry propagators to propagate the
+// braintrust.parent attribute via baggage:
+//
+//	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+//		propagation.TraceContext{},
+//		propagation.Baggage{},
+//	))
+//
+// See examples/temporal for a complete distributed tracing example.
 //
 // Example:
 //
@@ -142,6 +154,17 @@ func Enable(tp *trace.TracerProvider, opts ...braintrust.Option) error {
 // `Enable` instead if you are integrating Braintrust into an application that
 // already uses OpenTelemetry.
 //
+// For distributed tracing across process boundaries (e.g., microservices, Temporal workflows,
+// gRPC services), you must also configure OpenTelemetry propagators to propagate the
+// braintrust.parent attribute via baggage:
+//
+//	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+//		propagation.TraceContext{},
+//		propagation.Baggage{},
+//	))
+//
+// See examples/temporal for a complete distributed tracing example.
+//
 // Example:
 //
 //	teardown, err := trace.Quickstart()
@@ -198,13 +221,49 @@ var parentContextKey contextKey = ParentOtelAttrKey
 //	ctx = trace.SetParent(ctx, trace.Parent{Type: "project_name", ID: "test"})
 //	span := tracer.Start(ctx, "database-query")
 func SetParent(ctx context.Context, parent Parent) context.Context {
-	return context.WithValue(ctx, parentContextKey, parent)
+	// Store parent in context value (for same-process access)
+	ctx = context.WithValue(ctx, parentContextKey, parent)
+
+	// Also store in baggage for distributed tracing across process boundaries.
+	// Baggage propagates automatically through W3C headers, while context values don't.
+	member, err := baggage.NewMember(ParentOtelAttrKey, parent.String())
+	if err != nil {
+		log.Warnf("Failed to create baggage member for parent: %v", err)
+		return ctx
+	}
+
+	// Merge with existing baggage if any
+	existingBag := baggage.FromContext(ctx)
+	bag, err := existingBag.SetMember(member)
+	if err != nil {
+		log.Warnf("Failed to set baggage member for parent: %v", err)
+		return ctx
+	}
+
+	return baggage.ContextWithBaggage(ctx, bag)
 }
 
 // GetParent returns the parent from the context and a boolean indicating if it was set.
+// It first checks the context value (for same-process access), then falls back to
+// baggage (for distributed tracing across process boundaries).
 func GetParent(ctx context.Context) (bool, Parent) {
-	parent, ok := ctx.Value(parentContextKey).(Parent)
-	return ok, parent
+	// First, try to get from context value (fast path for same-process)
+	if parent, ok := ctx.Value(parentContextKey).(Parent); ok {
+		return true, parent
+	}
+
+	// Fall back to baggage (for distributed tracing)
+	bag := baggage.FromContext(ctx)
+	if parentStr := bag.Member(ParentOtelAttrKey).Value(); parentStr != "" {
+		parent, err := parseParent(parentStr)
+		if err != nil {
+			log.Warnf("Failed to parse parent from baggage: %v", err)
+			return false, Parent{}
+		}
+		return true, parent
+	}
+
+	return false, Parent{}
 }
 
 // ParentType represents the different places spans can be sent to
