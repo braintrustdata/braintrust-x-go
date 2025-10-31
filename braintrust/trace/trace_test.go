@@ -883,7 +883,7 @@ func TestDistributedTracingPropagation(t *testing.T) {
 	serverCtx = propagator.Extract(serverCtx, &mapCarrier{headers})
 
 	// Start a span on the server side with the propagated context
-	serverCtx, serverSpan := serverTracer.Start(serverCtx, "server-operation")
+	_, serverSpan := serverTracer.Start(serverCtx, "server-operation")
 	serverSpan.End()
 	_ = serverTP.ForceFlush(context.Background())
 
