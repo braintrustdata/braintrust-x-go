@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/noop"
@@ -811,4 +812,110 @@ func TestBlockingLoginDefaultsFalse(t *testing.T) {
 	// Test that BlockingLogin defaults to false
 	config := braintrust.GetConfig()
 	assert.False(config.BlockingLogin)
+}
+
+func TestDistributedTracingPropagation(t *testing.T) {
+	assert := assert.New(t)
+
+	// This test simulates distributed tracing across a process boundary.
+	// It verifies that braintrust.parent propagates from client to server
+	// using OpenTelemetry's W3C Trace Context and Baggage propagation.
+
+	// Setup: Create two separate tracer providers (client and server)
+	// with their own in-memory exporters to capture spans
+
+	// Configure propagator for distributed tracing (W3C Trace Context + Baggage)
+	// This simulates what happens in real distributed systems like HTTP/gRPC
+	propagator := propagation.NewCompositeTextMapPropagator(
+		propagation.TraceContext{}, // Propagates trace ID, span ID
+		propagation.Baggage{},      // Propagates baggage (will be used for braintrust.parent)
+	)
+
+	// CLIENT SIDE: Create tracer with Braintrust enabled
+	clientExporter := tracetest.NewInMemoryExporter()
+	clientTP := sdktrace.NewTracerProvider()
+	err := Enable(clientTP,
+		withSpanProcessor(sdktrace.NewSimpleSpanProcessor(clientExporter)),
+		braintrust.WithDefaultProject("test-distributed-project"),
+		braintrust.WithAPIKey("test-api-key"),
+	)
+	assert.NoError(err)
+
+	clientTracer := clientTP.Tracer("test-client")
+
+	// Set a parent (experiment) in the context
+	experimentID := "abc123-distributed-test"
+	parent := Parent{Type: ParentTypeExperimentID, ID: experimentID}
+	clientCtx := context.Background()
+	clientCtx = SetParent(clientCtx, parent)
+
+	// Start a span on the client side
+	clientCtx, clientSpan := clientTracer.Start(clientCtx, "client-operation")
+
+	// SIMULATE NETWORK: Extract W3C headers (traceparent + baggage)
+	// In real distributed systems, these headers are sent over HTTP/gRPC
+	headers := make(map[string]string)
+	propagator.Inject(clientCtx, &mapCarrier{headers})
+
+	// Finish client span
+	clientSpan.End()
+	_ = clientTP.ForceFlush(context.Background())
+
+	// Verify client span has the parent attribute
+	clientSpans := clientExporter.GetSpans()
+	assert.Len(clientSpans, 1)
+	assertAttrEquals(t, clientSpans[0], ParentOtelAttrKey, "experiment_id:"+experimentID)
+
+	// SERVER SIDE: Create new tracer provider (separate process)
+	serverExporter := tracetest.NewInMemoryExporter()
+	serverTP := sdktrace.NewTracerProvider()
+	err = Enable(serverTP,
+		withSpanProcessor(sdktrace.NewSimpleSpanProcessor(serverExporter)),
+		braintrust.WithDefaultProject("test-distributed-project"),
+		braintrust.WithAPIKey("test-api-key"),
+	)
+	assert.NoError(err)
+
+	serverTracer := serverTP.Tracer("test-server")
+
+	// DESERIALIZE: Inject headers into new context
+	serverCtx := context.Background()
+	serverCtx = propagator.Extract(serverCtx, &mapCarrier{headers})
+
+	// Start a span on the server side with the propagated context
+	_, serverSpan := serverTracer.Start(serverCtx, "server-operation")
+	serverSpan.End()
+	_ = serverTP.ForceFlush(context.Background())
+
+	// VERIFY: Server span should have the braintrust.parent attribute
+	serverSpans := serverExporter.GetSpans()
+	assert.Len(serverSpans, 1)
+
+	// The critical assertion: parent should have propagated across the boundary
+	assertAttrEquals(t, serverSpans[0], ParentOtelAttrKey, "experiment_id:"+experimentID)
+
+	// Additional verification: trace IDs should match (standard OTel behavior)
+	assert.Equal(clientSpans[0].SpanContext.TraceID(), serverSpans[0].SpanContext.TraceID(),
+		"Trace IDs should match across distributed boundary")
+}
+
+// mapCarrier implements propagation.TextMapCarrier for testing
+type mapCarrier struct {
+	data map[string]string
+}
+
+func (c *mapCarrier) Get(key string) string {
+	return c.data[key]
+}
+
+func (c *mapCarrier) Set(key, value string) {
+	c.data[key] = value
+}
+
+func (c *mapCarrier) Keys() []string {
+	keys := make([]string, 0, len(c.data))
+	for k := range c.data {
+		keys = append(keys, k)
+	}
+	return keys
 }

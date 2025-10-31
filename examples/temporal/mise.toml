@@ -1,0 +1,18 @@
+[settings]
+experimental = true
+
+[env]
+_.file = ".env"
+
+[tools]
+temporal = "latest"
+overmind = "latest"
+go = "1.23"
+
+[tasks.server]
+description = "Run temporal server and worker"
+run = "overmind s"
+
+[tasks.workflow]
+description = "Run a test workflow"
+run = "go run cmd/client/main.go"
