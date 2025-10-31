@@ -8,6 +8,7 @@ import (
 	oteltrace "go.opentelemetry.io/otel/trace"
 
 	"github.com/braintrustdata/braintrust-x-go/config"
+	"github.com/braintrustdata/braintrust-x-go/eval"
 	"github.com/braintrustdata/braintrust-x-go/internal/auth"
 	"github.com/braintrustdata/braintrust-x-go/logger"
 	bttrace "github.com/braintrustdata/braintrust-x-go/trace"
@@ -183,4 +184,57 @@ func (c *Client) TracerProvider() *trace.TracerProvider {
 //	defer span.End()
 func (c *Client) Tracer(name string, opts ...oteltrace.TracerOption) oteltrace.Tracer {
 	return c.tracerProvider.Tracer(name, opts...)
+}
+
+// RunEval runs a one-off evaluation using the given client.
+//
+// For running multiple evaluations with the same input/output types, consider using
+// NewEvaluator to create a reusable evaluator.
+//
+// Example:
+//
+//	client, _ := braintrust.New(tp, braintrust.WithProject("my-project"))
+//
+//	result, err := braintrust.RunEval(ctx, client, eval.Opts[string, string]{
+//	    Experiment: "greeting-test",
+//	    Cases: eval.NewCases([]eval.Case[string, string]{
+//	        {Input: "World", Expected: "Hello, World!"},
+//	    }),
+//	    Task: func(ctx context.Context, input string) (string, error) {
+//	        return "Hello, " + input + "!", nil
+//	    },
+//	    Scorers: []eval.Scorer[string, string]{
+//	        eval.ExactMatch[string, string](),
+//	    },
+//	})
+func RunEval[I, R any](ctx context.Context, client *Client, opts eval.Opts[I, R]) (*eval.Result, error) {
+	return eval.Run(ctx, opts, client.config, client.session, client.tracerProvider)
+}
+
+// NewEvaluator creates a new evaluator for running multiple evaluations with the same
+// input and output types.
+//
+// Example:
+//
+//	client, _ := braintrust.New(tp, braintrust.WithProject("my-project"))
+//
+//	// Create an evaluator for string → string evaluations
+//	evaluator := braintrust.NewEvaluator[string, string](client)
+//
+//	// Run multiple evaluations
+//	result1, _ := evaluator.Run(ctx, eval.Opts[string, string]{
+//	    Experiment: "test-1",
+//	    Cases:      cases1,
+//	    Task:       task1,
+//	    Scorers:    scorers,
+//	})
+//
+//	result2, _ := evaluator.Run(ctx, eval.Opts[string, string]{
+//	    Experiment: "test-2",
+//	    Cases:      cases2,
+//	    Task:       task2,
+//	    Scorers:    scorers,
+//	})
+func NewEvaluator[I, R any](client *Client) *eval.Evaluator[I, R] {
+	return eval.NewEvaluator[I, R](client.session, client.config, client.tracerProvider)
 }

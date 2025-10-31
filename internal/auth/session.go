@@ -138,3 +138,20 @@ func (s *Session) loginWithRetry(opts Options) {
 		"org_name", s.info.OrgName,
 		"org_id", s.info.OrgID)
 }
+
+// NewTestSession creates a static test session with hardcoded data.
+// This is for use in test packages outside of internal/auth to avoid import cycles.
+// This session does not make any network calls or start goroutines.
+func NewTestSession(info *Info, done chan struct{}, log logger.Logger) *Session {
+	return &Session{
+		info:   info,
+		err:    nil,
+		done:   done,
+		logger: log,
+		opts: Options{
+			APIKey: info.APIKey,
+			AppURL: info.AppURL,
+			APIURL: info.APIURL,
+		},
+	}
+}

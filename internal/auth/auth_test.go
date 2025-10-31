@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/braintrustdata/braintrust-x-go/internal/tests"
+	intlogger "github.com/braintrustdata/braintrust-x-go/internal/logger"
 	"github.com/braintrustdata/braintrust-x-go/logger"
 )
 
@@ -21,7 +21,7 @@ func TestSession_WithTestAPIKey(t *testing.T) {
 	session, err := NewSession(ctx, Options{
 		AppURL: "https://www.braintrust.dev",
 		APIKey: TestAPIKey,
-		Logger: tests.NewFailTestLogger(t),
+		Logger: intlogger.NewFailTestLogger(t),
 	})
 	require.NoError(t, err)
 	defer session.Close()
@@ -66,7 +66,7 @@ func TestSession_WithValidAPIKey(t *testing.T) {
 	session, err := NewSession(context.Background(), Options{
 		AppURL: server.URL,
 		APIKey: "test-api-key",
-		Logger: tests.NewFailTestLogger(t),
+		Logger: intlogger.NewFailTestLogger(t),
 	})
 	require.NoError(t, err)
 	defer session.Close()
@@ -138,7 +138,7 @@ func TestSession_OrgSelection(t *testing.T) {
 		APIKey:  "test-api-key",
 		OrgName: "org-two",
 
-		Logger: tests.NewFailTestLogger(t),
+		Logger: intlogger.NewFailTestLogger(t),
 	})
 	require.NoError(t, err)
 	defer session.Close()
@@ -194,7 +194,7 @@ func TestSession_NoAPIKey(t *testing.T) {
 	_, err := NewSession(context.Background(), Options{
 		AppURL: "https://www.braintrust.dev",
 
-		Logger: tests.NewFailTestLogger(t),
+		Logger: intlogger.NewFailTestLogger(t),
 	})
 
 	require.Error(t, err)
@@ -207,7 +207,7 @@ func TestSession_NoAppURL(t *testing.T) {
 	_, err := NewSession(context.Background(), Options{
 		APIKey: "test-key",
 
-		Logger: tests.NewFailTestLogger(t),
+		Logger: intlogger.NewFailTestLogger(t),
 	})
 
 	require.Error(t, err)
@@ -223,7 +223,7 @@ func TestSession_WithRealAPIKey(t *testing.T) {
 		AppURL: "https://www.braintrust.dev",
 		APIKey: apiKey,
 
-		Logger: tests.NewFailTestLogger(t),
+		Logger: intlogger.NewFailTestLogger(t),
 	})
 	require.NoError(t, err)
 	defer session.Close()
@@ -244,7 +244,7 @@ func TestSession_NonBlockingInfo(t *testing.T) {
 	session, err := NewSession(context.Background(), Options{
 		AppURL: "https://www.braintrust.dev",
 		APIKey: TestAPIKey,
-		Logger: tests.NewFailTestLogger(t),
+		Logger: intlogger.NewFailTestLogger(t),
 	})
 	require.NoError(t, err)
 	defer session.Close()
@@ -267,7 +267,7 @@ func TestSession_BlockingLogin(t *testing.T) {
 	session, err := NewSession(context.Background(), Options{
 		AppURL: "https://www.braintrust.dev",
 		APIKey: TestAPIKey,
-		Logger: tests.NewFailTestLogger(t),
+		Logger: intlogger.NewFailTestLogger(t),
 	})
 	require.NoError(t, err)
 	defer session.Close()
@@ -359,7 +359,7 @@ func TestSession_OrgName(t *testing.T) {
 		session, err := NewSession(context.Background(), Options{
 			AppURL: "https://www.braintrust.dev",
 			APIKey: TestAPIKey,
-			Logger: tests.NewFailTestLogger(t),
+			Logger: intlogger.NewFailTestLogger(t),
 		})
 		require.NoError(t, err)
 		defer session.Close()

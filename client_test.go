@@ -10,7 +10,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
 	"github.com/braintrustdata/braintrust-x-go/internal/auth"
-	"github.com/braintrustdata/braintrust-x-go/internal/tests"
+	intlogger "github.com/braintrustdata/braintrust-x-go/internal/logger"
 	"github.com/braintrustdata/braintrust-x-go/logger"
 )
 
@@ -25,7 +25,7 @@ func TestNew_WithMinimalConfig(t *testing.T) {
 	// Create client with minimal config
 	client, err := New(tp,
 		WithProject("test-project"),
-		WithLogger(tests.NewFailTestLogger(t)),
+		WithLogger(intlogger.NewFailTestLogger(t)),
 	)
 	require.NoError(t, err)
 	require.NotNil(t, client)
@@ -59,7 +59,7 @@ func TestNew_WithBlockingLogin(t *testing.T) {
 		WithAPIKey(auth.TestAPIKey),
 		WithProject("test-project"),
 		WithBlockingLogin(true),
-		WithLogger(tests.NewFailTestLogger(t)),
+		WithLogger(intlogger.NewFailTestLogger(t)),
 	)
 	require.NoError(t, err)
 	require.NotNil(t, client)
@@ -115,7 +115,7 @@ func TestTracing_EndToEnd(t *testing.T) {
 		WithAPIKey(auth.TestAPIKey),
 		WithProject("test-project"),
 		WithExporter(exporter),
-		WithLogger(tests.NewFailTestLogger(t)),
+		WithLogger(intlogger.NewFailTestLogger(t)),
 	)
 	require.NoError(t, err)
 
@@ -153,7 +153,7 @@ func TestTracing_WithExporter(t *testing.T) {
 		WithAPIKey(auth.TestAPIKey),
 		WithProject("test-project"),
 		WithExporter(exporter),
-		WithLogger(tests.NewFailTestLogger(t)),
+		WithLogger(intlogger.NewFailTestLogger(t)),
 	)
 	require.NoError(t, err)
 

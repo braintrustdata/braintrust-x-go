@@ -1,5 +1,5 @@
-// Package tests provides test utilities for the Braintrust SDK.
-package tests
+// Package logger provides internal logging utilities.
+package logger
 
 import (
 	"testing"
