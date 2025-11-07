@@ -105,10 +105,10 @@ eval.NewScorer("scorer_name", func(ctx context.Context, input, expected, result 
 **New (braintrust-sdk-go):**
 ```go
 eval.NewScorer("scorer_name", func(ctx context.Context, tr eval.TaskResult[string, string]) (eval.Scores, error) {
-    input := taskResult.Input
-    expected := taskResult.Expected
-    result := taskResult.Output
-    metadata := taskResult.Metadata
+    input := tr.Input
+    expected := tr.Expected
+    result := tr.Output
+    metadata := tr.Metadata
     // Scorer logic
 })
 ```
@@ -140,14 +140,23 @@ import (
     "github.com/braintrustdata/braintrust-sdk-go/trace/contrib/genai"
 )
 
+// OpenAI and Anthropic use middleware:
 client := openai.NewClient(
     option.WithMiddleware(traceopenai.NewMiddleware()),
 )
+
+// Google Gemini uses HTTPClient wrapper:
+client, err := genai.NewClient(context.Background(), &genai.ClientConfig{
+    HTTPClient: tracegenai.Client(),
+    APIKey: os.Getenv("GOOGLE_API_KEY"),
+    Backend: genai.BackendGeminiAPI,
+})
 ```
 
 **Key changes:**
 - Import paths changed: `braintrust/trace/traceopenai` → `trace/contrib/openai`
-- Middleware is now a function call: `NewMiddleware()` instead of a variable
+- OpenAI/Anthropic: Middleware is now a function call `NewMiddleware()` instead of a variable
+- Google Gemini: Uses `tracegenai.Client()` or `tracegenai.WrapClient()` for HTTPClient configuration
 
 ### 5. Hosted Resources (Tasks & Scorers)
 
