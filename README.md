@@ -2,7 +2,18 @@
 # Braintrust Go Tracing & Eval SDK
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/braintrustdata/braintrust-x-go.svg)](https://pkg.go.dev/github.com/braintrustdata/braintrust-x-go)
-![Beta](https://img.shields.io/badge/status-beta-yellow)
+![Deprecated](https://img.shields.io/badge/status-deprecated-red)
+
+## Status: Deprecated
+
+This repository is deprecated in favor of the new official Braintrust Go SDK: [braintrust-sdk-go](https://github.com/braintrustdata/braintrust-sdk-go).
+
+**What this means:**
+- Bug fixes will be supported on this repository for several months
+- New feature development happens in the new repository
+- We recommend migrating to the new SDK for ongoing projects
+
+**Migration:** See [MIGRATION.md](./MIGRATION.md) for detailed migration instructions.
 
 ## Overview
 
